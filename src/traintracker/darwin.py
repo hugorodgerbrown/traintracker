@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 from urllib.parse import quote
@@ -10,7 +12,7 @@ from urllib.parse import quote
 import httpx
 
 from traintracker.config import UK_TZ, Settings
-from traintracker.errors import NotConfigured, ServiceNotFound
+from traintracker.errors import NotConfigured, ServiceNotFound, UpstreamError
 from traintracker.http import TTLCache, json_body, raise_for_status
 from traintracker.models import (
     Board,
@@ -23,6 +25,8 @@ from traintracker.models import (
 
 SOURCE = "Darwin"
 LIVE_TTL = 20.0
+PAGE_ROWS = 10  # GetDepBoardWithDetails / GetArrBoardWithDetails return at most 10 services
+MAX_PAGES = 12
 _TIME = re.compile(r"^\d{2}:\d{2}$")
 _TAGS = re.compile(r"<[^>]+>")
 
@@ -133,6 +137,13 @@ def _board_date(data: dict[str, Any]) -> str:
     return datetime.now(UK_TZ).date().isoformat()
 
 
+@dataclass
+class _Page:
+    board: Board
+    raw_count: int
+    ref_minutes: int
+
+
 class DarwinClient:
     def __init__(self, settings: Settings, http: httpx.AsyncClient) -> None:
         self.s = settings
@@ -160,7 +171,52 @@ class DarwinClient:
         rows: int = 10,
         offset_minutes: int = 0,
         window_minutes: int = 120,
+        until: Callable[[list[BoardService]], bool] | None = None,
     ) -> Board:
+        """Up to `rows` services within the window.
+
+        The detailed board returns at most PAGE_ROWS services per request, so
+        larger boards are fetched page by page, each starting at the last
+        service's booked time. `until` stops paging early once it returns True.
+        """
+        offset = max(-119, min(offset_minutes, 119))
+        end = offset + max(1, min(window_minutes, 120))
+        first = await self._page(crs, board, filter_crs, offset, end - offset)
+        services = list(first.board.services)
+        seen = {s.service_id for s in services}
+        full = first.raw_count >= PAGE_ROWS
+        for _ in range(MAX_PAGES - 1):
+            if not full or len(services) >= rows or (until and until(services)):
+                break
+            last = next((s.scheduled for s in reversed(services) if s.scheduled), None)
+            if last is None:
+                break
+            # Minutes from the board's reference time to the last train; late
+            # trains booked before "now" count as 0.
+            gap = (_minutes(last) - first.ref_minutes) % (24 * 60)
+            nxt = max(offset + 1, 0 if gap > 12 * 60 else gap)
+            if nxt >= min(end, 120):
+                break
+            offset = nxt
+            try:
+                page = await self._page(crs, board, filter_crs, offset, end - offset)
+            except (UpstreamError, httpx.HTTPError):
+                break  # keep what the earlier pages returned
+            new = [s for s in page.board.services if s.service_id not in seen]
+            seen.update(s.service_id for s in new)
+            services.extend(new)
+            full = page.raw_count >= PAGE_ROWS and bool(new)
+        first.board.services = services[:rows]
+        return first.board
+
+    async def _page(
+        self,
+        crs: str,
+        board: Literal["departures", "arrivals"],
+        filter_crs: str | None,
+        offset: int,
+        window: int,
+    ) -> _Page:
         if board == "departures":
             if not self.s.darwin_key:
                 raise NotConfigured("DARWIN_API_KEY is not set.")
@@ -172,9 +228,9 @@ class DarwinClient:
             op = "GetArrBoardWithDetails"
 
         params: dict[str, Any] = {
-            "numRows": max(1, min(rows, 149)),
-            "timeOffset": max(-119, min(offset_minutes, 119)),
-            "timeWindow": max(1, min(window_minutes, 119)),
+            "numRows": PAGE_ROWS,
+            "timeOffset": offset,
+            "timeWindow": max(1, min(window, 119)),
         }
         if filter_crs:
             params["filterCrs"] = filter_crs
@@ -184,20 +240,27 @@ class DarwinClient:
         services = [_service(s, board) for s in data.get("trainServices") or []]
         services += [_service(s, board) for s in data.get("busServices") or []]
         services += [_service(s, board) for s in data.get("ferryServices") or []]
+        ref_minutes = _ref_minutes(data)
         # Reference 12h before the board time: very late trains still sort first.
-        ref = _ref_minutes(data) + offset_minutes - 12 * 60
+        ref = ref_minutes + offset - 12 * 60
         services.sort(key=lambda s: _sort_key(s.scheduled, ref))
-        return Board(
-            station=StationRef(name=data.get("locationName") or crs, crs=data.get("crs") or crs),
-            board=board,
-            date=_board_date(data),
-            source="darwin",
-            filter=StationRef(name=data.get("filterLocationName") or filter_crs, crs=filter_crs)
-            if filter_crs
-            else None,
-            services=services[:rows],
-            messages=_messages(data),
-            platform_available=bool(data.get("platformAvailable")),
+        return _Page(
+            board=Board(
+                station=StationRef(
+                    name=data.get("locationName") or crs, crs=data.get("crs") or crs
+                ),
+                board=board,
+                date=_board_date(data),
+                source="darwin",
+                filter=StationRef(name=data.get("filterLocationName") or filter_crs, crs=filter_crs)
+                if filter_crs
+                else None,
+                services=services,
+                messages=_messages(data),
+                platform_available=bool(data.get("platformAvailable")),
+            ),
+            raw_count=len(services),
+            ref_minutes=ref_minutes,
         )
 
     async def service(self, service_id: str) -> ServiceDetail:

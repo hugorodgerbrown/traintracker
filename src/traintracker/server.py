@@ -354,8 +354,12 @@ async def _live_board(
     rows: int,
     offset_minutes: int,
     points: bool,
+    until: Callable[[list[BoardService]], bool] | None = None,
 ) -> Board:
-    """Darwin, then RTT, then booked times; a failing live source falls through."""
+    """Darwin, then RTT, then booked times; a failing live source falls through.
+
+    `until` lets Darwin stop paging once enough services have been seen.
+    """
     notes: list[str] = []
     other_crs = other.crs if other else None
     start = datetime.now(UK_TZ) + timedelta(minutes=offset_minutes)
@@ -364,7 +368,12 @@ async def _live_board(
     if darwin_ok:
         try:
             b = await a.darwin.board(
-                st.crs, board, filter_crs=other_crs, rows=rows, offset_minutes=offset_minutes
+                st.crs,
+                board,
+                filter_crs=other_crs,
+                rows=rows,
+                offset_minutes=offset_minutes,
+                until=until,
             )
         except (UpstreamError, httpx.HTTPError) as exc:
             notes.append(f"National Rail live data unavailable ({_why(exc)}).")
@@ -436,7 +445,7 @@ async def departure_platform(
         target = _when(None, time)
         offset = max(-119, min(119, _minutes_until(target.strftime("%H:%M")) - 1))
     b = await _live_board(a, st, "departures", other, 10, offset, False)
-    _fill_booked_platforms(a, b)
+    _fill_booked_platforms(a, st.crs, b.services)
     candidates = [s for s in b.services if not time or s.scheduled == time]
     if not candidates:
         where = f" to {other.name}" if other else ""
@@ -485,7 +494,12 @@ async def platform_departures(
     def matches(s: BoardService) -> bool:
         return bool(s.platform) and _norm_platform(s.platform or "") == want
 
-    b = await _paged_departures(a, st, lambda b: sum(map(matches, b.services)) >= count)
+    def enough(services: list[BoardService]) -> bool:
+        _fill_booked_platforms(a, st.crs, services)
+        return sum(map(matches, services)) >= count
+
+    b = await _live_board(a, st, "departures", None, 150, 0, False, until=enough)
+    _fill_booked_platforms(a, st.crs, b.services)
     seen = sorted({s.platform for s in b.services if s.platform}, key=_platform_sort)
     b.services = [s for s in b.services if matches(s)][:count]
     if not b.services:
@@ -501,51 +515,10 @@ async def platform_departures(
     return b
 
 
-async def _paged_departures(a: App, st: stations.Station, enough: Callable[[Board], bool]) -> Board:
-    """Departures for the next ~2 hours with booked platforms filled in.
-
-    Darwin's detailed board returns at most 10 trains, so page forward by
-    time offset until `enough` is satisfied or the two-hour window runs out.
-    """
-    if not a.settings.has_darwin:
-        b = await _live_board(a, st, "departures", None, 150, 0, False)
-        _fill_booked_platforms(a, b)
-        return b
-    offset = 0
-    merged: Board | None = None
-    ids: set[str] = set()
-    for _ in range(12):
-        try:
-            page = await a.darwin.board(st.crs, "departures", rows=10, offset_minutes=offset)
-        except (UpstreamError, httpx.HTTPError):
-            if merged is None:  # let the usual fallback chain handle a dead feed
-                b = await _live_board(a, st, "departures", None, 150, 0, False)
-                _fill_booked_platforms(a, b)
-                return b
-            break
-        _fill_booked_platforms(a, page)
-        if merged is None:
-            merged = page.model_copy(update={"services": []})
-        new = [s for s in page.services if s.service_id not in ids]
-        ids.update(s.service_id for s in new)
-        merged.services.extend(new)
-        if not new or len(page.services) < 10 or enough(merged):
-            break
-        last = next((s.scheduled for s in reversed(page.services) if s.scheduled), None)
-        nxt = _minutes_until(last) if last else offset + 1
-        offset = max(nxt, offset + 1)
-        if offset > 119:
-            break
-    assert merged is not None
-    for s in merged.services:
-        s.calling_points = None
-    return merged
-
-
-def _fill_booked_platforms(a: App, b: Board) -> None:
-    """Give live services with no announced platform their timetabled one."""
-    missing = [s for s in b.services if not s.platform and s.scheduled]
-    if b.source == "timetable" or not missing:
+def _fill_booked_platforms(a: App, crs: str, services: list[BoardService]) -> None:
+    """Give departures with no announced platform their timetabled one."""
+    missing = [s for s in services if not s.platform and s.scheduled]
+    if not missing:
         return
     try:
         tt = a.timetable()
@@ -555,7 +528,7 @@ def _fill_booked_platforms(a: App, b: Board) -> None:
     start = now.hour * 60 + now.minute
     by_key: dict[tuple[str, str], str] = {}
     by_time: dict[str, set[str]] = {}
-    for trip, stop in tt.trips_at(b.station.crs or "", now.date(), start - 60, start + 180):
+    for trip, stop in tt.trips_at(crs, now.date(), start - 60, start + 180):
         hhmm = fmt_minutes(minutes_on(now.date(), trip, stop.dep))
         if not hhmm or not stop.platform:
             continue

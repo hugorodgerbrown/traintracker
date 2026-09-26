@@ -1,0 +1,40 @@
+{
+  "generatedAt": "2026-09-26T12:07:31.2912345+01:00",
+  "locationName": "London Liverpool Street",
+  "crs": "LST",
+  "filterLocationName": "Marks Tey",
+  "filtercrs": "MKT",
+  "platformAvailable": true,
+  "nrccMessages": [{"Value": "Engineering works between <a href=\"x\">Shenfield</a> and Colchester this weekend &amp; next."}],
+  "trainServices": [
+    {
+      "std": "13:00", "etd": "13:04", "platform": "10",
+      "operator": "Greater Anglia", "operatorCode": "LE", "serviceType": "train",
+      "serviceID": "1234567LIVST___",
+      "delayReason": "This train has been delayed by a late running freight train",
+      "origin": [{"locationName": "London Liverpool Street", "crs": "LST"}],
+      "destination": [{"locationName": "Colchester", "crs": "COL"}],
+      "subsequentCallingPoints": [{"callingPoint": [
+        {"locationName": "Stratford", "crs": "SRA", "st": "13:07", "et": "13:11"},
+        {"locationName": "Marks Tey", "crs": "MKT", "st": "13:49", "et": "13:52"},
+        {"locationName": "Colchester", "crs": "COL", "st": "13:57", "et": "14:00"}
+      ]}]
+    },
+    {
+      "std": "12:30", "etd": "Cancelled", "platform": null,
+      "operator": "Greater Anglia", "operatorCode": "LE", "serviceType": "train",
+      "serviceID": "7654321LIVST___", "isCancelled": true,
+      "cancelReason": "This train has been cancelled because of a shortage of train crew",
+      "origin": [{"locationName": "London Liverpool Street", "crs": "LST"}],
+      "destination": [{"locationName": "Colchester", "crs": "COL"}]
+    }
+  ],
+  "busServices": [
+    {
+      "std": "12:45", "etd": "On time", "operator": "Greater Anglia", "serviceType": "bus",
+      "serviceID": "BUS1LIVST___",
+      "origin": [{"locationName": "London Liverpool Street", "crs": "LST"}],
+      "destination": [{"locationName": "Colchester", "crs": "COL"}]
+    }
+  ]
+}

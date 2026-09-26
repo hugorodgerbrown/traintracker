@@ -196,12 +196,20 @@ Logs go to stderr; stdout carries the MCP protocol.
 
 ## Development
 
+tox runs formatting, lint, type and test checks on Python 3.11 from `uv.lock` (via the `tox-uv` plugin):
+
 ```bash
-uv sync
-uv run pytest          # 62 tests: importer, STP rules, planner, download, clients, tools end to end
-uv run ruff check src tests
-uv run mypy            # strict
+uvx --with tox-uv tox              # all environments: format, lint, type, tests
+uvx --with tox-uv tox -e tests     # one environment
+uvx --with tox-uv tox -e tests -- -k platform   # arguments after -- go to the tool
 ```
+
+| Environment | Runs |
+|---|---|
+| `format` | `ruff format --check` |
+| `lint` | `ruff check` |
+| `type` | `mypy` (strict) |
+| `tests` | `pytest`: importer, STP rules, planner, download, clients, tools end to end |
 
 Tests use a synthetic SCHEDULE feed in Network Rail's JSON format (`tests/feedgen.py`) and API fixtures shaped on the published Darwin and RTT schemas. They aren't live recordings, so the first run against real services is the final check.
 

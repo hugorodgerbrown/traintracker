@@ -203,3 +203,53 @@ async def test_non_json_body_is_a_clear_error(settings: Settings) -> None:
 def test_settings_repr_hides_secrets(settings: Settings) -> None:
     assert "darwin-key" not in repr(settings)
     assert "rtt-token" not in repr(settings)
+
+
+def _darwin_page(times: list[str]) -> dict[str, Any]:
+    return {
+        "generatedAt": "2026-09-26T12:55:00+01:00",
+        "locationName": "London Liverpool Street",
+        "crs": "LST",
+        "trainServices": [
+            {
+                "std": t,
+                "etd": "On time",
+                "serviceID": f"S{t.replace(':', '')}",
+                "origin": [{"locationName": "London Liverpool Street", "crs": "LST"}],
+                "destination": [{"locationName": "Colchester", "crs": "COL"}],
+            }
+            for t in times
+        ],
+    }
+
+
+@respx.mock
+async def test_darwin_pages_past_ten_rows(settings: Settings) -> None:
+    pages = {
+        "0": [f"13:{m:02d}" for m in range(0, 10)],
+        "14": [f"13:{m:02d}" for m in range(9, 19)],  # overlaps the first page by one
+    }
+    route = respx.get(f"{settings.darwin_departures_url}/GetDepBoardWithDetails/LST").mock(
+        side_effect=lambda req: httpx.Response(
+            200, json=_darwin_page(pages[req.url.params["timeOffset"]])
+        )
+    )
+    async with httpx.AsyncClient() as http:
+        board = await DarwinClient(settings, http).board("LST", "departures", rows=15)
+    assert [s.scheduled for s in board.services] == [f"13:{m:02d}" for m in range(0, 15)]
+    assert [c.request.url.params["numRows"] for c in route.calls] == ["10", "10"]
+
+
+@respx.mock
+async def test_darwin_keeps_first_page_when_a_later_page_fails(settings: Settings) -> None:
+    def respond(req: httpx.Request) -> httpx.Response:
+        if req.url.params["timeOffset"] == "0":
+            return httpx.Response(200, json=_darwin_page([f"13:{m:02d}" for m in range(10)]))
+        return httpx.Response(503)
+
+    respx.get(f"{settings.darwin_departures_url}/GetDepBoardWithDetails/LST").mock(
+        side_effect=respond
+    )
+    async with httpx.AsyncClient() as http:
+        board = await DarwinClient(settings, http).board("LST", "departures", rows=20)
+    assert len(board.services) == 10

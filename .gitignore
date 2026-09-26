@@ -12,3 +12,4 @@ dist/
 *.json.gz
 *.part
 .DS_Store
+.tox/

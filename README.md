@@ -29,6 +29,8 @@ flowchart LR
 |---|---|---|
 | `find_station` | "Which Sudbury?" Station names ↔ CRS codes | Bundled station list |
 | `live_departures` | Next trains, expected times, platforms, delays, cancellations | Darwin; if it's not set up or fails, RTT, then booked times |
+| `departure_platform` | "Which platform is the 13:00 to Colchester?" One train's platform, flagged `live` or `booked` | Darwin (paged); booked platform from the local timetable until the live one is announced |
+| `platform_departures` | "What are the next three trains from platform 7?" | Same as `departure_platform` |
 | `live_arrivals` | Trains arriving in the next ~2 hours | Darwin arrivals; if not set up or failing, RTT, then booked times |
 | `timetable` | Booked departures/arrivals at a station on any date | Local timetable → RTT |
 | `service_details` | Every stop for one train | Whichever source issued the ID |
@@ -194,12 +196,20 @@ Logs go to stderr; stdout carries the MCP protocol.
 
 ## Development
 
+tox runs formatting, lint, type and test checks on Python 3.11 from `uv.lock` (via the `tox-uv` plugin):
+
 ```bash
-uv sync
-uv run pytest          # 62 tests: importer, STP rules, planner, download, clients, tools end to end
-uv run ruff check src tests
-uv run mypy            # strict
+uvx --with tox-uv tox              # all environments: format, lint, type, tests
+uvx --with tox-uv tox -e tests     # one environment
+uvx --with tox-uv tox -e tests -- -k platform   # arguments after -- go to the tool
 ```
+
+| Environment | Runs |
+|---|---|
+| `format` | `ruff format --check` |
+| `lint` | `ruff check` |
+| `type` | `mypy` (strict) |
+| `tests` | `pytest`: importer, STP rules, planner, download, clients, tools end to end |
 
 Tests use a synthetic SCHEDULE feed in Network Rail's JSON format (`tests/feedgen.py`) and API fixtures shaped on the published Darwin and RTT schemas. They aren't live recordings, so the first run against real services is the final check.
 

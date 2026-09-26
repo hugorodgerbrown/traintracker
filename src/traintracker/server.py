@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
+import re
 import sqlite3
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -34,6 +35,7 @@ from traintracker.models import (
     Journey,
     JourneyLeg,
     JourneyPlan,
+    PlatformCheck,
     ServiceDetail,
     StationMatch,
     StationRef,
@@ -57,7 +59,9 @@ INSTRUCTIONS = """\
 GB (National Rail) train times.
 - Resolve places with find_station when unsure; every tool also accepts names or CRS codes.
   If a tool says a name is ambiguous, ask the person which station they mean.
-- "Next train", "is it on time", platforms: live_departures (live_arrivals for arrivals).
+- "Next train", "is it on time": live_departures (live_arrivals for arrivals).
+- "Which platform is my train?": departure_platform. "What's leaving from platform 4?":
+  platform_departures. A 'booked' platform_source is the timetabled platform, not yet confirmed.
 - A future date/time, or "what trains are there": timetable.
 - Getting from A to B, including changes: plan_journey. It uses the timetable and adds
   live times for today's trains where available.
@@ -241,6 +245,7 @@ def _trip_board_service(
         destination=[_ref(trip.stops[-1].crs)],
         scheduled=fmt_minutes(minutes_on(day, trip, t)),
         platform=stop.platform,
+        platform_source="booked" if stop.platform else None,
         status="scheduled",
         calling_points=[
             CallingPoint(
@@ -349,8 +354,12 @@ async def _live_board(
     rows: int,
     offset_minutes: int,
     points: bool,
+    until: Callable[[list[BoardService]], bool] | None = None,
 ) -> Board:
-    """Darwin, then RTT, then booked times; a failing live source falls through."""
+    """Darwin, then RTT, then booked times; a failing live source falls through.
+
+    `until` lets Darwin stop paging once enough services have been seen.
+    """
     notes: list[str] = []
     other_crs = other.crs if other else None
     start = datetime.now(UK_TZ) + timedelta(minutes=offset_minutes)
@@ -359,7 +368,12 @@ async def _live_board(
     if darwin_ok:
         try:
             b = await a.darwin.board(
-                st.crs, board, filter_crs=other_crs, rows=rows, offset_minutes=offset_minutes
+                st.crs,
+                board,
+                filter_crs=other_crs,
+                rows=rows,
+                offset_minutes=offset_minutes,
+                until=until,
             )
         except (UpstreamError, httpx.HTTPError) as exc:
             notes.append(f"National Rail live data unavailable ({_why(exc)}).")
@@ -409,6 +423,150 @@ async def live_arrivals(
         0,
         include_calling_points,
     )
+
+
+@mcp.tool()
+@_tool_errors
+async def departure_platform(
+    station: Annotated[str, Field(description="Station name or CRS code.")],
+    to: Annotated[str | None, Field(description="Only trains calling at this station.")] = None,
+    time: Annotated[
+        str | None, Field(description="Booked departure HH:MM (24h). Default: the next train.")
+    ] = None,
+) -> PlatformCheck:
+    """Which platform one train leaves from. Live platforms are often announced only
+    ~10 minutes before departure at large stations; until then the booked (timetable)
+    platform is returned and flagged as 'booked'."""
+    a = app()
+    st = _station(station)
+    other = _station(to) if to else None
+    offset = 0
+    if time:
+        target = _when(None, time)
+        offset = max(-119, min(119, _minutes_until(target.strftime("%H:%M")) - 1))
+    b = await _live_board(a, st, "departures", other, 10, offset, False)
+    _fill_booked_platforms(a, st.crs, b.services)
+    candidates = [s for s in b.services if not time or s.scheduled == time]
+    if not candidates:
+        where = f" to {other.name}" if other else ""
+        when = f" at {time}" if time else " in the next two hours"
+        raise ToolError(f"No departure from {st.name}{where}{when}.")
+    svc = candidates[0]
+    return PlatformCheck(
+        station=b.station,
+        service=svc,
+        platform=svc.platform,
+        platform_source=svc.platform_source,
+        minutes_to_departure=_minutes_until(_departure_hhmm(svc)),
+        note=_platform_note(svc, b),
+    )
+
+
+def _platform_note(svc: BoardService, b: Board) -> str:
+    if svc.status == "cancelled":
+        return "This train is cancelled."
+    if svc.platform_source == "live":
+        return f"Platform {svc.platform}."
+    if svc.platform:
+        return (
+            f"Booked for platform {svc.platform}; not yet confirmed by the live feed. "
+            "Check again nearer departure."
+        )
+    if b.platform_available is False:
+        return "This station does not publish platform numbers."
+    return "Platform not yet announced. Check again nearer departure."
+
+
+@mcp.tool()
+@_tool_errors
+async def platform_departures(
+    station: Annotated[str, Field(description="Station name or CRS code.")],
+    platform: Annotated[str, Field(description="Platform, e.g. '4' or '9B'.")],
+    count: Annotated[int, Field(ge=1, le=10)] = 3,
+) -> Board:
+    """The next trains leaving from one platform in the next ~2 hours. A train whose live
+    platform isn't announced yet is matched on its booked platform (platform_source
+    'booked'), which can still change."""
+    a = app()
+    st = _station(station)
+    want = _norm_platform(platform)
+
+    def matches(s: BoardService) -> bool:
+        return bool(s.platform) and _norm_platform(s.platform or "") == want
+
+    def enough(services: list[BoardService]) -> bool:
+        _fill_booked_platforms(a, st.crs, services)
+        return sum(map(matches, services)) >= count
+
+    b = await _live_board(a, st, "departures", None, 150, 0, False, until=enough)
+    _fill_booked_platforms(a, st.crs, b.services)
+    seen = sorted({s.platform for s in b.services if s.platform}, key=_platform_sort)
+    b.services = [s for s in b.services if matches(s)][:count]
+    if not b.services:
+        b.messages.append(
+            f"No departures from platform {platform} in the next two hours."
+            + (f" Platforms in use: {', '.join(seen)}." if seen else "")
+        )
+    elif any(s.platform_source == "booked" for s in b.services):
+        b.messages.append(
+            "Trains marked platform_source 'booked' use the timetabled platform; "
+            "the live platform may differ once announced."
+        )
+    return b
+
+
+def _fill_booked_platforms(a: App, crs: str, services: list[BoardService]) -> None:
+    """Give departures with no announced platform their timetabled one."""
+    missing = [s for s in services if not s.platform and s.scheduled]
+    if not missing:
+        return
+    try:
+        tt = a.timetable()
+    except TrainTrackerError:
+        return  # booked platforms are a bonus
+    now = datetime.now(UK_TZ)
+    start = now.hour * 60 + now.minute
+    by_key: dict[tuple[str, str], str] = {}
+    by_time: dict[str, set[str]] = {}
+    for trip, stop in tt.trips_at(crs, now.date(), start - 60, start + 180):
+        hhmm = fmt_minutes(minutes_on(now.date(), trip, stop.dep))
+        if not hhmm or not stop.platform:
+            continue
+        by_key[(hhmm, trip.stops[-1].crs)] = stop.platform
+        by_time.setdefault(hhmm, set()).add(stop.platform)
+    for s in missing:
+        assert s.scheduled is not None
+        plat = next(
+            (by_key[k] for d in s.destination if (k := (s.scheduled, d.crs or "")) in by_key), None
+        )
+        if plat is None and len(by_time.get(s.scheduled, ())) == 1:
+            plat = next(iter(by_time[s.scheduled]))
+        if plat:
+            s.platform, s.platform_source = plat, "booked"
+
+
+def _norm_platform(value: str) -> str:
+    return re.sub(r"^(platform|plat|pl|p)\s*", "", value.strip(), flags=re.I).upper()
+
+
+def _platform_sort(value: str) -> tuple[int, str]:
+    digits = re.match(r"\d+", value)
+    return (int(digits.group()) if digits else 10_000, value)
+
+
+def _departure_hhmm(s: BoardService) -> str | None:
+    exp = (s.expected or "").rstrip("*")
+    return exp if re.fullmatch(r"\d{2}:\d{2}", exp) else s.scheduled
+
+
+def _minutes_until(hhmm: str | None) -> int:
+    """Minutes from now to HH:MM, taking times up to 12 hours back as in the past."""
+    if not hhmm:
+        return 0
+    now = datetime.now(UK_TZ)
+    h, m = hhmm.split(":")
+    diff = (int(h) * 60 + int(m) - (now.hour * 60 + now.minute)) % (24 * 60)
+    return diff - 24 * 60 if diff > 12 * 60 else diff
 
 
 @mcp.tool()

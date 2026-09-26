@@ -60,6 +60,8 @@ async def test_lists_all_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
             "find_station",
             "live_departures",
             "live_arrivals",
+            "departure_platform",
+            "platform_departures",
             "timetable",
             "service_details",
             "plan_journey",
@@ -264,3 +266,95 @@ def test_risk_carries_through_tube_link() -> None:
 def test_live_time_before_midnight() -> None:
     t = server._live_time("2026-10-03T00:05:00+01:00", "23:59")
     assert t is not None and t.isoformat() == "2026-10-02T23:59:00+01:00"
+
+
+# ----------------------------------------------------------------- platforms
+
+NOW = datetime(2026, 10, 2, 12, 55, tzinfo=UK_TZ)
+
+
+class _Frozen(datetime):
+    @classmethod
+    def now(cls, tz: Any = None) -> datetime:  # type: ignore[override]
+        return NOW if tz else NOW.replace(tzinfo=None)
+
+
+def _darwin_svc(std: str, platform: str | None, dest: str = "COL") -> dict[str, Any]:
+    svc: dict[str, Any] = {
+        "std": std,
+        "etd": "On time",
+        "operator": "Greater Anglia",
+        "serviceType": "train",
+        "serviceID": f"SVC{std.replace(':', '')}",
+        "origin": [{"locationName": "London Liverpool Street", "crs": "LST"}],
+        "destination": [{"locationName": dest, "crs": dest}],
+    }
+    if platform:
+        svc["platform"] = platform
+    return svc
+
+
+def _darwin_board(services: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "generatedAt": NOW.isoformat(),
+        "locationName": "London Liverpool Street",
+        "crs": "LST",
+        "platformAvailable": True,
+        "trainServices": services,
+    }
+
+
+@respx.mock
+async def test_departure_platform_live(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(server, "datetime", _Frozen)
+    async with connect(tmp_path, monkeypatch) as client:
+        respx.get(f"{DARWIN_DEPARTURES_URL}/GetDepBoardWithDetails/LST").mock(
+            return_value=httpx.Response(200, json=_darwin_board([_darwin_svc("13:00", "7")]))
+        )
+        out = await call(client, "departure_platform", station="LST")
+    assert out["platform"] == "7" and out["platform_source"] == "live"
+    assert out["minutes_to_departure"] == 5
+    assert out["note"] == "Platform 7."
+
+
+@respx.mock
+async def test_departure_platform_falls_back_to_booked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(server, "datetime", _Frozen)
+    async with connect(tmp_path, monkeypatch) as client:
+        respx.get(f"{DARWIN_DEPARTURES_URL}/GetDepBoardWithDetails/LST").mock(
+            return_value=httpx.Response(
+                200, json=_darwin_board([_darwin_svc("12:58", "3"), _darwin_svc("13:00", None)])
+            )
+        )
+        out = await call(client, "departure_platform", station="LST", time="13:00")
+        missing = await error(client, "departure_platform", station="LST", time="13:30")
+    # The timetable books the 13:00 to Colchester into platform 10.
+    assert out["platform"] == "10" and out["platform_source"] == "booked"
+    assert out["note"].startswith("Booked for platform 10")
+    assert "No departure" in missing
+
+
+@respx.mock
+async def test_platform_departures_pages_through_board(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(server, "datetime", _Frozen)
+    first = [_darwin_svc(f"13:{m:02d}", "7" if m == 1 else "2") for m in range(1, 11)]
+    second = [_darwin_svc(f"13:{m:02d}", "7" if m in (12, 14, 16) else "2") for m in range(10, 20)]
+
+    def board(request: httpx.Request) -> httpx.Response:
+        page = first if request.url.params["timeOffset"] == "0" else second
+        return httpx.Response(200, json=_darwin_board(page))
+
+    async with connect(tmp_path, monkeypatch) as client:
+        route = respx.get(f"{DARWIN_DEPARTURES_URL}/GetDepBoardWithDetails/LST").mock(
+            side_effect=board
+        )
+        out = await call(client, "platform_departures", station="LST", platform="Platform 7")
+        none = await call(client, "platform_departures", station="LST", platform="9")
+    assert [s["scheduled"] for s in out["services"]] == ["13:01", "13:12", "13:14"]
+    assert route.calls[1].request.url.params["timeOffset"] == "15"  # 13:10 is 15 min away
+    assert none["services"] == []
+    assert "Platforms in use: 2, 7." in none["messages"][-1]

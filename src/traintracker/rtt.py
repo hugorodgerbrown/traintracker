@@ -105,6 +105,13 @@ def _platform(meta: dict[str, Any] | None) -> str | None:
     return str(value) if value else None
 
 
+def _platform_source(meta: dict[str, Any] | None) -> Literal["live", "booked"] | None:
+    plat = (meta or {}).get("platform") or {}
+    if plat.get("actual") or plat.get("forecast"):
+        return "live"
+    return "booked" if plat.get("planned") else None
+
+
 def _mode(schedule: dict[str, Any]) -> str:
     mode = (schedule.get("modeType") or "TRAIN").upper()
     return {
@@ -200,6 +207,7 @@ def board_service(item: dict[str, Any], board: Literal["departures", "arrivals"]
         scheduled=hhmm(t.scheduled),
         expected="Cancelled" if cancelled else expected_text(t),
         platform=_platform(item.get("locationMetadata")),
+        platform_source=_platform_source(item.get("locationMetadata")),
         status=status,
         delay_minutes=delay,
         reason=reason,

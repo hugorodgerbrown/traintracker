@@ -29,6 +29,8 @@ flowchart LR
 |---|---|---|
 | `find_station` | "Which Sudbury?" Station names ↔ CRS codes | Bundled station list |
 | `live_departures` | Next trains, expected times, platforms, delays, cancellations | Darwin; if it's not set up or fails, RTT, then booked times |
+| `departure_platform` | "Which platform is the 13:00 to Colchester?" One train's platform, flagged `live` or `booked` | Darwin (paged); booked platform from the local timetable until the live one is announced |
+| `platform_departures` | "What are the next three trains from platform 7?" | Same as `departure_platform` |
 | `live_arrivals` | Trains arriving in the next ~2 hours | Darwin arrivals; if not set up or failing, RTT, then booked times |
 | `timetable` | Booked departures/arrivals at a station on any date | Local timetable → RTT |
 | `service_details` | Every stop for one train | Whichever source issued the ID |

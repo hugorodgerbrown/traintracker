@@ -115,6 +115,7 @@ def _service(raw: dict[str, Any], board: Literal["departures", "arrivals"]) -> B
         scheduled=scheduled,
         expected=expected,
         platform=raw.get("platform"),
+        platform_source="live" if raw.get("platform") else None,
         status=status,
         delay_minutes=delay,
         reason=raw.get("cancelReason") or raw.get("delayReason"),
@@ -196,6 +197,7 @@ class DarwinClient:
             else None,
             services=services[:rows],
             messages=_messages(data),
+            platform_available=bool(data.get("platformAvailable")),
         )
 
     async def service(self, service_id: str) -> ServiceDetail:

@@ -11,6 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 Source = Literal["darwin", "rtt", "timetable"]
+PlatformSource = Literal["live", "booked"]
 Status = Literal[
     "on_time", "late", "early", "cancelled", "delayed", "no_report", "scheduled", "unknown"
 ]
@@ -43,6 +44,11 @@ class BoardService(BaseModel):
     scheduled: str | None = Field(None, description="Booked time at this station (HH:MM).")
     expected: str | None = Field(None, description="Forecast/actual time or status text.")
     platform: str | None = None
+    platform_source: PlatformSource | None = Field(
+        None,
+        description="'live' if announced by the live feed, 'booked' if from the timetable "
+        "(can still change).",
+    )
     status: Status = "unknown"
     delay_minutes: int | None = None
     reason: str | None = Field(None, description="Delay or cancellation reason, if given.")
@@ -59,6 +65,9 @@ class Board(BaseModel):
     filter: StationRef | None = None
     services: list[BoardService]
     messages: list[str] = Field(default_factory=list, description="Station/network alerts.")
+    platform_available: bool | None = Field(
+        None, description="False if the live feed publishes no platforms for this station."
+    )
 
 
 class ServiceDetail(BaseModel):
@@ -109,6 +118,17 @@ class JourneyPlan(BaseModel):
     journeys: list[Journey]
     interchanges_considered: list[StationRef] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
+
+
+class PlatformCheck(BaseModel):
+    station: StationRef
+    service: BoardService
+    platform: str | None = None
+    platform_source: PlatformSource | None = None
+    minutes_to_departure: int | None = Field(
+        None, description="From now to the expected (else booked) departure."
+    )
+    note: str
 
 
 class StationMatch(BaseModel):

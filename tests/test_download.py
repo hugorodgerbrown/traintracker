@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gzip
+import logging
 from pathlib import Path
 
 import httpx
@@ -9,6 +10,7 @@ import respx
 
 from traintracker.config import NR_SCHEDULE_URL, Settings
 from traintracker.errors import NotConfigured, UpstreamError
+from traintracker.server import main
 from traintracker.timetable import Timetable, download_and_build
 
 from . import feedgen
@@ -70,3 +72,34 @@ async def test_needs_credentials(settings: Settings, monkeypatch: pytest.MonkeyP
     monkeypatch.delenv("NR_PASSWORD")
     with pytest.raises(NotConfigured, match="publicdatafeeds"):
         await download_and_build(Settings.from_env())
+
+
+@respx.mock
+def test_refresh_does_not_log_presigned_url(
+    settings: Settings,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in ("httpx", "httpcore"):
+        # main() raises these loggers' levels; restore them for later tests.
+        monkeypatch.setattr(logging.getLogger(name), "level", logging.NOTSET)
+    caplog.set_level(logging.DEBUG)
+    presigned = (
+        "https://ntrod-prod2-schedule-json.s3.eu-west-2.amazonaws.com/feed.gz"
+        "?X-Amz-Credential=AKIA%2Fexample&X-Amz-Security-Token=token&X-Amz-Signature=sig"
+    )
+    respx.get(NR_SCHEDULE_URL).mock(
+        return_value=httpx.Response(302, headers={"Location": presigned})
+    )
+    respx.get(presigned).mock(
+        return_value=httpx.Response(
+            200,
+            content=gzip.compress("\n".join(feedgen.feed()).encode()),
+            headers={"content-type": "application/gzip"},
+        )
+    )
+    main(["refresh"])
+    assert settings.timetable_path.exists()
+    assert "X-Amz-" not in caplog.text
+    assert "X-Amz-" not in capsys.readouterr().err

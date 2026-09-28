@@ -3,6 +3,7 @@ bearer token, the health check and the Host check."""
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import os
@@ -183,6 +184,68 @@ async def test_wrong_passphrases_end_the_sign_in(
     assert r.status_code == 403
     again = await client.post("/sign-in", data={"request": sign_in, "passphrase": PASSPHRASE})
     assert again.status_code == 400 and "expired" in again.text
+
+
+async def test_parallel_wrong_passphrases_share_the_attempt_limit(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(oauth, "MAX_ATTEMPTS", 3)
+    client_id = await _register(client)
+    sign_in, _ = await _start_sign_in(client, client_id)
+    responses = await asyncio.gather(
+        *(
+            client.post("/sign-in", data={"request": sign_in, "passphrase": f"guess {i}"})
+            for i in range(10)
+        )
+    )
+    checked = [r for r in responses if r.status_code != 400]  # passphrase was compared
+    assert len(checked) == 3
+
+
+async def test_codes_are_not_stored_in_the_clear(
+    client: httpx.AsyncClient, settings: Settings
+) -> None:
+    client_id = await _register(client)
+    sign_in, _ = await _start_sign_in(client, client_id)
+    ok = await client.post("/sign-in", data={"request": sign_in, "passphrase": PASSPHRASE})
+    code = parse_qs(urlparse(ok.headers["location"]).query)["code"][0]
+    with psycopg.connect(settings.database_url or "") as con:
+        stored = con.execute(f"SELECT data::text FROM {settings.auth_schema}.codes").fetchall()
+    assert stored and all(code not in row[0] for row in stored)
+
+
+async def test_failed_refresh_keeps_the_current_tokens(
+    client: httpx.AsyncClient, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider = _provider(settings)
+    client_id = await _register(client)
+    sign_in, verifier = await _start_sign_in(client, client_id)
+    ok = await client.post("/sign-in", data={"request": sign_in, "passphrase": PASSPHRASE})
+    code = parse_qs(urlparse(ok.headers["location"]).query)["code"][0]
+    tokens = (
+        await _token(
+            client,
+            grant_type="authorization_code",
+            code=code,
+            redirect_uri=CALLBACK,
+            client_id=client_id,
+            code_verifier=verifier,
+        )
+    ).json()
+    registered = await provider.get_client(client_id)
+    assert registered is not None
+    refresh = await provider.load_refresh_token(registered, tokens["refresh_token"])
+    assert refresh is not None
+
+    def broken_issue(*_: object) -> tuple[list[tuple[str, tuple[()]]], None]:
+        return [("INSERT INTO no_such_table VALUES (1)", ())], None
+
+    monkeypatch.setattr(provider, "_issue", broken_issue)
+    with pytest.raises(psycopg.Error):
+        await provider.exchange_refresh_token(registered, refresh, [])
+    # The rotation rolled back: the client's current pair still works.
+    assert await provider.load_refresh_token(registered, tokens["refresh_token"]) is not None
+    assert await provider.load_access_token(tokens["access_token"]) is not None
 
 
 async def test_unknown_sign_in_link(client: httpx.AsyncClient) -> None:

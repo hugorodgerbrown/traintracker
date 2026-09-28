@@ -1,57 +1,206 @@
-"""The bearer-token gate in front of the streamable-HTTP server."""
+"""The hosted HTTP app: OAuth sign-in (for claude.ai connectors), the static
+bearer token, the health check and the Host check."""
 
 from __future__ import annotations
 
-from typing import Any
+import base64
+import hashlib
+import os
+import secrets
+from collections.abc import AsyncIterator
+from urllib.parse import parse_qs, urlparse
 
 import httpx
+import psycopg
 import pytest
 from mcp.server.transport_security import TransportSecurityMiddleware
 from starlette.requests import Request
 
+from traintracker import oauth, server
 from traintracker.config import Settings
-from traintracker.http_app import BearerAuth, transport_security
+from traintracker.http_app import build_app, transport_security
+from traintracker.oauth import TraintrackerOAuthProvider
 from traintracker.server import main
 
-
-async def _inner(scope: dict[str, Any], receive: Any, send: Any) -> None:
-    await send({"type": "http.response.start", "status": 200, "headers": []})
-    await send({"type": "http.response.body", "body": b"inner"})
-
-
-def _client() -> httpx.AsyncClient:
-    transport = httpx.ASGITransport(app=BearerAuth(_inner, "s3cret"))
-    return httpx.AsyncClient(transport=transport, base_url="http://test")
+BASE = "https://tt.test"
+CALLBACK = "https://claude.ai/api/mcp/auth_callback"
+PASSPHRASE = "correct horse battery staple"
 
 
-async def test_health_check_needs_no_token() -> None:
-    async with _client() as c:
-        r = await c.get("/healthz")
-    assert (r.status_code, r.text) == (200, "ok")
+@pytest.fixture
+def settings(monkeypatch: pytest.MonkeyPatch) -> Settings:
+    monkeypatch.setenv("MCP_PUBLIC_URL", BASE)
+    monkeypatch.setenv("MCP_PUBLIC_HOSTS", "tt.test")
+    monkeypatch.setenv("MCP_OAUTH_PASSPHRASE", PASSPHRASE)
+    monkeypatch.setenv("MCP_AUTH_TOKEN", "static-token")
+    monkeypatch.setenv("MCP_AUTH_SCHEMA", os.environ["TIMETABLE_SCHEMA"] + "_auth")
+    return Settings.from_env()
 
 
-@pytest.mark.parametrize("header", [None, "Bearer wrong", "s3cret", "Basic s3cret"])
-async def test_rejects_missing_or_wrong_token(header: str | None) -> None:
-    headers = {"Authorization": header} if header else {}
-    async with _client() as c:
-        r = await c.post("/mcp", headers=headers)
+@pytest.fixture
+async def client(settings: Settings) -> AsyncIterator[httpx.AsyncClient]:
+    transport = httpx.ASGITransport(app=build_app(server.mcp, settings))
+    async with httpx.AsyncClient(transport=transport, base_url=BASE) as c:
+        yield c
+
+
+def _provider(settings: Settings) -> TraintrackerOAuthProvider:
+    provider = TraintrackerOAuthProvider(
+        settings.database_url or "",
+        settings.public_url,
+        settings.oauth_passphrase,
+        settings.mcp_auth_token,
+        schema=settings.auth_schema,
+    )
+    provider.create_tables()
+    return provider
+
+
+async def _register(client: httpx.AsyncClient) -> str:
+    r = await client.post(
+        "/register",
+        json={
+            "client_name": "Claude",
+            "redirect_uris": [CALLBACK],
+            "token_endpoint_auth_method": "none",
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+        },
+    )
+    assert r.status_code == 201, r.text
+    return str(r.json()["client_id"])
+
+
+async def _start_sign_in(client: httpx.AsyncClient, client_id: str) -> tuple[str, str]:
+    """Run /authorize; return the sign-in request id and the PKCE verifier."""
+    verifier = secrets.token_urlsafe(48)
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
+    r = await client.get(
+        "/authorize",
+        params={
+            "response_type": "code",
+            "client_id": client_id,
+            "redirect_uri": CALLBACK,
+            "code_challenge": challenge.decode().rstrip("="),
+            "code_challenge_method": "S256",
+            "state": "xyz",
+            "resource": f"{BASE}/mcp",
+        },
+    )
+    assert r.status_code == 302, r.text
+    location = urlparse(r.headers["location"])
+    assert f"{location.scheme}://{location.netloc}{location.path}" == f"{BASE}/sign-in"
+    return parse_qs(location.query)["request"][0], verifier
+
+
+async def _token(client: httpx.AsyncClient, **form: str) -> httpx.Response:
+    return await client.post("/token", data=form)
+
+
+async def test_discovery_and_unauthenticated_mcp(client: httpx.AsyncClient) -> None:
+    meta = (await client.get("/.well-known/oauth-authorization-server")).json()
+    assert meta["issuer"] == BASE
+    assert meta["registration_endpoint"] == f"{BASE}/register"
+    resource = (await client.get("/.well-known/oauth-protected-resource/mcp")).json()
+    assert resource["resource"] == f"{BASE}/mcp"
+    r = await client.post("/mcp", json={})
     assert r.status_code == 401
-    assert r.headers["www-authenticate"] == "Bearer"
+    assert "resource_metadata" in r.headers["www-authenticate"]
+    assert (await client.get("/healthz")).text == "ok"
 
 
-async def test_passes_the_right_token_through() -> None:
-    async with _client() as c:
-        r = await c.post("/mcp", headers={"Authorization": "Bearer s3cret"})
-    assert (r.status_code, r.text) == (200, "inner")
+async def test_sign_in_issues_tokens_that_rotate_and_revoke(
+    client: httpx.AsyncClient, settings: Settings
+) -> None:
+    provider = _provider(settings)
+    client_id = await _register(client)
+    sign_in, verifier = await _start_sign_in(client, client_id)
+
+    page = await client.get("/sign-in", params={"request": sign_in})
+    assert page.status_code == 200 and "Claude" in page.text
+    wrong = await client.post("/sign-in", data={"request": sign_in, "passphrase": "nope"})
+    assert wrong.status_code == 401 and "Wrong passphrase" in wrong.text
+
+    ok = await client.post("/sign-in", data={"request": sign_in, "passphrase": PASSPHRASE})
+    assert ok.status_code == 302
+    back = urlparse(ok.headers["location"])
+    assert f"{back.scheme}://{back.netloc}{back.path}" == CALLBACK
+    query = parse_qs(back.query)
+    assert query["state"] == ["xyz"]
+    code = query["code"][0]
+
+    exchange = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": CALLBACK,
+        "client_id": client_id,
+        "code_verifier": verifier,
+        "resource": f"{BASE}/mcp",
+    }
+    tokens = (await _token(client, **exchange)).json()
+    access, refresh = tokens["access_token"], tokens["refresh_token"]
+    assert tokens["token_type"].lower() == "bearer"
+    found = await provider.load_access_token(access)
+    assert found is not None and found.resource == f"{BASE}/mcp"
+    replay = await _token(client, **exchange)
+    assert replay.status_code == 400 and replay.json()["error"] == "invalid_grant"
+
+    rotated = await _token(
+        client, grant_type="refresh_token", refresh_token=refresh, client_id=client_id
+    )
+    assert rotated.status_code == 200, rotated.text
+    new_access = rotated.json()["access_token"]
+    assert await provider.load_access_token(access) is None  # old pair retired
+    reused = await _token(
+        client, grant_type="refresh_token", refresh_token=refresh, client_id=client_id
+    )
+    assert reused.status_code == 400
+
+    # Nothing secret is stored in the clear.
+    with psycopg.connect(settings.database_url or "") as con:
+        stored = con.execute(
+            f"SELECT token_hash, data::text FROM {settings.auth_schema}.tokens"
+        ).fetchall()
+    dump = " ".join(" ".join(row) for row in stored)
+    assert stored and refresh not in dump and new_access not in dump
+
+    # The SDK's revocation model requires client_secret to be present, even for
+    # public clients (token_endpoint_auth_method "none"), so send it empty.
+    revoked = await client.post(
+        "/revoke", data={"token": new_access, "client_id": client_id, "client_secret": ""}
+    )
+    assert revoked.status_code == 200
+    assert await provider.load_access_token(new_access) is None
 
 
-def test_empty_token_is_refused() -> None:
-    with pytest.raises(ValueError, match="empty"):
-        BearerAuth(_inner, "")
+async def test_wrong_passphrases_end_the_sign_in(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(oauth, "MAX_ATTEMPTS", 1)
+    client_id = await _register(client)
+    sign_in, _ = await _start_sign_in(client, client_id)
+    r = await client.post("/sign-in", data={"request": sign_in, "passphrase": "nope"})
+    assert r.status_code == 403
+    again = await client.post("/sign-in", data={"request": sign_in, "passphrase": PASSPHRASE})
+    assert again.status_code == 400 and "expired" in again.text
 
 
-def test_serve_http_requires_a_token(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_unknown_sign_in_link(client: httpx.AsyncClient) -> None:
+    r = await client.get("/sign-in", params={"request": "made-up"})
+    assert r.status_code == 400
+    assert r.headers["x-frame-options"] == "DENY"
+
+
+async def test_static_token_still_works(settings: Settings) -> None:
+    provider = _provider(settings)
+    token = await provider.load_access_token("static-token")
+    assert token is not None and token.resource == f"{BASE}/mcp"
+    assert await provider.load_access_token("static-token-nope") is None
+
+
+def test_serve_http_needs_a_token_or_passphrase(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("MCP_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("MCP_OAUTH_PASSPHRASE", raising=False)
     with pytest.raises(SystemExit) as exit_info:
         main(["serve-http"])
     assert exit_info.value.code == 2
@@ -93,6 +242,13 @@ def test_public_hosts_keep_the_render_hostname(monkeypatch: pytest.MonkeyPatch) 
         "b.example",
         "traintracker.onrender.com",
     )
+
+
+def test_public_url_defaults_to_the_first_public_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MCP_PUBLIC_URL", raising=False)
+    monkeypatch.setenv("MCP_PUBLIC_HOSTS", "traintrackr.live")
+    monkeypatch.setenv("RENDER_EXTERNAL_HOSTNAME", "traintracker.onrender.com")
+    assert Settings.from_env().public_url == "https://traintrackr.live"
 
 
 def test_no_public_hosts_keeps_sdk_default() -> None:

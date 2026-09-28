@@ -194,7 +194,10 @@ All configuration is by environment variable, read from `.env` in the project fo
 | `TIMETABLE_AUTO_REFRESH` | `1` | `0` stops the server downloading the timetable itself (use a cron job instead) |
 | `TIMETABLE_MAX_AGE_HOURS` | `26` | Re-download when older than this |
 | `TRAINTRACKER_DATA_DIR` | `$XDG_DATA_HOME/traintracker` if set, else `~/.traintracker` | Where the feed is downloaded to before import |
-| `MCP_AUTH_TOKEN` | — | Bearer token required by `serve-http` |
+| `MCP_AUTH_TOKEN` | — | Static bearer token accepted by `serve-http` |
+| `MCP_OAUTH_PASSPHRASE` | — | Passphrase for the OAuth sign-in page, which lets claude.ai add the server as a connector. `serve-http` needs this, `MCP_AUTH_TOKEN`, or both |
+| `MCP_PUBLIC_URL` | `https://` + first public host | Base URL clients use; the OAuth issuer and resource (`<url>/mcp`) derive from it |
+| `MCP_AUTH_SCHEMA` | `mcp_auth` | Schema for OAuth clients, codes and tokens (tokens stored as SHA-256 hashes) |
 | `HOST` / `PORT` | `0.0.0.0` / `8000` | Where `serve-http` listens (bind address) |
 | `MCP_PUBLIC_HOSTS` | — | Comma-separated extra hostnames clients use (e.g. a custom domain), added to `RENDER_EXTERNAL_HOSTNAME`; `serve-http` rejects other `Host` headers (DNS-rebinding protection) |
 | `MIN_INTERCHANGE_MINUTES` | `5` | Minimum change time for planning |
@@ -206,7 +209,7 @@ All configuration is by environment variable, read from `.env` in the project fo
 | Command | Does |
 |---|---|
 | `traintracker` | Run the MCP server on stdio (what Claude runs) |
-| `traintracker serve-http` | Run the MCP server over streamable HTTP at `/mcp`, with a bearer token and a `/healthz` check |
+| `traintracker serve-http` | Run the MCP server over streamable HTTP at `/mcp`, behind OAuth sign-in and/or a static bearer token, with a `/healthz` check |
 | `traintracker refresh` | Download the SCHEDULE feed and rebuild the timetable (in demo mode, regenerate the demo timetable) |
 | `traintracker import FILE.json.gz` | Build the timetable from a feed file you downloaded yourself |
 | `traintracker status` | Show configured sources and timetable details |
@@ -219,7 +222,7 @@ Logs go to stderr; stdout carries the MCP protocol.
 
 | Service | Type | Does | Environment |
 |---|---|---|---|
-| `traintracker` | Web service, 512 MB, [traintrackr.live](https://traintrackr.live) | `serve-http`; health check `/healthz` | `DATABASE_URL`, `DARWIN_API_KEY`, `MCP_AUTH_TOKEN` (generated), `MCP_PUBLIC_HOSTS`, `TIMETABLE_AUTO_REFRESH=0` |
+| `traintracker` | Web service, 512 MB, [traintrackr.live](https://traintrackr.live) | `serve-http`; health check `/healthz` | `DATABASE_URL`, `DARWIN_API_KEY`, `MCP_AUTH_TOKEN` (generated), `MCP_OAUTH_PASSPHRASE`, `MCP_PUBLIC_HOSTS`, `TIMETABLE_AUTO_REFRESH=0` |
 | `traintracker-refresh` | Cron job, 06:30 UTC daily | `traintracker refresh` | `DATABASE_URL`, `NR_USERNAME`, `NR_PASSWORD` |
 
 The web service holds one day's journey network in memory for `plan_journey` (about 200 MB), so it needs at least 512 MB.
@@ -232,6 +235,15 @@ The web service holds one day's journey network in memory for `plan_journey` (ab
 ```bash
 claude mcp add -s user --transport http traintracker https://<your-service-host>/mcp --header "Authorization: Bearer $(pbpaste)"
 ```
+
+### Add as a claude.ai connector
+
+With `MCP_OAUTH_PASSPHRASE` set, the server is its own OAuth authorization server, so it can be added once in claude.ai and used from claude.ai, Claude Desktop and the mobile apps.
+
+1. In claude.ai: **Settings → Connectors → Add custom connector**, name `traintracker`, URL `https://<your-service-host>/mcp`. Leave the OAuth client fields empty: Claude registers itself.
+2. Claude opens the server's sign-in page. Enter the passphrase and click **Allow**.
+
+Sign-in hands Claude a one-hour access token and a 90-day refresh token, rotated on each refresh. Five wrong passphrases discard the sign-in attempt. Clients, codes and tokens are stored in the `mcp_auth` schema, tokens as SHA-256 hashes. To sign every client out, run `TRUNCATE mcp_auth.tokens` against the database. The static `MCP_AUTH_TOKEN` keeps working alongside OAuth.
 
 ## Limitations
 
@@ -263,7 +275,8 @@ Tests use a synthetic SCHEDULE feed in Network Rail's JSON format (`tests/feedge
 ```
 src/traintracker/
   server.py      MCP tools, source fallback, live overlay, CLI
-  http_app.py    Streamable-HTTP entry point with bearer-token check
+  http_app.py    Streamable-HTTP entry point: auth wiring, Host check, health check
+  oauth.py       OAuth provider (Postgres) and passphrase sign-in page
   timetable.py   SCHEDULE importer and Postgres queries (STP resolution)
   planner.py     Connection Scan journey planner, London links
   darwin.py      Rail Data Marketplace LDBWS client

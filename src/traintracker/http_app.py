@@ -1,52 +1,30 @@
 """Streamable-HTTP entry point for hosting the server (e.g. on Render).
 
-Every request except the health check must carry `Authorization: Bearer <token>`
-matching MCP_AUTH_TOKEN, so the Darwin and Network Rail credentials behind the
-server can't be used by anyone who finds the URL.
+/mcp needs a bearer token: either the static MCP_AUTH_TOKEN, or an OAuth access
+token issued by this server after the passphrase sign-in (see oauth.py), which
+is what lets claude.ai add the server as a connector. The OAuth metadata,
+registration, authorize, token and revoke endpoints come from the MCP SDK.
+/healthz is open for the platform's health check.
 """
 
 from __future__ import annotations
 
-import hmac
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from mcp.server.auth.provider import ProviderTokenVerifier
+from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
 from mcp.server.transport_security import TransportSecuritySettings
+from starlette.routing import Route
+
+from traintracker.oauth import TraintrackerOAuthProvider, health
+
+if TYPE_CHECKING:
+    from mcp.server.mcpserver import MCPServer
+    from starlette.applications import Starlette
+
+    from traintracker.config import Settings
 
 HEALTH_PATH = "/healthz"
-
-Scope = dict[str, Any]
-Receive = Any
-Send = Any
-ASGIApp = Any
-
-
-class BearerAuth:
-    """ASGI middleware: reject HTTP requests without the expected bearer token."""
-
-    def __init__(self, app: ASGIApp, token: str) -> None:
-        if not token:
-            raise ValueError("An empty bearer token would accept every request.")
-        self.app = app
-        self.expected = f"Bearer {token}".encode()
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "http":
-            if scope["path"] == HEALTH_PATH:
-                await _respond(send, 200, b"ok")
-                return
-            given = dict(scope["headers"]).get(b"authorization", b"")
-            if not hmac.compare_digest(given, self.expected):
-                await _respond(send, 401, b"Missing or wrong bearer token.")
-                return
-        await self.app(scope, receive, send)
-
-
-async def _respond(send: Send, status: int, body: bytes) -> None:
-    headers = [(b"content-type", b"text/plain; charset=utf-8")]
-    if status == 401:
-        headers.append((b"www-authenticate", b"Bearer"))
-    await send({"type": "http.response.start", "status": status, "headers": headers})
-    await send({"type": "http.response.body", "body": body})
 
 
 def transport_security(public_hosts: list[str]) -> TransportSecuritySettings | None:
@@ -65,7 +43,36 @@ def transport_security(public_hosts: list[str]) -> TransportSecuritySettings | N
     )
 
 
-def serve(app: ASGIApp, token: str, host: str, port: int) -> None:
+def build_app(server: MCPServer[Any], settings: Settings) -> Starlette:
+    provider = TraintrackerOAuthProvider(
+        dsn=settings.database_url or "",
+        public_url=settings.public_url,
+        passphrase=settings.oauth_passphrase,
+        static_token=settings.mcp_auth_token,
+        schema=settings.auth_schema,
+    )
+    provider.create_tables()
+    auth = AuthSettings(
+        issuer_url=settings.public_url,
+        resource_server_url=provider.resource,
+        client_registration_options=ClientRegistrationOptions(enabled=True),
+        revocation_options=RevocationOptions(enabled=True),
+        validate_token_resource=True,
+    )
+    # MCPServer.streamable_http_app takes its auth from constructor settings; the
+    # module-level server is built before configuration is read, so pass the
+    # auth pieces to the low-level app directly.
+    return server._lowlevel_server.streamable_http_app(
+        host=settings.host,
+        transport_security=transport_security(list(settings.public_hosts)),
+        auth=auth,
+        auth_server_provider=provider,
+        token_verifier=ProviderTokenVerifier(provider),
+        custom_starlette_routes=[*provider.routes(), Route(HEALTH_PATH, health)],
+    )
+
+
+def serve(app: Starlette, host: str, port: int) -> None:
     import uvicorn
 
-    uvicorn.run(BearerAuth(app, token), host=host, port=port, proxy_headers=True)
+    uvicorn.run(app, host=host, port=port, proxy_headers=True)

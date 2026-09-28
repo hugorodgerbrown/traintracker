@@ -446,7 +446,9 @@ _HEAD = """<!doctype html>
 _HEADERS = {
     "Cache-Control": "no-store",
     "X-Frame-Options": "DENY",
-    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'",
+    # No form-action: browsers apply it to the redirect after the form is posted,
+    # and that redirect goes to the client's callback (claude.ai), not 'self'.
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
     "Referrer-Policy": "same-origin",
 }
 

@@ -124,6 +124,9 @@ async def test_sign_in_issues_tokens_that_rotate_and_revoke(
 
     ok = await client.post("/sign-in", data={"request": sign_in, "passphrase": PASSPHRASE})
     assert ok.status_code == 302
+    # The browser must be allowed to follow the redirect to the client's callback:
+    # a form-action CSP on the sign-in page blocks it.
+    assert "form-action" not in page.headers["content-security-policy"]
     back = urlparse(ok.headers["location"])
     assert f"{back.scheme}://{back.netloc}{back.path}" == CALLBACK
     query = parse_qs(back.query)

@@ -399,7 +399,7 @@ async def _live_board(
         except TimetableMissing as exc:
             if notes:
                 raise UpstreamError(
-                    f"{notes[0]} There is no local timetable to show booked times either."
+                    f"{notes[0]} Booked times aren't available either: {exc}"
                 ) from exc
             raise
         b = _timetable_board(tt, st, start, 120, board, other, rows, points)
@@ -787,7 +787,8 @@ async def _overlay_live(a: App, journeys: list[Journey], mct: int, notes: list[s
     if touched:
         notes.append("Live times from National Rail (Darwin) added where available.")
     if failure:
-        notes.append(_darwin_offline(failure) + " Times shown are booked.")
+        scope = "Legs without live times show booked times." if touched else "Times are booked."
+        notes.append(f"{_darwin_offline(failure)} {scope}")
 
 
 def _live_time(scheduled_iso: str, expected: str | None) -> datetime | None:

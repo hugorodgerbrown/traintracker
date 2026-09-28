@@ -220,7 +220,7 @@ async def test_darwin_outage_without_timetable_says_darwin_is_offline(
         (tmp_path / "timetable.sqlite").unlink()
         Timetable.clear_caches()
         msg = await error(client, "live_departures", station="Marks Tey")
-    assert "Darwin) is offline" in msg and "no local timetable" in msg
+    assert "Darwin) is offline" in msg and "No timetable yet" in msg
 
 
 @respx.mock
@@ -246,7 +246,7 @@ async def test_darwin_outage_is_reported_by_plan_journey(
         respx.get(url__startswith=DARWIN_DEPARTURES_URL).mock(return_value=httpx.Response(503))
         out = await call(client, "plan_journey", origin="LST", destination="Marks Tey")
     offline = [n for n in out["notes"] if "Darwin) is offline" in n]
-    assert len(offline) == 1 and offline[0].endswith("Times shown are booked.")
+    assert len(offline) == 1 and offline[0].endswith("Times are booked.")
 
 
 async def test_same_station_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

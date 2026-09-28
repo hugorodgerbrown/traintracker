@@ -16,9 +16,9 @@ services:
         sync: false
       - key: DARWIN_API_KEY
         sync: false
-      - key: MCP_AUTH_TOKEN
-        generateValue: true
-      # Passphrase for the OAuth sign-in page (claude.ai connectors).
+      # Passphrase for the OAuth sign-in page (claude.ai connectors). Clients
+      # sign in with OAuth; a static MCP_AUTH_TOKEN can be added by hand for
+      # clients that can't.
       - key: MCP_OAUTH_PASSPHRASE
         sync: false
       # This deployment's custom domain, accepted alongside the service's own

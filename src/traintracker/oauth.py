@@ -80,6 +80,13 @@ CREATE INDEX IF NOT EXISTS tokens_family ON {schema}.tokens (family);
 """
 
 
+Statement = tuple[str, Any] | tuple[str, Any, bool]
+
+
+class _Missing(Exception):
+    """A required row was not there; the transaction was rolled back."""
+
+
 def _hash(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
@@ -111,16 +118,22 @@ class TraintrackerOAuthProvider(
 
     # -- storage -------------------------------------------------------------
 
-    def _run(self, *statements: tuple[str, Any], fetch: bool = False) -> list[tuple[Any, ...]]:
-        """Run statements in one transaction; return the last one's rows if `fetch`."""
+    def _run(self, *statements: Statement, fetch: bool = False) -> list[tuple[Any, ...]]:
+        """Run statements in one transaction; return the last one's rows if `fetch`.
+
+        A statement marked `required` must return a row; if it doesn't, the whole
+        transaction rolls back and _Missing is raised (e.g. a code already spent).
+        """
         rows: list[tuple[Any, ...]] = []
         with psycopg.connect(self.dsn, connect_timeout=10) as con, con.transaction():
-            for query, params in statements:
+            for query, params, *required in statements:
                 cur = con.execute(query, params)
-                rows = cur.fetchall() if fetch and cur.description else []
-        return rows
+                rows = cur.fetchall() if cur.description else []
+                if required and required[0] and not rows:
+                    raise _Missing
+        return rows if fetch else []
 
-    async def _db(self, *statements: tuple[str, Any], fetch: bool = False) -> list[tuple[Any, ...]]:
+    async def _db(self, *statements: Statement, fetch: bool = False) -> list[tuple[Any, ...]]:
         return await asyncio.to_thread(self._run, *statements, fetch=fetch)
 
     def create_tables(self) -> None:
@@ -177,28 +190,36 @@ class TraintrackerOAuthProvider(
         )
         if not rows:
             return None
-        code = AuthorizationCode.model_validate(rows[0][0])
+        # The stored copy has no code; put back the one the client presented.
+        code = AuthorizationCode.model_validate({**rows[0][0], "code": authorization_code})
         return code if code.client_id == client.client_id else None
 
     async def exchange_authorization_code(
         self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode
     ) -> OAuthToken:
-        # Codes are single use: the delete must remove a row, or it was already spent.
-        rows = await self._db(
-            (
-                f"DELETE FROM {self.schema}.codes WHERE code_hash = %s RETURNING code_hash",
-                (_hash(authorization_code.code),),
-            ),
-            fetch=True,
+        # Codes are single use: spending the code and issuing tokens happen in one
+        # transaction, so a failed insert leaves the code usable.
+        issue, token = self._issue(client.client_id, authorization_code.scopes)
+        spend: Statement = (
+            f"DELETE FROM {self.schema}.codes WHERE code_hash = %s RETURNING code_hash",
+            (_hash(authorization_code.code),),
+            True,
         )
-        if not rows:
-            raise TokenError("invalid_grant", "Authorization code already used.")
-        return await self._issue(client.client_id, authorization_code.scopes, secrets.token_hex(16))
+        try:
+            await self._db(spend, *issue)
+        except _Missing:
+            raise TokenError("invalid_grant", "Authorization code already used.") from None
+        return token
 
     # -- tokens --------------------------------------------------------------
 
-    async def _issue(self, client_id: str, scopes: list[str], family: str) -> OAuthToken:
+    def _issue(self, client_id: str, scopes: list[str]) -> tuple[list[Statement], OAuthToken]:
+        """Statements that store a new access/refresh pair, and the token to return.
+
+        The caller runs them in the same transaction as whatever the pair replaces.
+        """
         now = time.time()
+        family = secrets.token_hex(16)
         access, refresh = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
         access_data = AccessToken(
             token="",  # the stored copy never holds the token itself
@@ -210,7 +231,7 @@ class TraintrackerOAuthProvider(
         refresh_data = RefreshToken(
             token="", client_id=client_id, scopes=scopes, expires_at=int(now + REFRESH_TTL)
         )
-        await self._db(
+        statements: list[Statement] = [
             (f"DELETE FROM {self.schema}.tokens WHERE expires_at < %s", (now,)),
             (
                 f"INSERT INTO {self.schema}.tokens (token_hash, kind, family, data, expires_at) "
@@ -227,14 +248,15 @@ class TraintrackerOAuthProvider(
                     now + REFRESH_TTL,
                 ),
             ),
-        )
-        return OAuthToken(
+        ]
+        token = OAuthToken(
             access_token=access,
             token_type="Bearer",
             expires_in=ACCESS_TTL,
             refresh_token=refresh,
             scope=" ".join(scopes) or None,
         )
+        return statements, token
 
     async def _load(self, token: str, kind: str) -> tuple[dict[str, Any], str] | None:
         rows = await self._db(
@@ -269,20 +291,23 @@ class TraintrackerOAuthProvider(
         refresh_token: RefreshToken,
         scopes: list[str],
     ) -> OAuthToken:
-        # Rotate: the old refresh token and its access token stop working.
-        rows = await self._db(
-            (
-                f"DELETE FROM {self.schema}.tokens WHERE family = ("
-                f"SELECT family FROM {self.schema}.tokens "
-                "WHERE token_hash = %s AND kind = 'refresh'"
-                ") RETURNING family",
-                (_hash(refresh_token.token),),
-            ),
-            fetch=True,
+        # Rotate: the old refresh token and its access token stop working. Retiring
+        # the old pair and storing the new one is one transaction, so a failure
+        # leaves the client's current tokens in place.
+        issue, token = self._issue(client.client_id, scopes or refresh_token.scopes)
+        retire: Statement = (
+            f"DELETE FROM {self.schema}.tokens WHERE family = ("
+            f"SELECT family FROM {self.schema}.tokens "
+            "WHERE token_hash = %s AND kind = 'refresh'"
+            ") RETURNING family",
+            (_hash(refresh_token.token),),
+            True,
         )
-        if not rows:
-            raise TokenError("invalid_grant", "Refresh token already used.")
-        return await self._issue(client.client_id, scopes or refresh_token.scopes, rows[0][0])
+        try:
+            await self._db(retire, *issue)
+        except _Missing:
+            raise TokenError("invalid_grant", "Refresh token already used.") from None
+        return token
 
     async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
         await self._db(
@@ -322,26 +347,32 @@ class TraintrackerOAuthProvider(
         form = await request.form()
         sign_in_id = str(form.get("request", ""))
         given = str(form.get("passphrase", ""))
-        pending = await self._pending(sign_in_id)
-        if not pending:
-            return _page("This sign-in link has expired. Start again from Claude.", status=400)
-        client_id, params, attempts = pending
         if not self.passphrase:
             return _page("Sign-in is turned off on this server (MCP_OAUTH_PASSPHRASE is not set).")
+        # Take an attempt before checking the passphrase. The conditional UPDATE
+        # locks the row, so parallel submissions can't share one attempt: at most
+        # MAX_ATTEMPTS passphrases are ever checked per sign-in.
+        rows = await self._db(
+            (
+                f"UPDATE {self.schema}.sign_ins SET attempts = attempts + 1 "
+                "WHERE id = %s AND expires_at > %s AND attempts < %s "
+                "RETURNING client_id, params, attempts",
+                (sign_in_id, time.time(), MAX_ATTEMPTS),
+            ),
+            fetch=True,
+        )
+        if not rows:
+            return _page("This sign-in link has expired. Start again from Claude.", status=400)
+        client_id, raw_params, attempts = rows[0]
+        params = AuthorizationParams.model_validate(raw_params)
         if not hmac.compare_digest(given.encode(), self.passphrase.encode()):
             await asyncio.sleep(1)  # slow down guessing
-            if attempts + 1 >= MAX_ATTEMPTS:
+            if attempts >= MAX_ATTEMPTS:
                 await self._db((f"DELETE FROM {self.schema}.sign_ins WHERE id = %s", (sign_in_id,)))
                 log.warning(
                     "Sign-in %s discarded after %d wrong passphrases", sign_in_id[:6], MAX_ATTEMPTS
                 )
                 return _page("Too many wrong passphrases. Start again from Claude.", status=403)
-            await self._db(
-                (
-                    f"UPDATE {self.schema}.sign_ins SET attempts = attempts + 1 WHERE id = %s",
-                    (sign_in_id,),
-                )
-            )
             client = await self.get_client(client_id)
             name = (client.client_name if client else None) or "An MCP client"
             return _form(sign_in_id, name, error="Wrong passphrase.", status=401)
@@ -357,14 +388,23 @@ class TraintrackerOAuthProvider(
             redirect_uri_provided_explicitly=params.redirect_uri_provided_explicitly,
             resource=self.resource,
         )
-        await self._db(
-            (f"DELETE FROM {self.schema}.sign_ins WHERE id = %s", (sign_in_id,)),
-            (
-                f"INSERT INTO {self.schema}.codes (code_hash, data, expires_at) "
-                "VALUES (%s, %s, %s)",
-                (_hash(code), auth_code.model_dump_json(), auth_code.expires_at),
-            ),
-        )
+        stored = auth_code.model_copy(update={"code": ""})  # only the hash identifies it
+        try:
+            await self._db(
+                # One code per sign-in: a parallel correct submission finds the row gone.
+                (
+                    f"DELETE FROM {self.schema}.sign_ins WHERE id = %s RETURNING id",
+                    (sign_in_id,),
+                    True,
+                ),
+                (
+                    f"INSERT INTO {self.schema}.codes (code_hash, data, expires_at) "
+                    "VALUES (%s, %s, %s)",
+                    (_hash(code), stored.model_dump_json(), auth_code.expires_at),
+                ),
+            )
+        except _Missing:
+            return _page("This sign-in link has expired. Start again from Claude.", status=400)
         target = construct_redirect_uri(str(params.redirect_uri), code=code, state=params.state)
         return RedirectResponse(target, status_code=302)
 

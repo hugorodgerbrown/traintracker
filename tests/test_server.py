@@ -27,8 +27,6 @@ async def connect(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncItera
     for key in (
         "NR_USERNAME",
         "NR_PASSWORD",
-        "RTT_ACCESS_TOKEN",
-        "RTT_REFRESH_TOKEN",
         "DARWIN_ARRIVALS_API_KEY",
         "DARWIN_ARRIVALS_URL",
     ):
@@ -142,13 +140,13 @@ async def test_data_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     async with connect(tmp_path, monkeypatch) as client:
         out = await call(client, "data_status")
         assert out["darwin_live_departures"] == "configured"
-        assert out["realtime_trains"].startswith("not configured")
+        assert "realtime_trains" not in out
         assert out["network_rail_timetable"]["public_schedules"] != "0"
 
 
 async def test_missing_timetable_message(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TRAINTRACKER_DATA_DIR", str(tmp_path / "empty"))
-    for key in ("NR_USERNAME", "NR_PASSWORD", "RTT_ACCESS_TOKEN", "RTT_REFRESH_TOKEN"):
+    for key in ("NR_USERNAME", "NR_PASSWORD"):
         monkeypatch.delenv(key, raising=False)
     Timetable.clear_caches()
     async with Client(server.mcp) as c:
@@ -208,7 +206,47 @@ async def test_darwin_outage_falls_back_to_booked_times(
         )
         out = await call(client, "live_departures", station="Marks Tey")
     assert out["source"] == "timetable"
-    assert "unavailable" in out["messages"][0]
+    assert out["messages"][0].startswith("National Rail live data (Darwin) is offline")
+
+
+@respx.mock
+async def test_darwin_outage_without_timetable_says_darwin_is_offline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with connect(tmp_path, monkeypatch) as client:
+        respx.get(f"{DARWIN_DEPARTURES_URL}/GetDepBoardWithDetails/MKT").mock(
+            return_value=httpx.Response(503)
+        )
+        (tmp_path / "timetable.sqlite").unlink()
+        Timetable.clear_caches()
+        msg = await error(client, "live_departures", station="Marks Tey")
+    assert "Darwin) is offline" in msg and "No timetable yet" in msg
+
+
+@respx.mock
+async def test_darwin_outage_is_reported_by_departure_platform(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(server, "datetime", _Frozen)
+    async with connect(tmp_path, monkeypatch) as client:
+        respx.get(f"{DARWIN_DEPARTURES_URL}/GetDepBoardWithDetails/LST").mock(
+            side_effect=httpx.ConnectError("refused")
+        )
+        out = await call(client, "departure_platform", station="LST", time="13:00")
+    assert out["platform_source"] == "booked"
+    assert out["note"].startswith("National Rail live data (Darwin) is offline")
+
+
+@respx.mock
+async def test_darwin_outage_is_reported_by_plan_journey(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(server, "datetime", _Frozen)
+    async with connect(tmp_path, monkeypatch) as client:
+        respx.get(url__startswith=DARWIN_DEPARTURES_URL).mock(return_value=httpx.Response(503))
+        out = await call(client, "plan_journey", origin="LST", destination="Marks Tey")
+    offline = [n for n in out["notes"] if "Darwin) is offline" in n]
+    assert len(offline) == 1 and offline[0].endswith("Times are booked.")
 
 
 async def test_same_station_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

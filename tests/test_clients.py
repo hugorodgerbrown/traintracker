@@ -1,10 +1,9 @@
 """Client parsing tests. Fixtures follow the published response shapes
-(Darwin LDBWS JSON, RTT OpenAPI spec); they are not live recordings."""
+(Darwin LDBWS JSON); they are not live recordings."""
 
 from __future__ import annotations
 
 import json
-from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +14,6 @@ import respx
 from traintracker.config import Settings
 from traintracker.darwin import DarwinClient, status_from
 from traintracker.errors import NotConfigured, RateLimited, UpstreamError
-from traintracker.rtt import RttClient, parse_dt
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -26,10 +24,9 @@ def load(name: str) -> Any:
 
 @pytest.fixture
 def settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Settings:
-    for key in ("NR_USERNAME", "NR_PASSWORD", "RTT_REFRESH_TOKEN", "DARWIN_ARRIVALS_API_KEY"):
+    for key in ("NR_USERNAME", "NR_PASSWORD", "DARWIN_ARRIVALS_API_KEY"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("DARWIN_API_KEY", "darwin-key")
-    monkeypatch.setenv("RTT_ACCESS_TOKEN", "rtt-token")
     monkeypatch.setenv("TRAINTRACKER_DATA_DIR", str(tmp_path))
     return Settings.from_env()
 
@@ -102,60 +99,6 @@ async def test_darwin_arrivals_need_config(settings: Settings) -> None:
             await DarwinClient(settings, http).board("SUY", "arrivals")
 
 
-@respx.mock
-async def test_rtt_board(settings: Settings) -> None:
-    route = respx.get(f"{settings.rtt_base_url}/gb-nr/location").mock(
-        return_value=httpx.Response(200, json=load("rtt_location_MKT.json"))
-    )
-    start = parse_dt("2026-09-26T13:00:00+01:00")
-    assert start is not None
-    async with httpx.AsyncClient() as http:
-        board = await RttClient(settings, http).board("MKT", "departures", start, filter_crs="SUY")
-
-    req = route.calls.last.request
-    assert req.headers["Authorization"] == "Bearer rtt-token"
-    assert req.url.params["code"] == "MKT"
-    assert req.url.params["filterTo"] == "SUY"
-    assert req.url.params["timeFrom"] == "2026-09-26T13:00:00"
-    assert req.url.params["timeTo"] == "2026-09-26T15:00:00"
-
-    # Non-passenger and passing services are excluded.
-    assert [s.service_id for s in board.services] == [
-        "rtt:L12345:2026-09-26",
-        "rtt:L99999:2026-09-26",
-    ]
-    train, bus = board.services
-    assert (train.scheduled, train.expected, train.status, train.delay_minutes) == (
-        "13:58",
-        "14:02",
-        "late",
-        4,
-    )
-    assert train.platform == "3" and train.reason == "Crew availability"
-    assert bus.mode == "replacement bus" and bus.status == "cancelled"
-
-
-@respx.mock
-async def test_rtt_no_services_and_refresh_token(
-    settings: Settings, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    s = replace(settings, rtt_access_token=None, rtt_refresh_token="refresh")
-    token = respx.get(f"{s.rtt_base_url}/api/get_access_token").mock(
-        return_value=httpx.Response(
-            200, json={"token": "short", "validUntil": "2099-01-01T00:00:00Z", "entitlements": []}
-        )
-    )
-    loc = respx.get(f"{s.rtt_base_url}/gb-nr/location").mock(return_value=httpx.Response(204))
-    start = parse_dt("2026-09-26T13:00:00+01:00")
-    assert start is not None
-    async with httpx.AsyncClient() as http:
-        client = RttClient(s, http)
-        assert (await client.board("MKT", "departures", start)).services == []
-        await client.board("MKT", "arrivals", start)
-    assert token.call_count == 1  # cached until validUntil
-    assert loc.calls.last.request.headers["Authorization"] == "Bearer short"
-
-
 def test_load_dotenv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from traintracker.config import load_dotenv
 
@@ -202,7 +145,6 @@ async def test_non_json_body_is_a_clear_error(settings: Settings) -> None:
 
 def test_settings_repr_hides_secrets(settings: Settings) -> None:
     assert "darwin-key" not in repr(settings)
-    assert "rtt-token" not in repr(settings)
 
 
 def _darwin_page(times: list[str]) -> dict[str, Any]:

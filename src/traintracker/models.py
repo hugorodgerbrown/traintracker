@@ -10,7 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-Source = Literal["darwin", "rtt", "timetable"]
+Source = Literal["darwin", "timetable"]
 PlatformSource = Literal["live", "booked"]
 Status = Literal[
     "on_time", "late", "early", "cancelled", "delayed", "no_report", "scheduled", "unknown"
@@ -34,7 +34,7 @@ class CallingPoint(BaseModel):
 
 class BoardService(BaseModel):
     service_id: str = Field(
-        description="Pass to service_details. Prefixed 'darwin:', 'tt:' (timetable) or 'rtt:'."
+        description="Pass to service_details. Prefixed 'darwin:' or 'tt:' (timetable)."
     )
     source: Source
     operator: str | None = None

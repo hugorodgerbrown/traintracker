@@ -37,7 +37,7 @@ def test_demo_settings_use_no_real_accounts(settings: Settings) -> None:
     assert settings.demo
     assert settings.timetable_path.name == "demo-timetable.sqlite"
     assert settings.has_darwin and settings.has_darwin_arrivals
-    assert not settings.has_nr and not settings.has_rtt
+    assert not settings.has_nr
 
 
 def test_timetable_runs_every_route(settings: Settings) -> None:

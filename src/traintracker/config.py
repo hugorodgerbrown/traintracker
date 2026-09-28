@@ -15,7 +15,6 @@ DARWIN_DEPARTURES_URL = (
     "https://api1.raildata.org.uk/1010-live-departure-board-dep1_2/LDBWS/api/20220120"
 )
 DARWIN_SERVICE_URL = "https://api1.raildata.org.uk/1010-service-details1_2/LDBWS/api/20220120"
-RTT_BASE_URL = "https://data.rtt.io"
 # Demo mode serves Darwin from generated data in-process; this host never resolves.
 DEMO_DARWIN_URL = "https://demo.traintracker.invalid/LDBWS"
 NR_SCHEDULE_URL = (
@@ -66,9 +65,6 @@ class Settings:
     darwin_service_url: str
     darwin_arrivals_key: str | None = field(repr=False)
     darwin_arrivals_url: str | None
-    rtt_access_token: str | None = field(repr=False)
-    rtt_refresh_token: str | None = field(repr=False)
-    rtt_base_url: str
     nr_username: str | None
     nr_password: str | None = field(repr=False)
     nr_schedule_url: str
@@ -95,10 +91,6 @@ class Settings:
     def has_darwin_arrivals(self) -> bool:
         return self.darwin_arrivals_key is not None and self.darwin_arrivals_url is not None
 
-    @property
-    def has_rtt(self) -> bool:
-        return self.rtt_access_token is not None or self.rtt_refresh_token is not None
-
     @classmethod
     def from_env(cls) -> Settings:
         darwin_key = _env("DARWIN_API_KEY")
@@ -110,9 +102,6 @@ class Settings:
             darwin_service_url=_env("DARWIN_SERVICE_URL") or DARWIN_SERVICE_URL,
             darwin_arrivals_key=_env("DARWIN_ARRIVALS_API_KEY"),
             darwin_arrivals_url=_env("DARWIN_ARRIVALS_URL"),
-            rtt_access_token=_env("RTT_ACCESS_TOKEN"),
-            rtt_refresh_token=_env("RTT_REFRESH_TOKEN"),
-            rtt_base_url=_env("RTT_BASE_URL") or RTT_BASE_URL,
             nr_username=_env("NR_USERNAME"),
             nr_password=_env("NR_PASSWORD"),
             nr_schedule_url=_env("NR_SCHEDULE_URL") or NR_SCHEDULE_URL,
@@ -132,8 +121,6 @@ class Settings:
             darwin_service_url=DEMO_DARWIN_URL,
             darwin_arrivals_key="demo",
             darwin_arrivals_url=DEMO_DARWIN_URL,
-            rtt_access_token=None,
-            rtt_refresh_token=None,
             nr_username=None,
             nr_password=None,
             demo=True,

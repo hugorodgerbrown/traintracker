@@ -270,8 +270,7 @@ class DarwinClient:
         data = await self._get(url, self.s.darwin_service_key, {})
         if not data:
             raise ServiceNotFound(
-                "Darwin no longer has that service. Darwin IDs expire soon after the train runs; "
-                "use an rtt: service ID for past services."
+                "Darwin no longer has that service. Darwin IDs expire soon after the train runs."
             )
         here = CallingPoint(
             station=StationRef(name=data.get("locationName", "?"), crs=data.get("crs")),

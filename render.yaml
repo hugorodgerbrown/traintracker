@@ -18,6 +18,11 @@ services:
         sync: false
       - key: MCP_AUTH_TOKEN
         generateValue: true
+      # This deployment's custom domain, accepted alongside the service's own
+      # onrender.com name; other Host headers are rejected (421). Change or remove
+      # it when deploying your own copy.
+      - key: MCP_PUBLIC_HOSTS
+        value: traintrackr.live
       # The cron job below refreshes the timetable; the web service only reads it.
       - key: TIMETABLE_AUTO_REFRESH
         value: "0"

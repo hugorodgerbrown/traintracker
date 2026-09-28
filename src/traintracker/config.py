@@ -27,6 +27,14 @@ NR_SCHEDULE_URL = (
 TRUE = {"1", "true", "yes", "on"}
 
 
+def _public_hosts() -> tuple[str, ...]:
+    """Hostnames clients use: MCP_PUBLIC_HOSTS (e.g. a custom domain) plus the
+    service's own Render hostname (RENDER_EXTERNAL_HOSTNAME), which is always kept
+    so every deployment answers on its onrender.com name."""
+    names = [*(_env("MCP_PUBLIC_HOSTS") or "").split(","), _env("RENDER_EXTERNAL_HOSTNAME") or ""]
+    return tuple(dict.fromkeys(h.strip() for h in names if h.strip()))
+
+
 def default_data_dir() -> Path:
     base = os.environ.get("XDG_DATA_HOME")
     return Path(base) / "traintracker" if base else Path.home() / ".traintracker"
@@ -139,14 +147,7 @@ class Settings:
             mcp_auth_token=_env("MCP_AUTH_TOKEN"),
             host=_env("HOST") or "0.0.0.0",  # all interfaces: the HTTP server is for hosting
             port=int(_env("PORT") or 8000),
-            # Hostnames clients use; Render sets RENDER_EXTERNAL_HOSTNAME on web services.
-            public_hosts=tuple(
-                h.strip()
-                for h in (_env("MCP_PUBLIC_HOSTS") or _env("RENDER_EXTERNAL_HOSTNAME") or "").split(
-                    ","
-                )
-                if h.strip()
-            ),
+            public_hosts=_public_hosts(),
             data_dir=Path(_env("TRAINTRACKER_DATA_DIR") or default_data_dir()).expanduser(),
             timetable_max_age_hours=float(_env("TIMETABLE_MAX_AGE_HOURS") or 26),
             min_interchange_minutes=int(_env("MIN_INTERCHANGE_MINUTES") or 5),

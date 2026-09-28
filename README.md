@@ -196,7 +196,7 @@ All configuration is by environment variable, read from `.env` in the project fo
 | `TRAINTRACKER_DATA_DIR` | `$XDG_DATA_HOME/traintracker` if set, else `~/.traintracker` | Where the feed is downloaded to before import |
 | `MCP_AUTH_TOKEN` | — | Bearer token required by `serve-http` |
 | `HOST` / `PORT` | `0.0.0.0` / `8000` | Where `serve-http` listens (bind address) |
-| `MCP_PUBLIC_HOSTS` | `RENDER_EXTERNAL_HOSTNAME` | Comma-separated hostnames clients use; `serve-http` rejects other `Host` headers (DNS-rebinding protection) |
+| `MCP_PUBLIC_HOSTS` | — | Comma-separated extra hostnames clients use (e.g. a custom domain), added to `RENDER_EXTERNAL_HOSTNAME`; `serve-http` rejects other `Host` headers (DNS-rebinding protection) |
 | `MIN_INTERCHANGE_MINUTES` | `5` | Minimum change time for planning |
 | `HTTP_TIMEOUT_SECONDS` | `15` | Upstream request timeout |
 | `TRAINTRACKER_DEMO` | off | `1` uses generated example data instead of any account (see [demo mode](#try-it-without-accounts-demo-mode)) |
@@ -227,10 +227,10 @@ The web service holds one day's journey network in memory for `plan_journey` (ab
 1. Create the `traintracker` database and role on your Postgres instance (see [Postgres](#3-postgres)).
 2. In the Render dashboard: **New → Blueprint**, pick this repository, and enter the values Render prompts for. Use the Postgres instance's *internal* URL, with `/traintracker` as the database name.
 3. Run the cron job once by hand (**Trigger Run**) to load the first timetable.
-4. Copy the generated `MCP_AUTH_TOKEN` from the service's Environment tab, then add the server to Claude Code (in a terminal, so the token stays out of any transcript). A custom domain must also be listed in `MCP_PUBLIC_HOSTS`:
+4. Copy the generated `MCP_AUTH_TOKEN` from the service's Environment tab, then add the server to Claude Code (in a terminal, so the token stays out of any transcript). Use your own service's host: its `onrender.com` name, or a custom domain you have added to the service and listed in `MCP_PUBLIC_HOSTS` (the `render.yaml` value is this repository's deployment, `traintrackr.live`):
 
 ```bash
-claude mcp add -s user --transport http traintracker https://traintrackr.live/mcp --header "Authorization: Bearer $(pbpaste)"
+claude mcp add -s user --transport http traintracker https://<your-service-host>/mcp --header "Authorization: Bearer $(pbpaste)"
 ```
 
 ## Limitations

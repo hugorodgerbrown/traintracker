@@ -76,12 +76,23 @@ async def test_public_host_is_checked_apart_from_the_bind_address() -> None:
     assert rejected is not None and rejected.status_code == 421
 
 
-def test_public_hosts_default_to_render_hostname(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_public_hosts_keep_the_render_hostname(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("MCP_PUBLIC_HOSTS", raising=False)
     monkeypatch.setenv("RENDER_EXTERNAL_HOSTNAME", "traintracker.onrender.com")
     assert Settings.from_env().public_hosts == ("traintracker.onrender.com",)
-    monkeypatch.setenv("MCP_PUBLIC_HOSTS", "a.example, b.example")
-    assert Settings.from_env().public_hosts == ("a.example", "b.example")
+    # A custom domain is added to the Render name, not substituted for it.
+    monkeypatch.setenv("MCP_PUBLIC_HOSTS", "a.example, b.example, traintracker.onrender.com")
+    assert Settings.from_env().public_hosts == (
+        "a.example",
+        "b.example",
+        "traintracker.onrender.com",
+    )
+    monkeypatch.delenv("RENDER_EXTERNAL_HOSTNAME")
+    assert Settings.from_env().public_hosts == (
+        "a.example",
+        "b.example",
+        "traintracker.onrender.com",
+    )
 
 
 def test_no_public_hosts_keeps_sdk_default() -> None:

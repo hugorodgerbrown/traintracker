@@ -14,13 +14,8 @@ flowchart LR
     subgraph Local["Local, any future date"]
         NR[Network Rail<br/>SCHEDULE feed] -->|daily download| DB[(timetable.sqlite)]
     end
-    subgraph Optional["Optional, paid"]
-        RTT[Realtime Trains API]
-    end
-
     TT --> D
     TT --> DB
-    TT -.-> RTT
 ```
 
 ## Tools
@@ -28,11 +23,11 @@ flowchart LR
 | Tool | Answers | Data |
 |---|---|---|
 | `find_station` | "Which Sudbury?" Station names ↔ CRS codes | Bundled station list |
-| `live_departures` | Next trains, expected times, platforms, delays, cancellations | Darwin; if it's not set up or fails, RTT, then booked times |
+| `live_departures` | Next trains, expected times, platforms, delays, cancellations | Darwin; if it's not set up, booked times; if it's offline, booked times with a note saying so |
 | `departure_platform` | "Which platform is the 13:00 to Colchester?" One train's platform, flagged `live` or `booked` | Darwin (paged); booked platform from the local timetable until the live one is announced |
 | `platform_departures` | "What are the next three trains from platform 7?" | Same as `departure_platform` |
-| `live_arrivals` | Trains arriving in the next ~2 hours | Darwin arrivals; if not set up or failing, RTT, then booked times |
-| `timetable` | Booked departures/arrivals at a station on any date | Local timetable → RTT |
+| `live_arrivals` | Trains arriving in the next ~2 hours | Darwin arrivals; if not set up, booked times; if offline, booked times with a note saying so |
+| `timetable` | Booked departures/arrivals at a station on any date | Local timetable |
 | `service_details` | Every stop for one train | Whichever source issued the ID |
 | `plan_journey` | A to B with changes (up to `max_changes`, default 4), incl. cross-London links | Local timetable + Darwin live overlay |
 | `data_status` | What's configured, timetable freshness, what's missing | — |
@@ -61,8 +56,7 @@ Add that to the `traintracker` entry in the Claude desktop config (see [Add to t
 | 1 | **Rail Data Marketplace** — *Live Departure Board* product | **Yes** for live times | Free | Darwin: National Rail's real-time feed. Departure boards for the next 2 hours with expected times, platforms, delay/cancellation reasons, calling points, station alerts. The same data as station screens. | `live_departures`, live overlay in `plan_journey` |
 | 2 | **Network Rail Open Data (NTROD)** — *SCHEDULE* feed | **Yes** for timetables and planning | Free | The full GB passenger timetable from Network Rail's planning system, including short-term changes (engineering works, extra trains, cancellations) once published. Refreshed daily. | `timetable`, `plan_journey`, `service_details` for `tt:` IDs, offline fallback for the live tools |
 | 3 | Rail Data Marketplace — *Service Details* product | Optional | Free | Full live calling pattern for a train seen on a Darwin board. | `service_details` for `darwin:` IDs |
-| 4 | Rail Data Marketplace — *Live Arrival Board* product | Optional | Free | Darwin arrivals boards. Without it, arrivals fall back to RTT or booked times. | `live_arrivals` |
-| 5 | **Realtime Trains** API | Optional | Paid | Live and historical running for any date, detailed calling patterns. Off unless a token is set. | Fallback for live tools and `timetable`; `rtt:` service IDs |
+| 4 | Rail Data Marketplace — *Live Arrival Board* product | Optional | Free | Darwin arrivals boards. Without it, arrivals show booked times. | `live_arrivals` |
 
 ### 1. Rail Data Marketplace (Darwin)
 
@@ -81,10 +75,6 @@ Add that to the `traintracker` entry in the Claude desktop config (see [Add to t
 
 The server downloads the feed in the background when the local timetable is missing or older than 26 hours. It checks this on start-up and on every tool call, so a server left running for days stays current. If a download fails it keeps serving the old timetable, and `data_status` shows the error. You can also run `traintracker refresh` by hand (see [Commands](#commands)).
 
-### 5. Realtime Trains (optional)
-
-Get a token at [api-portal.rtt.io](https://api-portal.rtt.io). You'll receive either a long-life **access token** (`RTT_ACCESS_TOKEN`) or a **refresh token** (`RTT_REFRESH_TOKEN`); the server handles both. RTT's old v1 API (`api.rtt.io/api/v1`) shuts down on 30 Sep 2026; this server only uses the new API at `data.rtt.io`.
-
 ## How each source is used
 
 ```mermaid
@@ -97,30 +87,25 @@ flowchart TD
 
     L --> L1{Darwin key?}
     L1 -->|yes| Darwin
-    Darwin -->|error or timeout| L2
-    L1 -->|no| L2{RTT token?}
-    L2 -->|yes| RTT
-    RTT -->|error or timeout| TT
-    L2 -->|no| TT[(Local timetable<br/>booked times, flagged)]
+    Darwin -->|error or timeout:<br/>note says Darwin is offline| TT
+    L1 -->|no| TT[(Local timetable<br/>booked times, flagged)]
 
     T --> TT
-    TT -.->|no timetable yet| RTT
 
     P --> CSA[Connection Scan<br/>over the day's timetable]
     CSA --> OV{Today, departing<br/>within 2 hours?}
     OV -->|yes| Darwin2[Darwin expected times<br/>+ tight-connection flag]
+    Darwin2 -.->|offline| Note[Plan note: Darwin offline,<br/>times are booked]
 
     S --> ID{ID prefix}
     ID -->|darwin:| Darwin3[Darwin Service Details]
     ID -->|tt:| TT
-    ID -->|rtt:| RTT
 ```
 
 | Source | Freshness | Coverage | Cached for | Limits to know |
 |---|---|---|---|---|
 | Darwin | Real time | Now → +2 hours | 20 s | Darwin service IDs expire soon after the train runs |
 | Local timetable | Daily (Network Rail publishes ~06:00) | Two days back → end of the published timetable (usually months) | Until the next rebuild | Booked times only; last-minute changes show up in Darwin, not here |
-| Realtime Trains | Real time | Past and future, per your token's entitlements | 30 s (near now), 10 min (further out) | Rate limited (e.g. 30/min); paid |
 
 ### What the local timetable keeps
 
@@ -185,7 +170,6 @@ All configuration is by environment variable, read from `.env` in the project fo
 | `DARWIN_ARRIVALS_API_KEY` / `DARWIN_ARRIVALS_URL` | — | Live Arrival Board product |
 | `NR_USERNAME` / `NR_PASSWORD` | — | Network Rail data feeds login |
 | `NR_SCHEDULE_URL` | full daily JSON extract | Override if the portal gives a different link |
-| `RTT_ACCESS_TOKEN` or `RTT_REFRESH_TOKEN` | — | Realtime Trains (optional) |
 | `TRAINTRACKER_DATA_DIR` | `$XDG_DATA_HOME/traintracker` if set, else `~/.traintracker` | Where `timetable.sqlite` lives |
 | `TIMETABLE_MAX_AGE_HOURS` | `26` | Re-download when older than this |
 | `MIN_INTERCHANGE_MINUTES` | `5` | Minimum change time for planning |
@@ -205,7 +189,8 @@ Logs go to stderr; stdout carries the MCP protocol.
 
 ## Limitations
 
-- **Past running times** ("was the 08:00 late yesterday?") need Realtime Trains. Darwin only covers now → +2 hours, and the timetable is booked times.
+- **Past running times** ("was the 08:00 late yesterday?") aren't available. Darwin only covers now → +2 hours, and the timetable is booked times.
+- **Darwin outages**: when Darwin is offline, the live tools show booked times and say that Darwin is offline, so delays, cancellations and live platforms are missing until it returns.
 - **Fares** aren't included.
 - **Tube/bus/tram** aren't in the timetable beyond the approximate London terminal links.
 - **Engineering works** appear in the timetable once Network Rail publishes them (usually well ahead), and in Darwin on the day.
@@ -227,7 +212,7 @@ uvx --with tox-uv tox -e tests -- -k platform   # arguments after -- go to the t
 | `type` | `mypy` (strict) |
 | `tests` | `pytest`: importer, STP rules, planner, download, clients, demo mode, tools end to end |
 
-Tests use a synthetic SCHEDULE feed in Network Rail's JSON format (`tests/feedgen.py`) and API fixtures shaped on the published Darwin and RTT schemas. They aren't live recordings, so the first run against real services is the final check.
+Tests use a synthetic SCHEDULE feed in Network Rail's JSON format (`tests/feedgen.py`) and API fixtures shaped on the published Darwin schema. They aren't live recordings, so the first run against real services is the final check.
 
 ```
 src/traintracker/
@@ -235,7 +220,6 @@ src/traintracker/
   timetable.py   SCHEDULE importer and SQLite queries (STP resolution)
   planner.py     Connection Scan journey planner, London links
   darwin.py      Rail Data Marketplace LDBWS client
-  rtt.py         Realtime Trains client (optional)
   stations.py    Station search and name resolution
   models.py      Output models shared by all sources
   demo.py        Demo mode: generated timetable and in-process Darwin
@@ -245,6 +229,5 @@ src/traintracker/
 
 - Darwin data via the Rail Data Marketplace, and Network Rail data feeds, are used under the terms you accept when you subscribe. Check those terms before redistributing any output.
 - The bundled station list comes from [davwheat/uk-railway-stations](https://github.com/davwheat/uk-railway-stations) under the Open Database License (ODbL).
-- Realtime Trains tokens must not be embedded in distributed apps; this server keeps them in your local environment only.
 
 Code: MIT.

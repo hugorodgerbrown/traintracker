@@ -27,7 +27,7 @@ from pydantic import Field
 from traintracker import demo, planner, stations
 from traintracker.config import UK_TZ, Settings, load_dotenv
 from traintracker.darwin import DarwinClient
-from traintracker.errors import NotConfigured, TrainTrackerError, UpstreamError
+from traintracker.errors import TrainTrackerError, UpstreamError
 from traintracker.models import (
     Board,
     BoardService,
@@ -40,7 +40,6 @@ from traintracker.models import (
     StationMatch,
     StationRef,
 )
-from traintracker.rtt import RttClient
 from traintracker.timetable import (
     Timetable,
     TimetableMissing,
@@ -78,7 +77,6 @@ class App:
     settings: Settings
     http: httpx.AsyncClient
     darwin: DarwinClient
-    rtt: RttClient | None
     refresh_task: asyncio.Task[Any] | None = None
     refresh_error: str | None = None
     refresh_started: datetime | None = None
@@ -163,7 +161,6 @@ async def lifespan(_server: MCPServer[None]) -> AsyncIterator[None]:
             settings=settings,
             http=http,
             darwin=DarwinClient(settings, http),
-            rtt=RttClient(settings, http) if settings.has_rtt else None,
         )
         _app.maybe_refresh()
         # Building a day's network takes a few seconds; do today's up front.
@@ -352,7 +349,8 @@ async def live_departures(
     include_calling_points: bool = False,
 ) -> Board:
     """Live departure board for the next ~2 hours: expected times, platforms, delays,
-    cancellations. Uses Darwin (National Rail); falls back to RTT or the timetable."""
+    cancellations. Uses Darwin (National Rail); if Darwin is offline, says so and shows
+    booked timetable times."""
     return await _live_board(
         app(),
         _station(station),
@@ -374,7 +372,7 @@ async def _live_board(
     points: bool,
     until: Callable[[list[BoardService]], bool] | None = None,
 ) -> Board:
-    """Darwin, then RTT, then booked times; a failing live source falls through.
+    """Darwin, else booked times with a note saying why live data is missing.
 
     `until` lets Darwin stop paging once enough services have been seen.
     """
@@ -394,14 +392,17 @@ async def _live_board(
                 until=until,
             )
         except (UpstreamError, httpx.HTTPError) as exc:
-            notes.append(f"National Rail live data unavailable ({_why(exc)}).")
-    if b is None and a.rtt:
-        try:
-            b = await a.rtt.board(st.crs, board, start, filter_crs=other_crs, rows=rows)
-        except (UpstreamError, httpx.HTTPError) as exc:
-            notes.append(f"Realtime Trains unavailable ({_why(exc)}).")
+            notes.append(_darwin_offline(exc))
     if b is None:
-        b = _timetable_board(a.timetable(), st, start, 120, board, other, rows, points)
+        try:
+            tt = a.timetable()
+        except TimetableMissing as exc:
+            if notes:
+                raise UpstreamError(
+                    f"{notes[0]} There is no local timetable to show booked times either."
+                ) from exc
+            raise
+        b = _timetable_board(tt, st, start, 120, board, other, rows, points)
         notes.append(
             "Showing booked times instead."
             if notes
@@ -412,6 +413,13 @@ async def _live_board(
         for s in b.services:
             s.calling_points = None
     return b
+
+
+def _darwin_offline(exc: Exception) -> str:
+    return (
+        f"National Rail live data (Darwin) is offline ({_why(exc)}). "
+        "Delays, cancellations and live platforms are not available."
+    )
 
 
 def _why(exc: Exception) -> str:
@@ -431,7 +439,7 @@ async def live_arrivals(
     include_calling_points: bool = False,
 ) -> Board:
     """Live arrivals for the next ~2 hours. Uses Darwin's arrivals product if configured,
-    then RTT, then booked timetable times."""
+    else booked timetable times."""
     return await _live_board(
         app(),
         _station(station),
@@ -470,13 +478,16 @@ async def departure_platform(
         when = f" at {time}" if time else " in the next two hours"
         raise ToolError(f"No departure from {st.name}{where}{when}.")
     svc = candidates[0]
+    note = _platform_note(svc, b)
+    if b.source == "timetable" and b.messages:
+        note = f"{b.messages[0]} {note}"  # why there is no live platform
     return PlatformCheck(
         station=b.station,
         service=svc,
         platform=svc.platform,
         platform_source=svc.platform_source,
         minutes_to_departure=_minutes_until(_departure_hhmm(svc)),
-        note=_platform_note(svc, b),
+        note=note,
     )
 
 
@@ -614,20 +625,9 @@ async def timetable(
     when = _when(date, time)
     if not time and when.date() != datetime.now(UK_TZ).date():
         window_minutes = 1440  # "what runs on Saturday?" means the whole day
-    try:
-        tt = a.timetable()
-    except TimetableMissing:
-        if not a.rtt:
-            raise
-        return await a.rtt.board(
-            st.crs,
-            board,
-            when,
-            window_minutes=window_minutes,
-            filter_crs=other.crs if other else None,
-            rows=rows,
-        )
-    b = _timetable_board(tt, st, when, window_minutes, board, other, rows, include_calling_points)
+    b = _timetable_board(
+        a.timetable(), st, when, window_minutes, board, other, rows, include_calling_points
+    )
     if a.settings.demo:
         b.messages.insert(0, demo.DEMO_NOTE)
     return b
@@ -637,17 +637,13 @@ async def timetable(
 @_tool_errors
 async def service_details(
     service_id: Annotated[
-        str, Field(description="A service_id from another tool (darwin:…, tt:… or rtt:…).")
+        str, Field(description="A service_id from another tool (darwin:… or tt:…).")
     ],
 ) -> ServiceDetail:
     """All stops for one train, with live times where available."""
     a = app()
     if service_id.startswith("darwin:"):
         return await a.darwin.service(service_id.removeprefix("darwin:"))
-    if service_id.startswith("rtt:"):
-        if not a.rtt:
-            raise NotConfigured("rtt: IDs need RTT_ACCESS_TOKEN or RTT_REFRESH_TOKEN.")
-        return await a.rtt.service(service_id)
     if service_id.startswith("tt:"):
         try:
             _, uid, run = service_id.split(":")
@@ -676,7 +672,7 @@ async def service_details(
                 for s in trip.stops
             ],
         )
-    raise ToolError("service_id must start with darwin:, tt: or rtt:.")
+    raise ToolError("service_id must start with darwin: or tt:.")
 
 
 @mcp.tool()
@@ -745,8 +741,10 @@ async def _overlay_live(a: App, journeys: list[Journey], mct: int, notes: list[s
     """Add Darwin expected times to legs departing in the next ~2 hours."""
     now = datetime.now(UK_TZ)
     boards: dict[tuple[str, str], Board | None] = {}
+    failure: Exception | None = None
 
     async def board_for(frm: str, to: str) -> Board | None:
+        nonlocal failure
         key = (frm, to)
         if key not in boards:
             try:
@@ -755,6 +753,7 @@ async def _overlay_live(a: App, journeys: list[Journey], mct: int, notes: list[s
                 # Live times are a bonus; the plan stands without them.
                 log.info("Live overlay skipped for %s->%s: %s", frm, to, exc)
                 boards[key] = None
+                failure = failure or exc
         return boards[key]
 
     touched = False
@@ -787,6 +786,8 @@ async def _overlay_live(a: App, journeys: list[Journey], mct: int, notes: list[s
         j.connection_at_risk = _at_risk(j, mct)
     if touched:
         notes.append("Live times from National Rail (Darwin) added where available.")
+    if failure:
+        notes.append(_darwin_offline(failure) + " Times shown are booked.")
 
 
 def _live_time(scheduled_iso: str, expected: str | None) -> datetime | None:
@@ -873,7 +874,6 @@ async def data_status() -> dict[str, Any]:
             "last_refresh_error": a.refresh_error,
             **meta,
         },
-        "realtime_trains": "configured" if s.has_rtt else "not configured (optional, paid)",
         "min_interchange_minutes": s.min_interchange_minutes,
     }
     if s.demo:
@@ -914,8 +914,8 @@ def main(argv: list[str] | None = None) -> None:
         info = Timetable.open(path).meta if path.exists() else "no timetable yet"
         print(
             ("Demo mode (generated data)\n" if settings.demo else "")
-            + f"Darwin: {_yn(settings.has_darwin)}; NR: {_yn(settings.has_nr)}; "
-            f"RTT: {_yn(settings.has_rtt)}\nTimetable {path}: {info}",
+            + f"Darwin: {_yn(settings.has_darwin)}; NR: {_yn(settings.has_nr)}\n"
+            f"Timetable {path}: {info}",
             file=sys.stderr,
         )
     else:

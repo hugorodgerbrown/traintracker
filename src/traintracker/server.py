@@ -891,10 +891,18 @@ async def data_status() -> dict[str, Any]:
 # ----------------------------------------------------------------------- CLI
 
 
-def main(argv: list[str] | None = None) -> None:
-    argv = sys.argv[1:] if argv is None else argv
+def configure_logging() -> None:
     # stdout carries the MCP protocol; logs must go to stderr.
     logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(levelname)s %(message)s")
+    # httpx logs every request URL at INFO. The Network Rail download redirects to a
+    # presigned S3 URL whose query string holds temporary AWS credentials.
+    for name in ("httpx", "httpcore"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+
+def main(argv: list[str] | None = None) -> None:
+    argv = sys.argv[1:] if argv is None else argv
+    configure_logging()
     cmd = argv[0] if argv else "serve"
     load_dotenv()
     settings = Settings.from_env()

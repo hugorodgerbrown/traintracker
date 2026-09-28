@@ -219,7 +219,7 @@ Logs go to stderr; stdout carries the MCP protocol.
 
 | Service | Type | Does | Environment |
 |---|---|---|---|
-| `traintracker` | Web service, 512 MB | `serve-http`; health check `/healthz` | `DATABASE_URL`, `DARWIN_API_KEY`, `MCP_AUTH_TOKEN` (generated), `TIMETABLE_AUTO_REFRESH=0` |
+| `traintracker` | Web service, 512 MB, [traintrackr.live](https://traintrackr.live) | `serve-http`; health check `/healthz` | `DATABASE_URL`, `DARWIN_API_KEY`, `MCP_AUTH_TOKEN` (generated), `MCP_PUBLIC_HOSTS`, `TIMETABLE_AUTO_REFRESH=0` |
 | `traintracker-refresh` | Cron job, 06:30 UTC daily | `traintracker refresh` | `DATABASE_URL`, `NR_USERNAME`, `NR_PASSWORD` |
 
 The web service holds one day's journey network in memory for `plan_journey` (about 200 MB), so it needs at least 512 MB.
@@ -227,10 +227,10 @@ The web service holds one day's journey network in memory for `plan_journey` (ab
 1. Create the `traintracker` database and role on your Postgres instance (see [Postgres](#3-postgres)).
 2. In the Render dashboard: **New → Blueprint**, pick this repository, and enter the values Render prompts for. Use the Postgres instance's *internal* URL, with `/traintracker` as the database name.
 3. Run the cron job once by hand (**Trigger Run**) to load the first timetable.
-4. Add the server to Claude Code with the web service's URL and the generated `MCP_AUTH_TOKEN`:
+4. Copy the generated `MCP_AUTH_TOKEN` from the service's Environment tab, then add the server to Claude Code (in a terminal, so the token stays out of any transcript). A custom domain must also be listed in `MCP_PUBLIC_HOSTS`:
 
 ```bash
-claude mcp add -s user --transport http traintracker https://<service>.onrender.com/mcp --header "Authorization: Bearer <MCP_AUTH_TOKEN>"
+claude mcp add -s user --transport http traintracker https://traintrackr.live/mcp --header "Authorization: Bearer $(pbpaste)"
 ```
 
 ## Limitations

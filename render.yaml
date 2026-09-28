@@ -18,6 +18,9 @@ services:
         sync: false
       - key: MCP_AUTH_TOKEN
         generateValue: true
+      # Hostnames clients connect to; other Host headers are rejected (421).
+      - key: MCP_PUBLIC_HOSTS
+        value: traintrackr.live,traintracker-6i2l.onrender.com
       # The cron job below refreshes the timetable; the web service only reads it.
       - key: TIMETABLE_AUTO_REFRESH
         value: "0"

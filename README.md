@@ -222,7 +222,7 @@ Logs go to stderr; stdout carries the MCP protocol.
 
 | Service | Type | Does | Environment |
 |---|---|---|---|
-| `traintracker` | Web service, 512 MB, [traintrackr.live](https://traintrackr.live) | `serve-http`; health check `/healthz` | `DATABASE_URL`, `DARWIN_API_KEY`, `MCP_AUTH_TOKEN` (generated), `MCP_OAUTH_PASSPHRASE`, `MCP_PUBLIC_HOSTS`, `TIMETABLE_AUTO_REFRESH=0` |
+| `traintracker` | Web service, 512 MB, [traintrackr.live](https://traintrackr.live) | `serve-http`; health check `/healthz` | `DATABASE_URL`, `DARWIN_API_KEY`, `MCP_OAUTH_PASSPHRASE`, `MCP_PUBLIC_HOSTS`, `TIMETABLE_AUTO_REFRESH=0` |
 | `traintracker-refresh` | Cron job, 06:30 UTC daily | `traintracker refresh` | `DATABASE_URL`, `NR_USERNAME`, `NR_PASSWORD` |
 
 The web service holds one day's journey network in memory for `plan_journey` (about 200 MB), so it needs at least 512 MB.
@@ -230,7 +230,9 @@ The web service holds one day's journey network in memory for `plan_journey` (ab
 1. Create the `traintracker` database and role on your Postgres instance (see [Postgres](#3-postgres)).
 2. In the Render dashboard: **New → Blueprint**, pick this repository, and enter the values Render prompts for. Use the Postgres instance's *internal* URL, with `/traintracker` as the database name.
 3. Run the cron job once by hand (**Trigger Run**) to load the first timetable.
-4. Copy the generated `MCP_AUTH_TOKEN` from the service's Environment tab, then add the server to Claude Code (in a terminal, so the token stays out of any transcript). Use your own service's host: its `onrender.com` name, or a custom domain you have added to the service and listed in `MCP_PUBLIC_HOSTS` (the `render.yaml` value is this repository's deployment, `traintrackr.live`):
+4. Add the server as a claude.ai connector (below). Use your own service's host: its `onrender.com` name, or a custom domain you have added to the service and listed in `MCP_PUBLIC_HOSTS` (the `render.yaml` value is this repository's deployment, `traintrackr.live`).
+
+For a client that can't do OAuth, set `MCP_AUTH_TOKEN` on the service to a long random value; it is accepted as a bearer token alongside OAuth, and never expires. For example, in a terminal (so the token stays out of any transcript), with the token on the clipboard:
 
 ```bash
 claude mcp add -s user --transport http traintracker https://<your-service-host>/mcp --header "Authorization: Bearer $(pbpaste)"
@@ -243,7 +245,7 @@ With `MCP_OAUTH_PASSPHRASE` set, the server is its own OAuth authorization serve
 1. In claude.ai: **Settings → Connectors → Add custom connector**, name `traintracker`, URL `https://<your-service-host>/mcp`. Leave the OAuth client fields empty: Claude registers itself.
 2. Claude opens the server's sign-in page. Enter the passphrase and click **Allow**.
 
-Sign-in hands Claude a one-hour access token and a 90-day refresh token, rotated on each refresh. Five wrong passphrases discard the sign-in attempt. Clients, codes and tokens are stored in the `mcp_auth` schema, tokens as SHA-256 hashes. To sign every client out, run `TRUNCATE mcp_auth.tokens` against the database. The static `MCP_AUTH_TOKEN` keeps working alongside OAuth.
+Sign-in hands Claude a one-hour access token and a 90-day refresh token, rotated on each refresh. Five wrong passphrases discard the sign-in attempt. Clients, codes and tokens are stored in the `mcp_auth` schema, tokens as SHA-256 hashes. To sign every client out, run `TRUNCATE mcp_auth.tokens` against the database. Changing the passphrase doesn't sign anyone out; truncate the tokens as well.
 
 ## Limitations
 

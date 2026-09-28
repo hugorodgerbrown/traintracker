@@ -3,12 +3,15 @@ from __future__ import annotations
 from datetime import date, datetime
 from pathlib import Path
 
+import psycopg
 import pytest
 
 from traintracker import planner
-from traintracker.config import UK_TZ
+from traintracker.config import UK_TZ, TimetableDB
+from traintracker.errors import TrainTrackerError
 from traintracker.timetable import (
     Timetable,
+    TimetableMissing,
     build,
     fmt_minutes,
     parse_schedule,
@@ -17,6 +20,7 @@ from traintracker.timetable import (
 )
 
 from . import feedgen
+from .conftest import timetable_db
 
 DAY = date(2026, 10, 2)  # a Friday inside the fixture's date range
 
@@ -31,7 +35,7 @@ def tt(tmp_path: Path) -> Timetable:
         # Sunday-only train.
         feedgen.branch("S00001", 9 * 60, days="0000001"),
     ]
-    db = tmp_path / "timetable.sqlite"
+    db = timetable_db()
     meta = build(feedgen.feed(extra), db, today=date(2026, 9, 26))
     assert int(meta["public_schedules"]) > 0
     Timetable.clear_caches()
@@ -59,13 +63,13 @@ def test_midnight_is_monotonic() -> None:
 
 
 def test_freight_and_expired_are_dropped(tt: Timetable) -> None:
-    uids = {u for (u,) in tt.con.execute("SELECT uid FROM schedules")}
+    uids = {u for (u,) in tt.query("SELECT uid FROM schedules")}
     assert "F00001" not in uids
     assert "X00001" not in uids
 
 
 def test_junction_without_crs_is_dropped(tt: Timetable) -> None:
-    crs = {c for (c,) in tt.con.execute("SELECT DISTINCT crs FROM stops")}
+    crs = {c for (c,) in tt.query("SELECT DISTINCT crs FROM stops")}
     assert None not in crs
     assert "SUY" in crs
 
@@ -170,7 +174,7 @@ def tt_direct(tmp_path: Path) -> Timetable:
             feedgen.location("SUDBURY", 15 * 60, None),
         ],
     )
-    db = tmp_path / "direct.sqlite"
+    db = timetable_db("_direct")
     build(feedgen.feed([direct]), db, today=date(2026, 9, 26))
     Timetable.clear_caches()
     return Timetable.open(db)
@@ -224,7 +228,7 @@ def test_board_window_past_midnight_includes_tomorrows_trains(tmp_path: Path) ->
     early = feedgen.schedule(
         "E00010", [feedgen.location("LIVST", None, 10), feedgen.location("STFD", 18, None)]
     )
-    db = tmp_path / "early.sqlite"
+    db = timetable_db("_early")
     build(feedgen.feed([early]), db, today=date(2026, 9, 26))
     Timetable.clear_caches()
     hits = Timetable.open(db).trips_at("LST", DAY, 23 * 60, 26 * 60)
@@ -240,3 +244,44 @@ def test_to_datetime_on_clock_change_days() -> None:
     assert to_datetime(spring, 90).isoformat() == "2027-03-28T02:30:00+01:00"
     assert to_datetime(spring, 180).isoformat() == "2027-03-28T03:00:00+01:00"
     assert to_datetime(date(2026, 10, 2), 600).isoformat() == "2026-10-02T10:00:00+01:00"
+
+
+def test_failed_refresh_keeps_the_old_timetable(tt: Timetable) -> None:
+    built_at = tt.meta["built_at"]
+    no_passengers = [line for line in feedgen.feed() if "JsonScheduleV1" not in line]
+    with pytest.raises(TrainTrackerError, match="no passenger schedules"):
+        build(no_passengers, tt.db, today=date(2026, 9, 26))
+    assert Timetable.open(tt.db).meta["built_at"] == built_at
+    with psycopg.connect(tt.db.dsn) as con:
+        staging = con.execute(
+            "SELECT count(*) FROM pg_namespace WHERE nspname = %s", (f"{tt.db.schema}_build",)
+        ).fetchone()
+    assert staging == (0,)
+
+
+def test_refresh_refuses_to_run_twice(tt: Timetable) -> None:
+    with psycopg.connect(tt.db.dsn, autocommit=True) as other:
+        other.execute("SELECT pg_advisory_lock(hashtext(%s))", (tt.db.schema,))
+        with pytest.raises(TrainTrackerError, match="already running"):
+            build(feedgen.feed(), tt.db, today=date(2026, 9, 26))
+
+
+def test_tables_are_unlogged(tt: Timetable) -> None:
+    rows = tt.query(
+        "SELECT relname, relpersistence FROM pg_class c "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE nspname = %s AND relkind = 'r'",
+        (tt.db.schema,),
+    )
+    assert dict(rows) == {"meta": "u", "schedules": "u", "stops": "u"}
+
+
+def test_missing_database_url_is_explained() -> None:
+    with pytest.raises(TimetableMissing, match="DATABASE_URL is not set"):
+        Timetable.open(TimetableDB("", "timetable"))
+
+
+def test_unreachable_database_is_explained() -> None:
+    db = TimetableDB("postgresql://nobody@127.0.0.1:1/none", "timetable")
+    with pytest.raises(TimetableMissing, match="can't be reached"):
+        Timetable.open(db)

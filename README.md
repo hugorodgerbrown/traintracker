@@ -2,17 +2,17 @@
 
 An MCP server that lets Claude answer questions about GB (National Rail) trains: *"when's the next train to Sudbury?"*, *"is the 13:00 from Liverpool Street on time?"*, *"how do I get from Cambridge to Sudbury next Saturday morning?"*
 
-It runs locally on your Mac over stdio and plugs into the Claude desktop app.
+It runs locally over stdio for the Claude desktop app, or hosted over HTTP (see [Deploy to Render](#deploy-to-render)). The timetable is stored in Postgres.
 
 ```mermaid
 flowchart LR
-    Claude[Claude desktop] <-->|stdio| TT[traintracker]
+    Claude[Claude] <-->|stdio or HTTP| TT[traintracker]
 
     subgraph Live["Live, next ~2 hours"]
         D[Darwin<br/>Rail Data Marketplace]
     end
-    subgraph Local["Local, any future date"]
-        NR[Network Rail<br/>SCHEDULE feed] -->|daily download| DB[(timetable.sqlite)]
+    subgraph Timetable["Timetable, any future date"]
+        NR[Network Rail<br/>SCHEDULE feed] -->|daily download| DB[(Postgres<br/>timetable schema)]
     end
     TT --> D
     TT --> DB
@@ -24,7 +24,7 @@ flowchart LR
 |---|---|---|
 | `find_station` | "Which Sudbury?" Station names ↔ CRS codes | Bundled station list |
 | `live_departures` | Next trains, expected times, platforms, delays, cancellations | Darwin; if it's not set up, booked times; if it's offline, booked times with a note saying so |
-| `departure_platform` | "Which platform is the 13:00 to Colchester?" One train's platform, flagged `live` or `booked` | Darwin (paged); booked platform from the local timetable until the live one is announced |
+| `departure_platform` | "Which platform is the 13:00 to Colchester?" One train's platform, flagged `live` or `booked` | Darwin (paged); booked platform from the timetable until the live one is announced |
 | `platform_departures` | "What are the next three trains from platform 7?" | Same as `departure_platform` |
 | `live_arrivals` | Trains arriving in the next ~2 hours | Darwin arrivals; if not set up, booked times; if offline, booked times with a note saying so |
 | `timetable` | Booked departures/arrivals at a station on any date | Local timetable |
@@ -38,7 +38,7 @@ Every tool accepts station names or CRS codes. Ambiguous names ("Sudbury", "Harr
 
 Set `TRAINTRACKER_DEMO=1` to test every tool before your accounts are approved. The server then uses generated example data and makes no network requests:
 
-- **Timetable:** a generated SCHEDULE feed for 25 real stations in East Anglia and London (Liverpool Street, Stratford, Chelmsford, Colchester, Ipswich, Norwich, Marks Tey, Sudbury, Cambridge, Kings Cross and others), running from today for 90 days. Sundays start later. It is stored as `demo-timetable.sqlite`, apart from the real timetable, and rebuilt each day.
+- **Timetable:** a generated SCHEDULE feed for 25 real stations in East Anglia and London (Liverpool Street, Stratford, Chelmsford, Colchester, Ipswich, Norwich, Marks Tey, Sudbury, Cambridge, Kings Cross and others), running from today for 90 days. Sundays start later. It is stored in its own schema (`timetable_demo`), apart from the real timetable, and rebuilt each day. Demo mode still needs `DATABASE_URL`.
 - **Live boards:** Darwin departure, arrival and service-details responses are generated from that timetable in-process. About one train in five runs late, one in 25 is cancelled and one in 12 has a platform change; the same train on the same day always gets the same result. Large stations (Liverpool Street, Kings Cross, Cambridge, …) announce platforms 15 minutes before departure, so the booked-platform fallback gets exercised.
 
 Every board and plan carries a note that the data is generated, and `data_status` reports `demo_mode`. Ask for stations outside the demo network and you get an empty board.
@@ -73,7 +73,21 @@ Add that to the `traintracker` entry in the Claude desktop config (see [Add to t
 3. Put your portal username and password in `NR_USERNAME` and `NR_PASSWORD`.
 4. If the portal gives a different download link for the *full daily extract, all operators, JSON* than `NR_SCHEDULE_URL` in `.env.example`, set `NR_SCHEDULE_URL` to it.
 
-The server downloads the feed in the background when the local timetable is missing or older than 26 hours. It checks this on start-up and on every tool call, so a server left running for days stays current. If a download fails it keeps serving the old timetable, and `data_status` shows the error. You can also run `traintracker refresh` by hand (see [Commands](#commands)).
+The server downloads the feed in the background when the timetable is missing or older than 26 hours. It checks this on start-up and on every tool call, so a server left running for days stays current. If a download fails it keeps serving the old timetable, and `data_status` shows the error. You can also run `traintracker refresh` by hand (see [Commands](#commands)). Set `TIMETABLE_AUTO_REFRESH=0` where a separate job runs `traintracker refresh`, as on Render.
+
+### 3. Postgres
+
+The timetable lives in one schema (`timetable` by default) of the database in `DATABASE_URL`. The role needs to create schemas in that database; the owner of the database can. On a shared server, give traintracker its own database and role:
+
+```sql
+CREATE ROLE traintracker LOGIN PASSWORD '…';
+CREATE DATABASE traintracker OWNER traintracker;
+REVOKE CONNECT ON DATABASE traintracker FROM PUBLIC;
+```
+
+The full GB timetable takes about 475 MB (4.3 million stops), and about twice that while a refresh builds the new copy. A refresh takes about 40 seconds plus the download. It builds the new timetable in a staging schema and swaps it in with a rename, so readers never see a half-built timetable, and an advisory lock stops two refreshes running at once.
+
+The tables are `UNLOGGED`: they are rebuilt from the feed every day, so they skip the write-ahead log and don't add to the server's WAL or point-in-time-recovery storage. The cost is that Postgres empties them after a crash; the tools then report "No timetable yet" until the next refresh.
 
 ## How each source is used
 
@@ -88,7 +102,7 @@ flowchart TD
     L --> L1{Darwin key?}
     L1 -->|yes| Darwin
     Darwin -->|error or timeout:<br/>note says Darwin is offline| TT
-    L1 -->|no| TT[(Local timetable<br/>booked times, flagged)]
+    L1 -->|no| TT[(Timetable<br/>booked times, flagged)]
 
     T --> TT
 
@@ -105,9 +119,9 @@ flowchart TD
 | Source | Freshness | Coverage | Cached for | Limits to know |
 |---|---|---|---|---|
 | Darwin | Real time | Now → +2 hours | 20 s | Darwin service IDs expire soon after the train runs |
-| Local timetable | Daily (Network Rail publishes ~06:00) | Two days back → end of the published timetable (usually months) | Until the next rebuild | Booked times only; last-minute changes show up in Darwin, not here |
+| Timetable (Postgres) | Daily (Network Rail publishes ~06:00) | Two days back → end of the published timetable (usually months) | Until the next rebuild | Booked times only; last-minute changes show up in Darwin, not here |
 
-### What the local timetable keeps
+### What the timetable keeps
 
 The SCHEDULE feed is large (all trains, freight included). On import, traintracker keeps only what a passenger needs:
 
@@ -128,13 +142,18 @@ For each date it applies Network Rail's precedence rules per train: cancellation
 
 ## Install
 
-Requires [uv](https://docs.astral.sh/uv/) and Python 3.11+.
+Requires [uv](https://docs.astral.sh/uv/), Python 3.11+ and a Postgres database (any version from 13). Locally, Docker (or OrbStack) is the quickest way to get one:
+
+```bash
+docker run -d --name traintracker-pg --restart unless-stopped \
+  -e POSTGRES_PASSWORD=postgres -p 127.0.0.1:55432:5432 postgres:17
+```
 
 ```bash
 git clone git@github.com:hugorodgerbrown/traintracker.git
 cd traintracker
 uv sync
-cp .env.example .env          # fill in your keys (.env is git-ignored)
+cp .env.example .env          # fill in your keys and DATABASE_URL (.env is git-ignored)
 uv run traintracker refresh   # first timetable download (a few minutes)
 uv run traintracker status
 ```
@@ -170,8 +189,13 @@ All configuration is by environment variable, read from `.env` in the project fo
 | `DARWIN_ARRIVALS_API_KEY` / `DARWIN_ARRIVALS_URL` | — | Live Arrival Board product |
 | `NR_USERNAME` / `NR_PASSWORD` | — | Network Rail data feeds login |
 | `NR_SCHEDULE_URL` | full daily JSON extract | Override if the portal gives a different link |
-| `TRAINTRACKER_DATA_DIR` | `$XDG_DATA_HOME/traintracker` if set, else `~/.traintracker` | Where `timetable.sqlite` lives |
+| `DATABASE_URL` | — | Postgres database for the timetable (required) |
+| `TIMETABLE_SCHEMA` | `timetable` | Schema the timetable lives in (demo mode appends `_demo`) |
+| `TIMETABLE_AUTO_REFRESH` | `1` | `0` stops the server downloading the timetable itself (use a cron job instead) |
 | `TIMETABLE_MAX_AGE_HOURS` | `26` | Re-download when older than this |
+| `TRAINTRACKER_DATA_DIR` | `$XDG_DATA_HOME/traintracker` if set, else `~/.traintracker` | Where the feed is downloaded to before import |
+| `MCP_AUTH_TOKEN` | — | Bearer token required by `serve-http` |
+| `HOST` / `PORT` | `0.0.0.0` / `8000` | Where `serve-http` listens |
 | `MIN_INTERCHANGE_MINUTES` | `5` | Minimum change time for planning |
 | `HTTP_TIMEOUT_SECONDS` | `15` | Upstream request timeout |
 | `TRAINTRACKER_DEMO` | off | `1` uses generated example data instead of any account (see [demo mode](#try-it-without-accounts-demo-mode)) |
@@ -181,11 +205,32 @@ All configuration is by environment variable, read from `.env` in the project fo
 | Command | Does |
 |---|---|
 | `traintracker` | Run the MCP server on stdio (what Claude runs) |
+| `traintracker serve-http` | Run the MCP server over streamable HTTP at `/mcp`, with a bearer token and a `/healthz` check |
 | `traintracker refresh` | Download the SCHEDULE feed and rebuild the timetable (in demo mode, regenerate the demo timetable) |
 | `traintracker import FILE.json.gz` | Build the timetable from a feed file you downloaded yourself |
 | `traintracker status` | Show configured sources and timetable details |
 
 Logs go to stderr; stdout carries the MCP protocol.
+
+## Deploy to Render
+
+[`render.yaml`](render.yaml) defines two services in Frankfurt:
+
+| Service | Type | Does | Environment |
+|---|---|---|---|
+| `traintracker` | Web service, 512 MB | `serve-http`; health check `/healthz` | `DATABASE_URL`, `DARWIN_API_KEY`, `MCP_AUTH_TOKEN` (generated), `TIMETABLE_AUTO_REFRESH=0` |
+| `traintracker-refresh` | Cron job, 06:30 UTC daily | `traintracker refresh` | `DATABASE_URL`, `NR_USERNAME`, `NR_PASSWORD` |
+
+The web service holds one day's journey network in memory for `plan_journey` (about 200 MB), so it needs at least 512 MB.
+
+1. Create the `traintracker` database and role on your Postgres instance (see [Postgres](#3-postgres)).
+2. In the Render dashboard: **New → Blueprint**, pick this repository, and enter the values Render prompts for. Use the Postgres instance's *internal* URL, with `/traintracker` as the database name.
+3. Run the cron job once by hand (**Trigger Run**) to load the first timetable.
+4. Add the server to Claude Code with the web service's URL and the generated `MCP_AUTH_TOKEN`:
+
+```bash
+claude mcp add -s user --transport http traintracker https://<service>.onrender.com/mcp --header "Authorization: Bearer <MCP_AUTH_TOKEN>"
+```
 
 ## Limitations
 
@@ -197,7 +242,7 @@ Logs go to stderr; stdout carries the MCP protocol.
 
 ## Development
 
-tox runs formatting, lint, type and test checks on Python 3.11 from `uv.lock` (via the `tox-uv` plugin):
+tox runs formatting, lint, type and test checks on Python 3.11 from `uv.lock` (via the `tox-uv` plugin). The tests need a Postgres they can create schemas in, at `TEST_DATABASE_URL` (default `postgresql://postgres:postgres@127.0.0.1:55432/postgres`, which the `docker run` under [Install](#install) provides). Each test works in its own schema and drops it afterwards. CI runs Postgres 17 as a service.
 
 ```bash
 uvx --with tox-uv tox              # all environments: format, lint, type, tests
@@ -217,7 +262,8 @@ Tests use a synthetic SCHEDULE feed in Network Rail's JSON format (`tests/feedge
 ```
 src/traintracker/
   server.py      MCP tools, source fallback, live overlay, CLI
-  timetable.py   SCHEDULE importer and SQLite queries (STP resolution)
+  http_app.py    Streamable-HTTP entry point with bearer-token check
+  timetable.py   SCHEDULE importer and Postgres queries (STP resolution)
   planner.py     Connection Scan journey planner, London links
   darwin.py      Rail Data Marketplace LDBWS client
   stations.py    Station search and name resolution

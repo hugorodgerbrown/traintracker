@@ -10,7 +10,6 @@ import asyncio
 import functools
 import logging
 import re
-import sqlite3
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -20,11 +19,12 @@ from pathlib import Path
 from typing import Annotated, Any, Literal, ParamSpec, TypeVar
 
 import httpx
+import psycopg
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
 
-from traintracker import demo, planner, stations
+from traintracker import demo, http_app, planner, stations
 from traintracker.config import UK_TZ, Settings, load_dotenv
 from traintracker.darwin import DarwinClient
 from traintracker.errors import TrainTrackerError, UpstreamError
@@ -84,7 +84,7 @@ class App:
 
     def timetable(self) -> Timetable:
         try:
-            return Timetable.open(self.settings.timetable_path)
+            return Timetable.open(self.settings.timetable_db)
         except TimetableMissing:
             if self.refresh_task and not self.refresh_task.done():
                 started = self.refresh_started.strftime("%H:%M") if self.refresh_started else "?"
@@ -98,11 +98,7 @@ class App:
             raise
 
     def timetable_age(self) -> timedelta | None:
-        path = self.settings.timetable_path
-        if not path.exists():
-            return None
-        built = datetime.fromtimestamp(path.stat().st_mtime, UK_TZ)
-        return datetime.now(UK_TZ) - built
+        return timetable_age(self.settings)
 
     def maybe_refresh(self) -> None:
         """Start a background download if the timetable is missing or stale.
@@ -110,6 +106,8 @@ class App:
         In demo mode, rebuild the generated timetable once a day instead.
         """
         if self.refresh_task and not self.refresh_task.done():
+            return
+        if not self.settings.auto_refresh or not self.settings.database_url:
             return
         if self.settings.demo:
             if demo.is_current(self.settings):
@@ -134,6 +132,15 @@ class App:
         except Exception as exc:  # keep serving with the old timetable
             self.refresh_error = str(exc)
             log.warning("Timetable refresh failed: %s", exc)
+
+
+def timetable_age(settings: Settings) -> timedelta | None:
+    """Time since the timetable was built; None if there is none or it can't be read."""
+    try:
+        built = Timetable.open(settings.timetable_db).meta.get("built_at")
+    except (TrainTrackerError, psycopg.Error):
+        return None
+    return datetime.now(UK_TZ) - datetime.fromisoformat(built) if built else None
 
 
 _app: App | None = None
@@ -176,7 +183,7 @@ async def lifespan(_server: MCPServer[None]) -> AsyncIterator[None]:
 
 def _prewarm(settings: Settings) -> None:
     try:
-        tt = Timetable.open(settings.timetable_path)
+        tt = Timetable.open(settings.timetable_db)
         planner.network(tt, tt.meta.get("built_at"), datetime.now(UK_TZ).date())
     except TrainTrackerError:
         pass  # no timetable yet
@@ -232,10 +239,11 @@ def _tool_errors(
             raise
         except TrainTrackerError as exc:
             raise ToolError(str(exc)) from exc
-        except sqlite3.Error as exc:
+        except psycopg.Error as exc:
             log.exception("Timetable database error")
             raise ToolError(
-                "The local timetable couldn't be read. Run `traintracker refresh` to rebuild it."
+                "The timetable database couldn't be read. Try again; if it keeps failing, run "
+                "`traintracker refresh` to rebuild it."
             ) from exc
         except httpx.TimeoutException as exc:
             raise ToolError("The upstream service timed out; try again.") from exc
@@ -869,7 +877,9 @@ async def data_status() -> dict[str, Any]:
         "darwin_arrivals": "configured" if s.has_darwin_arrivals else "not configured (optional)",
         "network_rail_timetable": {
             "credentials": "configured" if s.has_nr else "missing NR_USERNAME / NR_PASSWORD",
-            "path": str(s.timetable_path),
+            "database": "configured" if s.database_url else "missing DATABASE_URL",
+            "schema": s.timetable_db.schema,
+            "auto_refresh": s.auto_refresh,
             "age_hours": round(age.total_seconds() / 3600, 1) if age else None,
             "refreshing": bool(a.refresh_task and not a.refresh_task.done()),
             "last_refresh_error": a.refresh_error,
@@ -908,28 +918,42 @@ def main(argv: list[str] | None = None) -> None:
     settings = Settings.from_env()
     if cmd == "serve":
         mcp.run("stdio")
+    elif cmd == "serve-http":
+        if not settings.mcp_auth_token:
+            print("serve-http needs MCP_AUTH_TOKEN (a long random string).", file=sys.stderr)
+            sys.exit(2)
+        http_app.serve(
+            mcp.streamable_http_app(host=settings.host),
+            settings.mcp_auth_token,
+            settings.host,
+            settings.port,
+        )
     elif cmd == "refresh":
         meta = (
             demo.build_timetable(settings)
             if settings.demo
             else asyncio.run(download_and_build(settings))
         )
-        print(f"Timetable built at {settings.timetable_path}: {meta}", file=sys.stderr)
+        print(f"Timetable built in schema {settings.timetable_db.schema}: {meta}", file=sys.stderr)
     elif cmd == "import" and len(argv) == 2:
-        meta = build_from_file(Path(argv[1]), settings.timetable_path)
-        print(f"Timetable built at {settings.timetable_path}: {meta}", file=sys.stderr)
+        meta = build_from_file(Path(argv[1]), settings.timetable_db)
+        print(f"Timetable built in schema {settings.timetable_db.schema}: {meta}", file=sys.stderr)
     elif cmd == "status":
-        path = settings.timetable_path
-        info = Timetable.open(path).meta if path.exists() else "no timetable yet"
+        info: Any
+        try:
+            info = Timetable.open(settings.timetable_db).meta
+        except TrainTrackerError as exc:
+            info = str(exc)
         print(
             ("Demo mode (generated data)\n" if settings.demo else "")
             + f"Darwin: {_yn(settings.has_darwin)}; NR: {_yn(settings.has_nr)}\n"
-            f"Timetable {path}: {info}",
+            f"Timetable schema {settings.timetable_db.schema}: {info}",
             file=sys.stderr,
         )
     else:
         print(
-            "usage: traintracker [serve | refresh | import FILE.json.gz | status]", file=sys.stderr
+            "usage: traintracker [serve | serve-http | refresh | import FILE.json.gz | status]",
+            file=sys.stderr,
         )
         sys.exit(2)
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -21,6 +22,9 @@ NR_SCHEDULE_URL = (
     "https://publicdatafeeds.networkrail.co.uk/ntrod/CifFileAuthenticate"
     "?type=CIF_ALL_FULL_DAILY&day=toc-full"
 )
+
+
+TRUE = {"1", "true", "yes", "on"}
 
 
 def default_data_dir() -> Path:
@@ -57,6 +61,21 @@ def _env(name: str) -> str | None:
     return value or None
 
 
+SCHEMA_NAME = re.compile(r"[a-z_][a-z0-9_]{0,40}")
+
+
+@dataclass(frozen=True)
+class TimetableDB:
+    """Where a timetable lives: a Postgres database and the schema inside it."""
+
+    dsn: str = field(repr=False)
+    schema: str
+
+    def __post_init__(self) -> None:
+        if not SCHEMA_NAME.fullmatch(self.schema):
+            raise ValueError(f"Invalid timetable schema name {self.schema!r}.")
+
+
 @dataclass(frozen=True)
 class Settings:
     darwin_key: str | None = field(repr=False)
@@ -68,6 +87,12 @@ class Settings:
     nr_username: str | None
     nr_password: str | None = field(repr=False)
     nr_schedule_url: str
+    database_url: str | None = field(repr=False)
+    timetable_schema: str
+    auto_refresh: bool
+    mcp_auth_token: str | None = field(repr=False)
+    host: str
+    port: int
     data_dir: Path
     timetable_max_age_hours: float
     min_interchange_minutes: int
@@ -75,9 +100,10 @@ class Settings:
     demo: bool = False
 
     @property
-    def timetable_path(self) -> Path:
-        # Separate file, so demo data never mixes with the real timetable.
-        return self.data_dir / ("demo-timetable.sqlite" if self.demo else "timetable.sqlite")
+    def timetable_db(self) -> TimetableDB:
+        # A separate schema, so demo data never mixes with the real timetable.
+        schema = f"{self.timetable_schema}_demo" if self.demo else self.timetable_schema
+        return TimetableDB(self.database_url or "", schema)
 
     @property
     def has_nr(self) -> bool:
@@ -105,12 +131,19 @@ class Settings:
             nr_username=_env("NR_USERNAME"),
             nr_password=_env("NR_PASSWORD"),
             nr_schedule_url=_env("NR_SCHEDULE_URL") or NR_SCHEDULE_URL,
+            database_url=_env("DATABASE_URL"),
+            timetable_schema=_env("TIMETABLE_SCHEMA") or "timetable",
+            # Off where a separate cron job runs `traintracker refresh`.
+            auto_refresh=(_env("TIMETABLE_AUTO_REFRESH") or "1").lower() in TRUE,
+            mcp_auth_token=_env("MCP_AUTH_TOKEN"),
+            host=_env("HOST") or "0.0.0.0",  # all interfaces: the HTTP server is for hosting
+            port=int(_env("PORT") or 8000),
             data_dir=Path(_env("TRAINTRACKER_DATA_DIR") or default_data_dir()).expanduser(),
             timetable_max_age_hours=float(_env("TIMETABLE_MAX_AGE_HOURS") or 26),
             min_interchange_minutes=int(_env("MIN_INTERCHANGE_MINUTES") or 5),
             http_timeout=float(_env("HTTP_TIMEOUT_SECONDS") or 15),
         )
-        if (_env("TRAINTRACKER_DEMO") or "").lower() not in {"1", "true", "yes", "on"}:
+        if (_env("TRAINTRACKER_DEMO") or "").lower() not in TRUE:
             return settings
         # Generated data only: every Darwin product on, no real account used.
         return replace(

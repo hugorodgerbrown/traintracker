@@ -1,0 +1,42 @@
+# Render Blueprint: the MCP server over HTTP, plus a daily timetable refresh.
+# Both use a database on a (shared) Render Postgres instance; set DATABASE_URL
+# to its internal URL when Render prompts for it. See "Deploy to Render" in the README.
+services:
+  - type: web
+    name: traintracker
+    runtime: python
+    region: frankfurt
+    plan: 0.5c-512mb
+    buildCommand: pip install uv && uv sync --locked --no-dev
+    startCommand: uv run --no-sync traintracker serve-http
+    healthCheckPath: /healthz
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: DARWIN_API_KEY
+        sync: false
+      - key: MCP_AUTH_TOKEN
+        generateValue: true
+      # The cron job below refreshes the timetable; the web service only reads it.
+      - key: TIMETABLE_AUTO_REFRESH
+        value: "0"
+
+  - type: cron
+    name: traintracker-refresh
+    runtime: python
+    region: frankfurt
+    plan: starter
+    # 06:30 UTC (06:30 GMT / 07:30 BST): after Network Rail publishes the daily
+    # extract at about 06:00 UK time.
+    schedule: "30 6 * * *"
+    buildCommand: pip install uv && uv sync --locked --no-dev
+    startCommand: uv run --no-sync traintracker refresh
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: NR_USERNAME
+        sync: false
+      - key: NR_PASSWORD
+        sync: false

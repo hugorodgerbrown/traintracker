@@ -11,7 +11,7 @@ import respx
 from traintracker.config import NR_SCHEDULE_URL, Settings
 from traintracker.errors import NotConfigured, UpstreamError
 from traintracker.server import main
-from traintracker.timetable import Timetable, download_and_build
+from traintracker.timetable import Timetable, TimetableMissing, download_and_build
 
 from . import feedgen
 
@@ -36,7 +36,7 @@ async def test_download_follows_redirect_and_builds(settings: Settings) -> None:
     meta = await download_and_build(settings)
     assert first.calls.last.request.headers["Authorization"].startswith("Basic ")
     assert int(meta["public_schedules"]) > 0
-    assert Timetable.open(settings.timetable_path).meta["built_at"] == meta["built_at"]
+    assert Timetable.open(settings.timetable_db).meta["built_at"] == meta["built_at"]
     assert not list(settings.data_dir.glob("*.part"))  # temp download removed
 
 
@@ -49,7 +49,8 @@ async def test_login_page_is_reported(settings: Settings) -> None:
     )
     with pytest.raises(UpstreamError, match="web page"):
         await download_and_build(settings)
-    assert not settings.timetable_path.exists()
+    with pytest.raises(TimetableMissing):
+        Timetable.open(settings.timetable_db)
 
 
 @respx.mock
@@ -100,6 +101,6 @@ def test_refresh_does_not_log_presigned_url(
         )
     )
     main(["refresh"])
-    assert settings.timetable_path.exists()
+    assert Timetable.open(settings.timetable_db).meta
     assert "X-Amz-" not in caplog.text
     assert "X-Amz-" not in capsys.readouterr().err

@@ -2,7 +2,7 @@
 
 Set TRAINTRACKER_DEMO=1. The server then:
 
-- builds `demo-timetable.sqlite` from a generated SCHEDULE feed (real stations
+- builds the demo timetable schema from a generated SCHEDULE feed (real stations
   and operators in East Anglia, invented times) covering the next 90 days, and
   rebuilds it each day;
 - answers Darwin (LDBWS) requests in-process from that timetable, adding
@@ -34,6 +34,7 @@ import httpx
 
 from traintracker import stations
 from traintracker.config import UK_TZ, Settings
+from traintracker.errors import TrainTrackerError
 from traintracker.timetable import Stop, Timetable, Trip, build, fmt_minutes, minutes_on
 
 DEMO_NOTE = (
@@ -287,15 +288,18 @@ def feed(today: date) -> list[str]:
 
 def is_current(settings: Settings) -> bool:
     """True if the demo timetable exists and was built today."""
-    path = settings.timetable_path
-    if not path.exists():
+    try:
+        built = Timetable.open(settings.timetable_db).meta.get("built_at")
+    except TrainTrackerError:
         return False
-    return datetime.fromtimestamp(path.stat().st_mtime, UK_TZ).date() == datetime.now(UK_TZ).date()
+    if not built:
+        return False
+    return datetime.fromisoformat(built).date() == datetime.now(UK_TZ).date()
 
 
 def build_timetable(settings: Settings) -> dict[str, Any]:
     today = datetime.now(UK_TZ).date()
-    return build(feed(today), settings.timetable_path, today=today)
+    return build(feed(today), settings.timetable_db, today=today)
 
 
 def ensure_timetable(settings: Settings) -> None:
@@ -367,7 +371,7 @@ class DemoDarwin:
     def __call__(self, request: httpx.Request) -> httpx.Response:
         *_, op, arg = request.url.path.rstrip("/").split("/")
         arg = unquote(arg)
-        tt = Timetable.open(self.settings.timetable_path)
+        tt = Timetable.open(self.settings.timetable_db)
         now = self.clock().astimezone(UK_TZ)
         params = request.url.params
         if op in ("GetDepBoardWithDetails", "GetArrBoardWithDetails"):

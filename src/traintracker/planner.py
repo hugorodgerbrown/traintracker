@@ -1,4 +1,4 @@
-"""Journey planning over the local timetable using the Connection Scan Algorithm.
+"""Journey planning over the timetable using the Connection Scan Algorithm.
 
 CSA scans every train "hop" of the day in departure order, keeping the earliest
 time each station can be reached. It finds earliest-arrival journeys with any

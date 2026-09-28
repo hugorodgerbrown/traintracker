@@ -14,7 +14,7 @@ from traintracker.config import UK_TZ, Settings
 from traintracker.darwin import DarwinClient
 from traintracker.timetable import Timetable, build
 
-from .test_server import call
+from .test_server import call, drop_timetable
 
 # A Friday; the demo timetable is built relative to this date.
 TODAY = date(2026, 10, 2)
@@ -28,20 +28,20 @@ def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Settings:
     monkeypatch.setenv("NR_USERNAME", "real-user")
     monkeypatch.setenv("NR_PASSWORD", "real-password")
     s = Settings.from_env()
-    build(demo.feed(TODAY), s.timetable_path, today=TODAY)
+    build(demo.feed(TODAY), s.timetable_db, today=TODAY)
     Timetable.clear_caches()
     return s
 
 
 def test_demo_settings_use_no_real_accounts(settings: Settings) -> None:
     assert settings.demo
-    assert settings.timetable_path.name == "demo-timetable.sqlite"
+    assert settings.timetable_db.schema.endswith("_demo")
     assert settings.has_darwin and settings.has_darwin_arrivals
     assert not settings.has_nr
 
 
 def test_timetable_runs_every_route(settings: Settings) -> None:
-    tt = Timetable.open(settings.timetable_path)
+    tt = Timetable.open(settings.timetable_db)
     assert tt.meta["valid_to"] == (TODAY + timedelta(days=demo.DAYS_AHEAD)).isoformat()
     for crs in set(demo.TIPLOCS.values()):
         assert tt.trips_at(crs, TODAY, 12 * 60, 14 * 60), crs
@@ -52,7 +52,7 @@ def test_timetable_runs_every_route(settings: Settings) -> None:
 
 
 def test_running_mixes_delays_and_cancellations(settings: Settings) -> None:
-    trips = Timetable.open(settings.timetable_path).day_trips(TODAY)
+    trips = Timetable.open(settings.timetable_db).day_trips(TODAY)
     runs = [demo.running(t) for t in trips]
     assert any(r.cancelled for r in runs)
     assert any(r.delay is None for r in runs)
@@ -92,7 +92,7 @@ async def test_darwin_board_pages(settings: Settings) -> None:
 
 
 async def test_tools_in_demo_mode(settings: Settings) -> None:
-    settings.timetable_path.unlink()  # the server builds one for the real date
+    drop_timetable(settings.timetable_db)  # the server builds one for the real date
     async with Client(server.mcp) as client:
         status = await call(client, "data_status")
         assert "demo_mode" in status and "SUY" in status["demo_stations"]

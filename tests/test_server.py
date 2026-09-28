@@ -9,16 +9,19 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import psycopg
 import pytest
 import respx
 from mcp import Client
+from psycopg import sql
 
 from traintracker import server
-from traintracker.config import DARWIN_DEPARTURES_URL, UK_TZ
+from traintracker.config import DARWIN_DEPARTURES_URL, UK_TZ, TimetableDB
 from traintracker.models import Journey, JourneyLeg, StationRef
 from traintracker.timetable import Timetable, build
 
 from . import feedgen
+from .conftest import timetable_db
 from .test_clients import load
 
 
@@ -33,7 +36,7 @@ async def connect(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncItera
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("DARWIN_API_KEY", "darwin-key")
     monkeypatch.setenv("TRAINTRACKER_DATA_DIR", str(tmp_path))
-    build(feedgen.feed(), tmp_path / "timetable.sqlite", today=date(2026, 9, 26))
+    build(feedgen.feed(), timetable_db(), today=date(2026, 9, 26))
     Timetable.clear_caches()
     async with Client(server.mcp) as c:
         yield c
@@ -145,13 +148,19 @@ async def test_data_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
 
 
 async def test_missing_timetable_message(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("TRAINTRACKER_DATA_DIR", str(tmp_path / "empty"))
+    monkeypatch.setenv("TRAINTRACKER_DATA_DIR", str(tmp_path))
     for key in ("NR_USERNAME", "NR_PASSWORD"):
         monkeypatch.delenv(key, raising=False)
     Timetable.clear_caches()
     async with Client(server.mcp) as c:
         msg = await error(c, "plan_journey", origin="LST", destination="SUY")
     assert "No timetable yet" in msg
+
+
+def drop_timetable(db: TimetableDB) -> None:
+    Timetable.clear_caches()
+    with psycopg.connect(db.dsn, autocommit=True) as con:
+        con.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(db.schema)))
 
 
 def _leg(dep: str, arr: str, dep_exp: str | None = None, arr_exp: str | None = None) -> JourneyLeg:
@@ -217,8 +226,7 @@ async def test_darwin_outage_without_timetable_says_darwin_is_offline(
         respx.get(f"{DARWIN_DEPARTURES_URL}/GetDepBoardWithDetails/MKT").mock(
             return_value=httpx.Response(503)
         )
-        (tmp_path / "timetable.sqlite").unlink()
-        Timetable.clear_caches()
+        drop_timetable(timetable_db())
         msg = await error(client, "live_departures", station="Marks Tey")
     assert "Darwin) is offline" in msg and "No timetable yet" in msg
 

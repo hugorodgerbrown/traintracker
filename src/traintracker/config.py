@@ -93,6 +93,7 @@ class Settings:
     mcp_auth_token: str | None = field(repr=False)
     host: str
     port: int
+    public_hosts: tuple[str, ...]
     data_dir: Path
     timetable_max_age_hours: float
     min_interchange_minutes: int
@@ -138,6 +139,14 @@ class Settings:
             mcp_auth_token=_env("MCP_AUTH_TOKEN"),
             host=_env("HOST") or "0.0.0.0",  # all interfaces: the HTTP server is for hosting
             port=int(_env("PORT") or 8000),
+            # Hostnames clients use; Render sets RENDER_EXTERNAL_HOSTNAME on web services.
+            public_hosts=tuple(
+                h.strip()
+                for h in (_env("MCP_PUBLIC_HOSTS") or _env("RENDER_EXTERNAL_HOSTNAME") or "").split(
+                    ","
+                )
+                if h.strip()
+            ),
             data_dir=Path(_env("TRAINTRACKER_DATA_DIR") or default_data_dir()).expanduser(),
             timetable_max_age_hours=float(_env("TIMETABLE_MAX_AGE_HOURS") or 26),
             min_interchange_minutes=int(_env("MIN_INTERCHANGE_MINUTES") or 5),

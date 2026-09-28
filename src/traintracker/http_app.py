@@ -10,6 +10,8 @@ from __future__ import annotations
 import hmac
 from typing import Any
 
+from mcp.server.transport_security import TransportSecuritySettings
+
 HEALTH_PATH = "/healthz"
 
 Scope = dict[str, Any]
@@ -45,6 +47,22 @@ async def _respond(send: Send, status: int, body: bytes) -> None:
         headers.append((b"www-authenticate", b"Bearer"))
     await send({"type": "http.response.start", "status": status, "headers": headers})
     await send({"type": "http.response.body", "body": body})
+
+
+def transport_security(public_hosts: list[str]) -> TransportSecuritySettings | None:
+    """DNS-rebinding protection for the hostnames the server is reached on.
+
+    The bind address (HOST, 0.0.0.0 on Render) says nothing about the Host header
+    clients send, so the public names are configured separately. With none, the
+    SDK's default applies (checks only for localhost binds).
+    """
+    if not public_hosts:
+        return None
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=[p for h in public_hosts for p in (h, f"{h}:*")],
+        allowed_origins=[f"https://{h}" for h in public_hosts],
+    )
 
 
 def serve(app: ASGIApp, token: str, host: str, port: int) -> None:

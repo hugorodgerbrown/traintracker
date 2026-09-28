@@ -195,7 +195,8 @@ All configuration is by environment variable, read from `.env` in the project fo
 | `TIMETABLE_MAX_AGE_HOURS` | `26` | Re-download when older than this |
 | `TRAINTRACKER_DATA_DIR` | `$XDG_DATA_HOME/traintracker` if set, else `~/.traintracker` | Where the feed is downloaded to before import |
 | `MCP_AUTH_TOKEN` | — | Bearer token required by `serve-http` |
-| `HOST` / `PORT` | `0.0.0.0` / `8000` | Where `serve-http` listens |
+| `HOST` / `PORT` | `0.0.0.0` / `8000` | Where `serve-http` listens (bind address) |
+| `MCP_PUBLIC_HOSTS` | `RENDER_EXTERNAL_HOSTNAME` | Comma-separated hostnames clients use; `serve-http` rejects other `Host` headers (DNS-rebinding protection) |
 | `MIN_INTERCHANGE_MINUTES` | `5` | Minimum change time for planning |
 | `HTTP_TIMEOUT_SECONDS` | `15` | Upstream request timeout |
 | `TRAINTRACKER_DEMO` | off | `1` uses generated example data instead of any account (see [demo mode](#try-it-without-accounts-demo-mode)) |

@@ -6,8 +6,11 @@ from typing import Any
 
 import httpx
 import pytest
+from mcp.server.transport_security import TransportSecurityMiddleware
+from starlette.requests import Request
 
-from traintracker.http_app import BearerAuth
+from traintracker.config import Settings
+from traintracker.http_app import BearerAuth, transport_security
 from traintracker.server import main
 
 
@@ -52,3 +55,34 @@ def test_serve_http_requires_a_token(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(SystemExit) as exit_info:
         main(["serve-http"])
     assert exit_info.value.code == 2
+
+
+def _request(host: str) -> Request:
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/mcp",
+        "headers": [(b"host", host.encode()), (b"content-type", b"application/json")],
+    }
+    return Request(scope)
+
+
+async def test_public_host_is_checked_apart_from_the_bind_address() -> None:
+    settings = transport_security(["traintracker.onrender.com"])
+    assert settings is not None
+    middleware = TransportSecurityMiddleware(settings)
+    assert await middleware.validate_request(_request("traintracker.onrender.com"), True) is None
+    rejected = await middleware.validate_request(_request("evil.example"), True)
+    assert rejected is not None and rejected.status_code == 421
+
+
+def test_public_hosts_default_to_render_hostname(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MCP_PUBLIC_HOSTS", raising=False)
+    monkeypatch.setenv("RENDER_EXTERNAL_HOSTNAME", "traintracker.onrender.com")
+    assert Settings.from_env().public_hosts == ("traintracker.onrender.com",)
+    monkeypatch.setenv("MCP_PUBLIC_HOSTS", "a.example, b.example")
+    assert Settings.from_env().public_hosts == ("a.example", "b.example")
+
+
+def test_no_public_hosts_keeps_sdk_default() -> None:
+    assert transport_security([]) is None

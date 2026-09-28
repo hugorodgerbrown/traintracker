@@ -923,7 +923,10 @@ def main(argv: list[str] | None = None) -> None:
             print("serve-http needs MCP_AUTH_TOKEN (a long random string).", file=sys.stderr)
             sys.exit(2)
         http_app.serve(
-            mcp.streamable_http_app(host=settings.host),
+            mcp.streamable_http_app(
+                host=settings.host,
+                transport_security=http_app.transport_security(list(settings.public_hosts)),
+            ),
             settings.mcp_auth_token,
             settings.host,
             settings.port,

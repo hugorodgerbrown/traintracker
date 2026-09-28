@@ -39,6 +39,21 @@ flowchart LR
 
 Every tool accepts station names or CRS codes. Ambiguous names ("Sudbury", "Harrow") return the candidates so Claude can ask which one you meant.
 
+## Try it without accounts (demo mode)
+
+Set `TRAINTRACKER_DEMO=1` to test every tool before your accounts are approved. The server then uses generated example data and makes no network requests:
+
+- **Timetable:** a generated SCHEDULE feed for 25 real stations in East Anglia and London (Liverpool Street, Stratford, Chelmsford, Colchester, Ipswich, Norwich, Marks Tey, Sudbury, Cambridge, Kings Cross and others), running from today for 90 days. Sundays start later. It is stored as `demo-timetable.sqlite`, apart from the real timetable, and rebuilt each day.
+- **Live boards:** Darwin departure, arrival and service-details responses are generated from that timetable in-process. About one train in five runs late, one in 25 is cancelled and one in 12 has a platform change; the same train on the same day always gets the same result. Large stations (Liverpool Street, Kings Cross, Cambridge, …) announce platforms 15 minutes before departure, so the booked-platform fallback gets exercised.
+
+Every board and plan carries a note that the data is generated, and `data_status` reports `demo_mode`. Ask for stations outside the demo network and you get an empty board.
+
+```json
+"env": { "TRAINTRACKER_DEMO": "1" }
+```
+
+Add that to the `traintracker` entry in the Claude desktop config (see [Add to the Claude desktop app](#add-to-the-claude-desktop-app)), or put `TRAINTRACKER_DEMO=1` in `.env`. Remove it once your keys are in place. Things to try: *"next trains from Liverpool Street"*, *"which platform is the next train from Cambridge to Kings Cross?"*, *"how do I get from Cambridge to Sudbury tomorrow at 9?"*
+
 ## Accounts you need
 
 | # | Account | Needed? | Cost | What it provides | Used for |
@@ -175,13 +190,14 @@ All configuration is by environment variable, read from `.env` in the project fo
 | `TIMETABLE_MAX_AGE_HOURS` | `26` | Re-download when older than this |
 | `MIN_INTERCHANGE_MINUTES` | `5` | Minimum change time for planning |
 | `HTTP_TIMEOUT_SECONDS` | `15` | Upstream request timeout |
+| `TRAINTRACKER_DEMO` | off | `1` uses generated example data instead of any account (see [demo mode](#try-it-without-accounts-demo-mode)) |
 
 ## Commands
 
 | Command | Does |
 |---|---|
 | `traintracker` | Run the MCP server on stdio (what Claude runs) |
-| `traintracker refresh` | Download the SCHEDULE feed and rebuild the timetable |
+| `traintracker refresh` | Download the SCHEDULE feed and rebuild the timetable (in demo mode, regenerate the demo timetable) |
 | `traintracker import FILE.json.gz` | Build the timetable from a feed file you downloaded yourself |
 | `traintracker status` | Show configured sources and timetable details |
 
@@ -209,7 +225,7 @@ uvx --with tox-uv tox -e tests -- -k platform   # arguments after -- go to the t
 | `format` | `ruff format --check` |
 | `lint` | `ruff check` |
 | `type` | `mypy` (strict) |
-| `tests` | `pytest`: importer, STP rules, planner, download, clients, tools end to end |
+| `tests` | `pytest`: importer, STP rules, planner, download, clients, demo mode, tools end to end |
 
 Tests use a synthetic SCHEDULE feed in Network Rail's JSON format (`tests/feedgen.py`) and API fixtures shaped on the published Darwin and RTT schemas. They aren't live recordings, so the first run against real services is the final check.
 
@@ -222,6 +238,7 @@ src/traintracker/
   rtt.py         Realtime Trains client (optional)
   stations.py    Station search and name resolution
   models.py      Output models shared by all sources
+  demo.py        Demo mode: generated timetable and in-process Darwin
 ```
 
 ## Data and licences

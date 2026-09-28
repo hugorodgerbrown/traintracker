@@ -24,7 +24,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
 
-from traintracker import planner, stations
+from traintracker import demo, planner, stations
 from traintracker.config import UK_TZ, Settings, load_dotenv
 from traintracker.darwin import DarwinClient
 from traintracker.errors import NotConfigured, TrainTrackerError, UpstreamError
@@ -107,18 +107,30 @@ class App:
         return datetime.now(UK_TZ) - built
 
     def maybe_refresh(self) -> None:
-        """Start a background download if the timetable is missing or stale."""
-        if not self.settings.has_nr or (self.refresh_task and not self.refresh_task.done()):
+        """Start a background download if the timetable is missing or stale.
+
+        In demo mode, rebuild the generated timetable once a day instead.
+        """
+        if self.refresh_task and not self.refresh_task.done():
             return
-        age = self.timetable_age()
-        if age is not None and age < timedelta(hours=self.settings.timetable_max_age_hours):
-            return
+        if self.settings.demo:
+            if demo.is_current(self.settings):
+                return
+        else:
+            if not self.settings.has_nr:
+                return
+            age = self.timetable_age()
+            if age is not None and age < timedelta(hours=self.settings.timetable_max_age_hours):
+                return
         self.refresh_started = datetime.now(UK_TZ)
         self.refresh_task = asyncio.create_task(self._refresh())
 
     async def _refresh(self) -> None:
         try:
-            meta = await download_and_build(self.settings)
+            if self.settings.demo:
+                meta = await asyncio.to_thread(demo.build_timetable, self.settings)
+            else:
+                meta = await download_and_build(self.settings)
             self.refresh_error = None
             log.info("Timetable refreshed: %s", meta)
         except Exception as exc:  # keep serving with the old timetable
@@ -140,7 +152,13 @@ async def lifespan(_server: MCPServer[None]) -> AsyncIterator[None]:
     global _app
     load_dotenv()
     settings = Settings.from_env()
-    async with httpx.AsyncClient(headers={"User-Agent": "traintracker/0.1"}) as http:
+    if settings.demo:
+        await asyncio.to_thread(demo.ensure_timetable, settings)
+    async with httpx.AsyncClient(
+        headers={"User-Agent": "traintracker/0.1"},
+        # Demo mode answers Darwin requests in-process; nothing leaves the machine.
+        transport=demo.transport(settings) if settings.demo else None,
+    ) as http:
         _app = App(
             settings=settings,
             http=http,
@@ -609,9 +627,10 @@ async def timetable(
             filter_crs=other.crs if other else None,
             rows=rows,
         )
-    return _timetable_board(
-        tt, st, when, window_minutes, board, other, rows, include_calling_points
-    )
+    b = _timetable_board(tt, st, when, window_minutes, board, other, rows, include_calling_points)
+    if a.settings.demo:
+        b.messages.insert(0, demo.DEMO_NOTE)
+    return b
 
 
 @mcp.tool()
@@ -698,6 +717,8 @@ async def plan_journey(
         mct=mct,
     )
     notes = ["Times are booked (timetable) times unless a leg shows expected times."]
+    if a.settings.demo:
+        notes.insert(0, demo.DEMO_NOTE)
     if any(leg.mode == "tube (approx.)" for j in journeys for leg in j.legs):
         notes.append("Tube links are estimates (~12 min + 3.5 min/km); check TfL status.")
     if not journeys:
@@ -841,7 +862,7 @@ async def data_status() -> dict[str, Any]:
         meta = dict(a.timetable().meta)
     except TrainTrackerError as exc:
         meta = {"error": str(exc)}
-    return {
+    status: dict[str, Any] = {
         "darwin_live_departures": "configured" if s.has_darwin else "missing DARWIN_API_KEY",
         "darwin_arrivals": "configured" if s.has_darwin_arrivals else "not configured (optional)",
         "network_rail_timetable": {
@@ -855,6 +876,15 @@ async def data_status() -> dict[str, Any]:
         "realtime_trains": "configured" if s.has_rtt else "not configured (optional, paid)",
         "min_interchange_minutes": s.min_interchange_minutes,
     }
+    if s.demo:
+        # Replace the account details: none are used in demo mode.
+        status = {
+            "demo_mode": demo.DEMO_NOTE + " Unset TRAINTRACKER_DEMO to use real data.",
+            "demo_stations": sorted(set(demo.TIPLOCS.values())),
+            "network_rail_timetable": status["network_rail_timetable"],
+            "min_interchange_minutes": s.min_interchange_minutes,
+        }
+    return status
 
 
 # ----------------------------------------------------------------------- CLI
@@ -870,7 +900,11 @@ def main(argv: list[str] | None = None) -> None:
     if cmd == "serve":
         mcp.run("stdio")
     elif cmd == "refresh":
-        meta = asyncio.run(download_and_build(settings))
+        meta = (
+            demo.build_timetable(settings)
+            if settings.demo
+            else asyncio.run(download_and_build(settings))
+        )
         print(f"Timetable built at {settings.timetable_path}: {meta}", file=sys.stderr)
     elif cmd == "import" and len(argv) == 2:
         meta = build_from_file(Path(argv[1]), settings.timetable_path)
@@ -879,7 +913,8 @@ def main(argv: list[str] | None = None) -> None:
         path = settings.timetable_path
         info = Timetable.open(path).meta if path.exists() else "no timetable yet"
         print(
-            f"Darwin: {_yn(settings.has_darwin)}; NR: {_yn(settings.has_nr)}; "
+            ("Demo mode (generated data)\n" if settings.demo else "")
+            + f"Darwin: {_yn(settings.has_darwin)}; NR: {_yn(settings.has_nr)}; "
             f"RTT: {_yn(settings.has_rtt)}\nTimetable {path}: {info}",
             file=sys.stderr,
         )

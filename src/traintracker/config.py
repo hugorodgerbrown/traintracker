@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -16,6 +16,8 @@ DARWIN_DEPARTURES_URL = (
 )
 DARWIN_SERVICE_URL = "https://api1.raildata.org.uk/1010-service-details1_2/LDBWS/api/20220120"
 RTT_BASE_URL = "https://data.rtt.io"
+# Demo mode serves Darwin from generated data in-process; this host never resolves.
+DEMO_DARWIN_URL = "https://demo.traintracker.invalid/LDBWS"
 NR_SCHEDULE_URL = (
     "https://publicdatafeeds.networkrail.co.uk/ntrod/CifFileAuthenticate"
     "?type=CIF_ALL_FULL_DAILY&day=toc-full"
@@ -74,10 +76,12 @@ class Settings:
     timetable_max_age_hours: float
     min_interchange_minutes: int
     http_timeout: float
+    demo: bool = False
 
     @property
     def timetable_path(self) -> Path:
-        return self.data_dir / "timetable.sqlite"
+        # Separate file, so demo data never mixes with the real timetable.
+        return self.data_dir / ("demo-timetable.sqlite" if self.demo else "timetable.sqlite")
 
     @property
     def has_nr(self) -> bool:
@@ -98,7 +102,7 @@ class Settings:
     @classmethod
     def from_env(cls) -> Settings:
         darwin_key = _env("DARWIN_API_KEY")
-        return cls(
+        settings = cls(
             darwin_key=darwin_key,
             darwin_departures_url=_env("DARWIN_DEPARTURES_URL") or DARWIN_DEPARTURES_URL,
             # Service details is a separate RDM product; fall back to the board key.
@@ -116,4 +120,21 @@ class Settings:
             timetable_max_age_hours=float(_env("TIMETABLE_MAX_AGE_HOURS") or 26),
             min_interchange_minutes=int(_env("MIN_INTERCHANGE_MINUTES") or 5),
             http_timeout=float(_env("HTTP_TIMEOUT_SECONDS") or 15),
+        )
+        if (_env("TRAINTRACKER_DEMO") or "").lower() not in {"1", "true", "yes", "on"}:
+            return settings
+        # Generated data only: every Darwin product on, no real account used.
+        return replace(
+            settings,
+            darwin_key="demo",
+            darwin_departures_url=DEMO_DARWIN_URL,
+            darwin_service_key="demo",
+            darwin_service_url=DEMO_DARWIN_URL,
+            darwin_arrivals_key="demo",
+            darwin_arrivals_url=DEMO_DARWIN_URL,
+            rtt_access_token=None,
+            rtt_refresh_token=None,
+            nr_username=None,
+            nr_password=None,
+            demo=True,
         )

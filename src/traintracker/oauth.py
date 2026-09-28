@@ -205,6 +205,7 @@ class TraintrackerOAuthProvider(
             (_hash(authorization_code.code),),
             True,
         )
+        await self._purge_expired_tokens()
         try:
             await self._db(spend, *issue)
         except _Missing:
@@ -232,7 +233,6 @@ class TraintrackerOAuthProvider(
             token="", client_id=client_id, scopes=scopes, expires_at=int(now + REFRESH_TTL)
         )
         statements: list[Statement] = [
-            (f"DELETE FROM {self.schema}.tokens WHERE expires_at < %s", (now,)),
             (
                 f"INSERT INTO {self.schema}.tokens (token_hash, kind, family, data, expires_at) "
                 "VALUES "
@@ -257,6 +257,15 @@ class TraintrackerOAuthProvider(
             scope=" ".join(scopes) or None,
         )
         return statements, token
+
+    async def _purge_expired_tokens(self) -> None:
+        """Delete expired tokens in a transaction of its own.
+
+        Kept out of the rotation transaction: run after a family's rows are
+        locked, this table-wide delete could wait on another rotation's locked
+        (expired) rows while holding its own, and deadlock.
+        """
+        await self._db((f"DELETE FROM {self.schema}.tokens WHERE expires_at < %s", (time.time(),)))
 
     async def _load(self, token: str, kind: str) -> tuple[dict[str, Any], str] | None:
         rows = await self._db(
@@ -303,6 +312,7 @@ class TraintrackerOAuthProvider(
             (_hash(refresh_token.token),),
             True,
         )
+        await self._purge_expired_tokens()
         try:
             await self._db(retire, *issue)
         except _Missing:

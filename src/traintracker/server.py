@@ -919,18 +919,14 @@ def main(argv: list[str] | None = None) -> None:
     if cmd == "serve":
         mcp.run("stdio")
     elif cmd == "serve-http":
-        if not settings.mcp_auth_token:
-            print("serve-http needs MCP_AUTH_TOKEN (a long random string).", file=sys.stderr)
+        if not (settings.mcp_auth_token or settings.oauth_passphrase):
+            print(
+                "serve-http needs MCP_AUTH_TOKEN (static bearer token), MCP_OAUTH_PASSPHRASE "
+                "(OAuth sign-in), or both.",
+                file=sys.stderr,
+            )
             sys.exit(2)
-        http_app.serve(
-            mcp.streamable_http_app(
-                host=settings.host,
-                transport_security=http_app.transport_security(list(settings.public_hosts)),
-            ),
-            settings.mcp_auth_token,
-            settings.host,
-            settings.port,
-        )
+        http_app.serve(http_app.build_app(mcp, settings), settings.host, settings.port)
     elif cmd == "refresh":
         meta = (
             demo.build_timetable(settings)

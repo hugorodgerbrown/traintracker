@@ -102,6 +102,9 @@ class Settings:
     host: str
     port: int
     public_hosts: tuple[str, ...]
+    public_url: str
+    oauth_passphrase: str | None = field(repr=False)
+    auth_schema: str
     data_dir: Path
     timetable_max_age_hours: float
     min_interchange_minutes: int
@@ -129,6 +132,12 @@ class Settings:
     @classmethod
     def from_env(cls) -> Settings:
         darwin_key = _env("DARWIN_API_KEY")
+        port = int(_env("PORT") or 8000)
+        public_hosts = _public_hosts()
+        # The URL clients reach /mcp under; OAuth issuer and resource derive from it.
+        public_url = (_env("MCP_PUBLIC_URL") or "").rstrip("/") or (
+            f"https://{public_hosts[0]}" if public_hosts else f"http://localhost:{port}"
+        )
         settings = cls(
             darwin_key=darwin_key,
             darwin_departures_url=_env("DARWIN_DEPARTURES_URL") or DARWIN_DEPARTURES_URL,
@@ -146,8 +155,11 @@ class Settings:
             auto_refresh=(_env("TIMETABLE_AUTO_REFRESH") or "1").lower() in TRUE,
             mcp_auth_token=_env("MCP_AUTH_TOKEN"),
             host=_env("HOST") or "0.0.0.0",  # all interfaces: the HTTP server is for hosting
-            port=int(_env("PORT") or 8000),
-            public_hosts=_public_hosts(),
+            port=port,
+            public_hosts=public_hosts,
+            public_url=public_url,
+            oauth_passphrase=_env("MCP_OAUTH_PASSPHRASE"),
+            auth_schema=_env("MCP_AUTH_SCHEMA") or "mcp_auth",
             data_dir=Path(_env("TRAINTRACKER_DATA_DIR") or default_data_dir()).expanduser(),
             timetable_max_age_hours=float(_env("TIMETABLE_MAX_AGE_HOURS") or 26),
             min_interchange_minutes=int(_env("MIN_INTERCHANGE_MINUTES") or 5),

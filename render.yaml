@@ -18,6 +18,9 @@ services:
         sync: false
       - key: MCP_AUTH_TOKEN
         generateValue: true
+      # Passphrase for the OAuth sign-in page (claude.ai connectors).
+      - key: MCP_OAUTH_PASSPHRASE
+        sync: false
       # This deployment's custom domain, accepted alongside the service's own
       # onrender.com name; other Host headers are rejected (421). Change or remove
       # it when deploying your own copy.

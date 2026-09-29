@@ -306,6 +306,12 @@ The pages are files in [`src/traintracker/site/`](src/traintracker/site): HTML f
 
 The pages set no cookies and load nothing from another origin; the `Content-Security-Policy` header allows only the site's own stylesheet and script. They follow the reader's light or dark setting and work at phone width.
 
+## MCP Registry
+
+[`server.json`](server.json) describes the server for the official [MCP Registry](https://registry.modelcontextprotocol.io): the name `live.traintrackr/traintracker`, the version, and one remote, streamable HTTP at `https://traintrackr.live/mcp`. It follows the registry's `2025-12-11` schema. A test keeps its version in step with `pyproject.toml`.
+
+It is not published by CI. Publishing under a `live.traintrackr/` name needs proof that you hold the domain: a TXT record on the apex of `traintrackr.live` carrying a public key, then `mcp-publisher login dns` and `mcp-publisher publish`. For your own deployment, change the name and the URL to your domain.
+
 ## Limitations
 
 - **Past running times** ("was the 08:00 late yesterday?") aren't available. Darwin only covers now → +2 hours, and the timetable is booked times.

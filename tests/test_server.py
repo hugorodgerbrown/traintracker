@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import tomllib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
@@ -15,6 +17,7 @@ import respx
 from mcp import Client
 from psycopg import sql
 
+import traintracker
 from traintracker import server
 from traintracker.config import DARWIN_DEPARTURES_URL, UK_TZ, TimetableDB
 from traintracker.models import Journey, JourneyLeg, StationRef
@@ -68,6 +71,20 @@ async def test_lists_all_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
             "plan_journey",
             "data_status",
         }
+
+
+def test_registry_metadata_matches_the_package() -> None:
+    # server.json is what the MCP Registry publishes; a release that forgets to
+    # update it would list the wrong version.
+    root = Path(__file__).parent.parent
+    listing = json.loads((root / "server.json").read_text())
+    project = tomllib.loads((root / "pyproject.toml").read_text())["project"]
+    assert listing["version"] == project["version"] == traintracker.__version__
+    assert listing["name"] == "live.traintrackr/traintracker"
+    assert len(listing["description"]) <= 100  # the registry's limit
+    assert listing["remotes"] == [
+        {"type": "streamable-http", "url": "https://traintrackr.live/mcp"}
+    ]
 
 
 async def test_instructions_credit_the_data_sources(

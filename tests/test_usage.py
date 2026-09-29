@@ -10,11 +10,13 @@ import httpx
 import psycopg
 import pytest
 import respx
+from mcp import Client
 
+from traintracker import server
 from traintracker import usage as usage_module
 from traintracker.config import DARWIN_DEPARTURES_URL, Settings
 from traintracker.darwin import DarwinClient
-from traintracker.server import main
+from traintracker.server import darwin_usage, main
 from traintracker.usage import DarwinUsage, Usage
 
 from .test_clients import load
@@ -134,6 +136,61 @@ async def test_a_failed_write_is_logged_and_retried(caplog: pytest.LogCaptureFix
     assert stored() == {(TODAY, "departures"): 1}
 
 
+async def test_a_failed_first_write_still_creates_the_table_next_time(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    usage = counter()
+    usage.count("departures")
+
+    def fails(_con: object) -> Usage:
+        raise psycopg.OperationalError("connection lost")
+
+    # The table is created and the count written, then the transaction fails
+    # and Postgres rolls all of it back.
+    with monkeypatch.context() as patch:
+        patch.setattr(usage, "_stored", fails)
+        await usage.flush(force=True)
+    assert "Darwin usage not recorded" in caplog.text
+    with pytest.raises(psycopg.errors.Error):
+        stored()
+    await usage.flush(force=True)
+    assert stored() == {(TODAY, "departures"): 1}  # created this time, counted once
+
+
+def test_any_darwin_product_is_counted(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("DARWIN_API_KEY", "DARWIN_SERVICE_API_KEY", "DARWIN_ARRIVALS_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    assert darwin_usage(Settings.from_env()) is None  # nothing can reach Darwin
+    # Each product has its own key, and spends the allowance whichever it is.
+    monkeypatch.setenv("DARWIN_ARRIVALS_API_KEY", "arrivals-key")
+    monkeypatch.setenv("DARWIN_ARRIVALS_URL", "https://darwin.test/arrivals")
+    assert darwin_usage(Settings.from_env()) is not None
+    monkeypatch.delenv("DARWIN_ARRIVALS_API_KEY")
+    monkeypatch.setenv("DARWIN_SERVICE_API_KEY", "service-key")
+    assert darwin_usage(Settings.from_env()) is not None
+    monkeypatch.setenv("TRAINTRACKER_DEMO", "1")
+    assert darwin_usage(Settings.from_env()) is None
+
+
+@respx.mock
+async def test_arrivals_alone_are_counted_and_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with connect(tmp_path, monkeypatch) as client:
+        # `connect` sets a departures key; this server is to have arrivals only.
+        monkeypatch.delenv("DARWIN_API_KEY")
+        monkeypatch.setenv("DARWIN_ARRIVALS_API_KEY", "arrivals-key")
+        monkeypatch.setenv("DARWIN_ARRIVALS_URL", "https://darwin.test/arrivals")
+    async with Client(server.mcp) as client:
+        respx.get("https://darwin.test/arrivals/GetArrBoardWithDetails/LST").mock(
+            return_value=httpx.Response(200, json=load("darwin_departures_LST.json"))
+        )
+        await call(client, "live_arrivals", station="Liverpool Street")
+        out = await call(client, "data_status")
+    assert out["darwin_live_departures"] == "missing DARWIN_API_KEY"
+    assert out["darwin_usage"]["by_product"] == {"arrivals": 1}
+
+
 @respx.mock
 async def test_only_requests_sent_to_darwin_are_counted(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DARWIN_API_KEY", "darwin-key")
@@ -180,10 +237,6 @@ async def test_data_status_and_the_status_command_report_usage(
 async def test_demo_mode_counts_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TRAINTRACKER_DEMO", "1")
     monkeypatch.setenv("TRAINTRACKER_DATA_DIR", str(tmp_path))
-    from mcp import Client
-
-    from traintracker import server
-
     async with Client(server.mcp) as client:
         await call(client, "live_departures", station="Liverpool Street")
         out = await call(client, "data_status")

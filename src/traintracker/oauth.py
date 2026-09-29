@@ -484,6 +484,10 @@ class TraintrackerOAuthProvider(
         now = time.time()
         try:
             await self._db(
+                # One permit at a time. Without the lock, sign-ins asking at the
+                # same moment would each count the log before any had added to
+                # it, and all be let through. It is held until the commit.
+                ("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"{self.schema}.mail_log",)),
                 (f"DELETE FROM {self.schema}.mail_log WHERE sent_at < %s", (now - MAIL_LOG_TTL,)),
                 # The log row is the send permit: it is only written while this
                 # address and the server as a whole are under their hourly caps.
@@ -504,13 +508,17 @@ class TraintrackerOAuthProvider(
                     ),
                     True,
                 ),
+                # The sign-in is kept open for as long as its code lasts: a code
+                # asked for late in the sign-in's own ten minutes must still work.
                 (
                     f"UPDATE {self.schema}.sign_ins SET sends = sends + 1, account = %s, "
-                    "login_code_hash = %s, login_code_expires_at = %s, login_code_attempts = 0 "
+                    "login_code_hash = %s, login_code_expires_at = %s, login_code_attempts = 0, "
+                    "expires_at = GREATEST(expires_at, %s) "
                     "WHERE id = %s AND sends < %s RETURNING id",
                     (
                         account,
                         _login_code_hash(pending.sign_in_id, code),
+                        now + LOGIN_CODE_TTL,
                         now + LOGIN_CODE_TTL,
                         pending.sign_in_id,
                         MAX_SENDS,

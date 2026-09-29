@@ -3,9 +3,11 @@ hash of it, and the sending limits hold. Resend is mocked; nothing is sent."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
+import time
 from collections.abc import AsyncIterator
 from urllib.parse import parse_qs, urlparse
 
@@ -232,6 +234,32 @@ async def test_an_address_is_sent_a_few_codes_an_hour_only(
     assert refused.status_code == 429 and "Too many codes have been sent" in refused.text
     assert (await _ask(client, second, "someone.else@example.org")).status_code == 200
     assert resend.call_count == 2
+
+
+async def test_codes_asked_for_at_once_share_the_limit(
+    client: httpx.AsyncClient, resend: respx.Route, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(oauth, "MAX_CODES_PER_ADDRESS", 2)
+    sign_ins = [(await _begin(client))[1] for _ in range(8)]
+    answers = await asyncio.gather(*(_ask(client, sign_in) for sign_in in sign_ins))
+    # Each asks before any other has been logged; only the lock keeps the count true.
+    assert sorted(r.status_code for r in answers) == [200] * 2 + [429] * 6
+    assert resend.call_count == 2
+
+
+async def test_a_code_asked_for_late_keeps_the_sign_in_open(
+    client: httpx.AsyncClient, settings: Settings, resend: respx.Route
+) -> None:
+    _, sign_in, _ = await _begin(client)
+    table = f"{settings.auth_schema}.sign_ins"
+    with psycopg.connect(settings.database_url or "", autocommit=True) as con:
+        # The sign-in has seconds left of its own ten minutes.
+        con.execute(f"UPDATE {table} SET expires_at = %s WHERE id = %s", (time.time() + 5, sign_in))
+        assert (await _ask(client, sign_in)).status_code == 200
+        until, code_until = con.execute(
+            f"SELECT expires_at, login_code_expires_at FROM {table} WHERE id = %s", (sign_in,)
+        ).fetchone() or (0, 0)
+    assert until == code_until > time.time() + oauth.LOGIN_CODE_TTL - 5
 
 
 async def test_all_mail_is_capped_by_the_hour(

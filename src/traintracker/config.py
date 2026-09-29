@@ -138,6 +138,12 @@ class Settings:
         return self.darwin_arrivals_key is not None and self.darwin_arrivals_url is not None
 
     @property
+    def has_any_darwin(self) -> bool:
+        """Whether any Darwin product can be called: each has its own key, and a
+        server may hold the arrivals or service-details one without departures."""
+        return self.has_darwin or self.has_darwin_arrivals or self.darwin_service_key is not None
+
+    @property
     def email_sign_in_missing(self) -> list[str]:
         """Variables still needed for email sign-in, once any part of it is set.
 

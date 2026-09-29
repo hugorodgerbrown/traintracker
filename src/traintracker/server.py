@@ -194,8 +194,8 @@ async def lifespan(_server: MCPServer[None]) -> AsyncIterator[None]:
 
 def darwin_usage(settings: Settings) -> DarwinUsage | None:
     """The Darwin request counter; None where no request reaches Darwin (demo
-    mode, no key) or there is no database to keep the count in."""
-    if settings.demo or not settings.has_darwin or not settings.database_url:
+    mode, no key for any product) or there is no database to keep the count in."""
+    if settings.demo or not settings.has_any_darwin or not settings.database_url:
         return None
     return DarwinUsage(settings.database_url, settings.usage_schema)
 

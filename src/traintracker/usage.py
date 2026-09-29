@@ -127,6 +127,14 @@ class DarwinUsage:
         self._warn(usage)
 
     def _write(self, batch: Counter[tuple[date, str]]) -> Usage:
+        usage = self._write_batch(batch)
+        # Only now has the table been committed. Had the flag been set inside the
+        # transaction, a failure after the CREATE would have rolled the table
+        # back and left every retry to skip creating it.
+        self._ready = True
+        return usage
+
+    def _write_batch(self, batch: Counter[tuple[date, str]]) -> Usage:
         with psycopg.connect(self.dsn, connect_timeout=10) as con:
             if not self._ready:
                 con.execute(
@@ -137,7 +145,6 @@ class DarwinUsage:
                         "PRIMARY KEY (day, product))"
                     ).format(s=self.schema)
                 )
-                self._ready = True
             for (day, product), requests in batch.items():
                 con.execute(
                     sql.SQL(

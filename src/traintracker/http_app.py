@@ -5,7 +5,8 @@ token issued by this server after sign-in (see oauth.py), which is what lets
 claude.ai and ChatGPT add the server as a connector. The OAuth metadata,
 registration, authorize, token and revoke endpoints come from the MCP SDK.
 Tool calls are rate limited per account (see ratelimit.py).
-/healthz is open for the platform's health check.
+/healthz is open for the platform's health check, and so are the public pages
+(see site/): /, /docs and /privacy.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, Re
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.routing import Route
 
+from traintracker import site
 from traintracker.mail import build_mailer
 from traintracker.oauth import TraintrackerOAuthProvider, health
 from traintracker.ratelimit import RateLimiter, RateLimitMiddleware
@@ -72,6 +74,19 @@ def limit_tool_calls(server: MCPServer[Any], settings: Settings) -> None:
         chain.append(RateLimitMiddleware(limiter))
 
 
+def site_fields(settings: Settings) -> dict[str, str]:
+    """This server's own values for the public pages."""
+    if settings.rate_limit_per_minute > 0:
+        fair_use = (
+            f"each account can make {max(1, settings.rate_limit_burst)} requests at once and "
+            f"{settings.rate_limit_per_minute} a minute. Over that, the assistant is told how "
+            "long to wait."
+        )
+    else:
+        fair_use = "there is no set limit on requests; please don't automate them."
+    return {"mcp_url": f"{settings.public_url}/mcp", "fair_use": fair_use}
+
+
 def build_app(server: MCPServer[Any], settings: Settings) -> Starlette:
     provider = build_provider(settings)
     provider.create_tables()
@@ -92,7 +107,11 @@ def build_app(server: MCPServer[Any], settings: Settings) -> Starlette:
         auth=auth,
         auth_server_provider=provider,
         token_verifier=ProviderTokenVerifier(provider),
-        custom_starlette_routes=[*provider.routes(), Route(HEALTH_PATH, health)],
+        custom_starlette_routes=[
+            *provider.routes(),
+            *site.routes(site_fields(settings)),
+            Route(HEALTH_PATH, health),
+        ],
     )
 
 

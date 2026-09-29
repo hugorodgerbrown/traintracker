@@ -617,6 +617,7 @@ class TraintrackerOAuthProvider(
         stored = auth_code.model_copy(update={"code": ""})  # only the hash identifies it
         try:
             await self._db(
+                (f"DELETE FROM {self.schema}.codes WHERE expires_at < %s", (time.time(),)),
                 # One code per sign-in: a parallel correct submission finds the row gone.
                 (
                     f"DELETE FROM {self.schema}.sign_ins WHERE id = %s RETURNING id",
@@ -705,30 +706,24 @@ _HEAD = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Sign in · traintracker</title>
-<style>
-  body { font: 16px/1.5 system-ui, sans-serif; max-width: 26rem;
-         margin: 4rem auto; padding: 0 1rem; }
-  input, button { font: inherit; padding: .5rem; width: 100%; box-sizing: border-box; }
-  button { margin-top: .75rem; cursor: pointer; }
-  details, form + form { margin-top: 1.5rem; }
-  .hint { font-size: .875rem; margin: .5rem 0 0; }
-  .error { color: #b00020; }
-</style></head><body>
+<title>Sign in · Traintrackr</title>
+<link rel="stylesheet" href="/static/site.css">
+</head><body><main class="sign-in">
 """
+_FOOT = "</main></body></html>"
 
 _HEADERS = {
     "Cache-Control": "no-store",
     "X-Frame-Options": "DENY",
     # No form-action: browsers apply it to the redirect after the form is posted,
     # and that redirect goes to the client's callback (claude.ai), not 'self'.
-    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+    "Content-Security-Policy": "default-src 'none'; style-src 'self'",
     "Referrer-Policy": "same-origin",
 }
 
 
 def _page(message: str, status: int = 200) -> HTMLResponse:
-    body = f"{_HEAD}<h1>traintracker</h1><p>{html.escape(message)}</p></body></html>"
+    body = f"{_HEAD}<h1>Traintrackr</h1><p>{html.escape(message)}</p>{_FOOT}"
     return HTMLResponse(body, status_code=status, headers=_HEADERS)
 
 
@@ -738,8 +733,8 @@ def _expired() -> HTMLResponse:
 
 def _intro(pending: _Pending) -> str:
     return (
-        f"{_HEAD}<h1>traintracker</h1>"
-        f"<p><strong>{html.escape(pending.client_name)}</strong> is asking to use traintracker. "
+        f"{_HEAD}<h1>Sign in to Traintrackr</h1>"
+        f"<p><strong>{html.escape(pending.client_name)}</strong> is asking to use Traintrackr. "
         f"After you sign in you go back to <strong>{html.escape(pending.returns_to)}</strong>.</p>"
     )
 
@@ -783,7 +778,7 @@ def _form(
         + _error(error)
         + (email_form if email else "")
         + (passphrase_form if passphrase else "")
-        + "</body></html>"
+        + _FOOT
     )
     return HTMLResponse(body, status_code=status, headers=_HEADERS)
 
@@ -801,8 +796,7 @@ def _code_form(pending: _Pending, address: str, error: str = "", status: int = 2
         'pattern="[0-9 ]*" maxlength="12" required autofocus>'
         "<button type=submit>Sign in</button></form>"
         f'<form method="post" action="{EMAIL_PATH}">{fields}'
-        '<button type=submit class="quiet">Send a new code</button></form>'
-        "</body></html>"
+        '<button type=submit class="quiet">Send a new code</button></form>' + _FOOT
     )
     return HTMLResponse(body, status_code=status, headers=_HEADERS)
 

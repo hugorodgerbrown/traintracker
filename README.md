@@ -216,7 +216,7 @@ All configuration is by environment variable, read from `.env` in the project fo
 | Command | Does |
 |---|---|
 | `traintracker` | Run the MCP server on stdio (what Claude runs) |
-| `traintracker serve-http` | Run the MCP server over streamable HTTP at `/mcp`, behind OAuth sign-in and/or a static bearer token, with a `/healthz` check |
+| `traintracker serve-http` | Run the MCP server over streamable HTTP at `/mcp`, behind OAuth sign-in and/or a static bearer token, with a `/healthz` check and the [public site](#site) |
 | `traintracker forget EMAIL` | Delete the account for an email address, with its tokens (an erasure request) |
 | `traintracker block EMAIL` | Stop an address signing in, and its tokens working |
 | `traintracker refresh` | Download the SCHEDULE feed and rebuild the timetable (in demo mode, regenerate the demo timetable) |
@@ -277,6 +277,20 @@ Everyone who signs in with the passphrase shares one account, `passphrase`.
 
 **Running it locally.** `MAIL_BACKEND=console` with `MCP_ACCOUNT_SECRET` set writes the code to the log in place of sending it. Don't use it on a host whose logs other people can read.
 
+## Site
+
+`serve-http` also serves a small public site from the same app, so there is one deploy and one domain:
+
+| Path | Page |
+|---|---|
+| `/` | What the server does, the connector address with a copy button, how to add it to Claude and ChatGPT, three example prompts |
+| `/docs` | Each tool in plain English, three worked examples with what the answer contains, the limits, data sources, support |
+| `/privacy` | Privacy policy (UK GDPR): what is processed, why, for how long, and by whom |
+
+The pages are files in [`src/traintracker/site/`](src/traintracker/site): HTML fragments placed inside `layout.html`, one stylesheet and one script for the copy button. There is no build step. They are filled in once at start-up with the server's own values (the connector address from `MCP_PUBLIC_URL`, the rate limit), so a copy deployed elsewhere describes itself. The privacy policy names this repository's deployment and its operator: change `privacy.html` and the support address when you deploy your own.
+
+The pages set no cookies and load nothing from another origin; the `Content-Security-Policy` header allows only the site's own stylesheet and script. They follow the reader's light or dark setting and work at phone width.
+
 ## Limitations
 
 - **Past running times** ("was the 08:00 late yesterday?") aren't available. Darwin only covers now → +2 hours, and the timetable is booked times.
@@ -311,6 +325,7 @@ src/traintracker/
   oauth.py       OAuth provider (Postgres), sign-in page, accounts
   mail.py        Sends the sign-in code (Resend, or the log in development)
   ratelimit.py   Per-account limit on tool calls
+  site/          Public pages: landing, docs, privacy policy
   timetable.py   SCHEDULE importer and Postgres queries (STP resolution)
   planner.py     Connection Scan journey planner, London links
   darwin.py      Rail Data Marketplace LDBWS client

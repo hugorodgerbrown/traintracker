@@ -70,6 +70,34 @@ async def test_lists_all_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         }
 
 
+async def test_every_tool_is_annotated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The connector directories reject a tool without a title and a read-only
+    # hint. Every listed tool is checked, so a new one can't ship without them.
+    async with connect(tmp_path, monkeypatch) as client:
+        tools = (await client.list_tools()).tools
+    assert tools
+    for tool in tools:
+        assert tool.title, tool.name
+        assert len(tool.name) <= 64, tool.name
+        assert tool.description, tool.name
+        hints = tool.annotations
+        assert hints is not None, tool.name
+        assert hints.read_only_hint is True, tool.name
+        assert hints.destructive_hint is False, tool.name
+        assert hints.idempotent_hint is True, tool.name
+        assert hints.open_world_hint is not None, tool.name
+    open_world = {t.name for t in tools if t.annotations and t.annotations.open_world_hint}
+    # Only the tools that can reach Darwin talk to anything outside the server.
+    assert open_world == {
+        "live_departures",
+        "live_arrivals",
+        "departure_platform",
+        "platform_departures",
+        "service_details",
+        "plan_journey",
+    }
+
+
 async def test_find_station(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     async with connect(tmp_path, monkeypatch) as client:
         out = await call(client, "find_station", query="sudbury")

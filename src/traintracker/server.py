@@ -22,6 +22,7 @@ import httpx
 import psycopg
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from traintracker import demo, http_app, planner, stations
@@ -332,20 +333,31 @@ def _timetable_board(
 
 # --------------------------------------------------------------------- tools
 
+# Every tool only reads. The hints differ in one respect: whether a call can
+# reach Darwin (open world) or stays within the server's own data. The timetable
+# came from Network Rail, but a call reads the local copy, so it counts as closed.
+LIVE = ToolAnnotations(
+    read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=True
+)
+LOCAL = ToolAnnotations(
+    read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False
+)
 
-@mcp.tool()
+
+@mcp.tool(title="Find a station", annotations=LOCAL)
 async def find_station(
     query: Annotated[str, Field(description="Station name, partial name or 3-letter CRS code.")],
     limit: Annotated[int, Field(ge=1, le=20)] = 5,
 ) -> list[StationMatch]:
-    """Look up GB railway stations by name or CRS code, best match first."""
+    """Find GB (National Rail) railway stations by name, part of a name or 3-letter CRS
+    code. Returns the closest matches first, each with its name and CRS code."""
     return [
         StationMatch(name=s.name, crs=s.crs, score=round(sc, 1))
         for s, sc in stations.search(query, limit)
     ]
 
 
-@mcp.tool()
+@mcp.tool(title="Live departures", annotations=LIVE)
 @_tool_errors
 async def live_departures(
     station: Annotated[str, Field(description="Station name or CRS code.")],
@@ -356,9 +368,10 @@ async def live_departures(
     ] = 0,
     include_calling_points: bool = False,
 ) -> Board:
-    """Live departure board for the next ~2 hours: expected times, platforms, delays,
-    cancellations. Uses Darwin (National Rail); if Darwin is offline, says so and shows
-    booked timetable times."""
+    """Live departure board for a GB railway station, covering the next two hours:
+    expected times, platforms, delays and cancellations. The data comes from Darwin
+    (National Rail Enquiries). If Darwin is offline, the board shows booked timetable
+    times and says so."""
     return await _live_board(
         app(),
         _station(station),
@@ -436,7 +449,7 @@ def _why(exc: Exception) -> str:
     return str(exc) or type(exc).__name__
 
 
-@mcp.tool()
+@mcp.tool(title="Live arrivals", annotations=LIVE)
 @_tool_errors
 async def live_arrivals(
     station: Annotated[str, Field(description="Station name or CRS code.")],
@@ -446,8 +459,9 @@ async def live_arrivals(
     rows: Annotated[int, Field(ge=1, le=50)] = 10,
     include_calling_points: bool = False,
 ) -> Board:
-    """Live arrivals for the next ~2 hours. Uses Darwin's arrivals product if configured,
-    else booked timetable times."""
+    """Live arrivals board for a GB railway station, covering the next two hours. The
+    data comes from Darwin (National Rail Enquiries) where the server has its arrivals
+    feed; otherwise the board shows booked timetable times and says so."""
     return await _live_board(
         app(),
         _station(station),
@@ -459,7 +473,7 @@ async def live_arrivals(
     )
 
 
-@mcp.tool()
+@mcp.tool(title="Departure platform", annotations=LIVE)
 @_tool_errors
 async def departure_platform(
     station: Annotated[str, Field(description="Station name or CRS code.")],
@@ -468,9 +482,10 @@ async def departure_platform(
         str | None, Field(description="Booked departure HH:MM (24h). Default: the next train.")
     ] = None,
 ) -> PlatformCheck:
-    """Which platform one train leaves from. Live platforms are often announced only
-    ~10 minutes before departure at large stations; until then the booked (timetable)
-    platform is returned and flagged as 'booked'."""
+    """The platform one train leaves from at a GB railway station: the next departure,
+    or the one booked at a given time. Large stations often announce the live platform
+    about 10 minutes before departure; until then the booked (timetable) platform is
+    returned and flagged as 'booked'."""
     a = app()
     st = _station(station)
     other = _station(to) if to else None
@@ -514,16 +529,16 @@ def _platform_note(svc: BoardService, b: Board) -> str:
     return "Platform not yet announced. Check again nearer departure."
 
 
-@mcp.tool()
+@mcp.tool(title="Departures from a platform", annotations=LIVE)
 @_tool_errors
 async def platform_departures(
     station: Annotated[str, Field(description="Station name or CRS code.")],
     platform: Annotated[str, Field(description="Platform, e.g. '4' or '9B'.")],
     count: Annotated[int, Field(ge=1, le=10)] = 3,
 ) -> Board:
-    """The next trains leaving from one platform in the next ~2 hours. A train whose live
-    platform isn't announced yet is matched on its booked platform (platform_source
-    'booked'), which can still change."""
+    """The next trains leaving from one platform of a GB railway station in the next two
+    hours. A train whose live platform isn't announced yet is matched on its booked
+    platform (platform_source 'booked'), which can still change."""
     a = app()
     st = _station(station)
     want = _norm_platform(platform)
@@ -606,7 +621,7 @@ def _minutes_until(hhmm: str | None) -> int:
     return diff - 24 * 60 if diff > 12 * 60 else diff
 
 
-@mcp.tool()
+@mcp.tool(title="Timetable", annotations=LOCAL)
 @_tool_errors
 async def timetable(
     station: Annotated[str, Field(description="Station name or CRS code.")],
@@ -624,8 +639,9 @@ async def timetable(
     rows: Annotated[int, Field(ge=1, le=100)] = 20,
     include_calling_points: bool = False,
 ) -> Board:
-    """Booked train times at a station for any date the timetable covers (usually months
-    ahead). Use for future trips; for right now prefer live_departures."""
+    """Booked (timetabled) departures or arrivals at a GB railway station on any date the
+    Network Rail timetable covers, usually months ahead. For future dates; for trains in
+    the next two hours, live_departures has live times."""
     a = app()
     st = _station(station)
     other_q = to if board == "departures" else from_station
@@ -641,14 +657,15 @@ async def timetable(
     return b
 
 
-@mcp.tool()
+@mcp.tool(title="Service details", annotations=LIVE)
 @_tool_errors
 async def service_details(
     service_id: Annotated[
         str, Field(description="A service_id from another tool (darwin:… or tt:…).")
     ],
 ) -> ServiceDetail:
-    """All stops for one train, with live times where available."""
+    """Every stop of one GB train, with booked times and, for a train taken from a live
+    board, expected and actual times. Takes a service_id returned by another tool."""
     a = app()
     if service_id.startswith("darwin:"):
         return await a.darwin.service(service_id.removeprefix("darwin:"))
@@ -683,7 +700,7 @@ async def service_details(
     raise ToolError("service_id must start with darwin: or tt:.")
 
 
-@mcp.tool()
+@mcp.tool(title="Plan a journey", annotations=LIVE)
 @_tool_errors
 async def plan_journey(
     origin: Annotated[str, Field(description="Start station name or CRS code.")],
@@ -695,10 +712,10 @@ async def plan_journey(
     max_changes: Annotated[int, Field(ge=0, le=6)] = 4,
     live: Annotated[bool, Field(description="Overlay Darwin live times for today.")] = True,
 ) -> JourneyPlan:
-    """Plan journeys between two stations, with changes up to max_changes. Returns the
-    fastest options first plus the fewest-changes option. Cross-London transfers between
-    terminals are included as approximate walk/Tube links. For today's trains in the next
-    two hours, live Darwin times are added and at-risk connections flagged."""
+    """Plan rail journeys between two GB stations, with changes up to max_changes.
+    Returns the fastest options first plus the fewest-changes option. Transfers between
+    London terminals are included as approximate walk/Tube links. For today's trains in
+    the next two hours, live Darwin times are added and at-risk connections flagged."""
     a = app()
     o, d = _station(origin), _station(destination)
     if o.crs == d.crs:
@@ -861,9 +878,10 @@ def _at_risk(j: Journey, mct: int) -> bool:
     return False
 
 
-@mcp.tool()
+@mcp.tool(title="Data status", annotations=LOCAL)
 async def data_status() -> dict[str, Any]:
-    """Which data sources are configured, how fresh the timetable is, and what to set up."""
+    """Which data sources this server has configured, how fresh its timetable is, and
+    what is missing. Takes no arguments."""
     a = app()
     s = a.settings
     age = a.timetable_age()

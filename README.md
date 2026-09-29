@@ -195,9 +195,16 @@ All configuration is by environment variable, read from `.env` in the project fo
 | `TIMETABLE_MAX_AGE_HOURS` | `26` | Re-download when older than this |
 | `TRAINTRACKER_DATA_DIR` | `$XDG_DATA_HOME/traintracker` if set, else `~/.traintracker` | Where the feed is downloaded to before import |
 | `MCP_AUTH_TOKEN` | — | Static bearer token accepted by `serve-http` |
-| `MCP_OAUTH_PASSPHRASE` | — | Passphrase for the OAuth sign-in page, which lets claude.ai add the server as a connector. `serve-http` needs this, `MCP_AUTH_TOKEN`, or both |
+| `MCP_OAUTH_PASSPHRASE` | — | Passphrase accepted by the OAuth sign-in page, for the owner and for directory reviewers. `serve-http` needs this, email sign-in, `MCP_AUTH_TOKEN`, or any mix of them |
+| `RESEND_API_KEY` | — | [Resend](https://resend.com) API key. With `MAIL_FROM` and `MCP_ACCOUNT_SECRET` it turns on email sign-in (see [Sign-in](#sign-in)) |
+| `MAIL_FROM` | — | Sender of the sign-in code, e.g. `Traintrackr <login@traintrackr.live>`; the domain must be verified with Resend |
+| `MCP_ACCOUNT_SECRET` | — | Key that turns an email address into an account ID. Long and random; changing it gives every address a new account |
+| `MAIL_BACKEND` | `resend` | `console` writes the sign-in code to the log instead of sending it. For local development only |
+| `MAIL_MAX_PER_HOUR` | `200` | Most sign-in codes sent in an hour, over all addresses |
+| `RATE_LIMIT_PER_MINUTE` | `30` | Tool calls per account per minute over HTTP; `0` turns the limit off |
+| `RATE_LIMIT_BURST` | `10` | Tool calls an account can make at once before the per-minute rate applies |
 | `MCP_PUBLIC_URL` | `https://` + first public host | Base URL clients use; the OAuth issuer and resource (`<url>/mcp`) derive from it |
-| `MCP_AUTH_SCHEMA` | `mcp_auth` | Schema for OAuth clients, codes and tokens (tokens stored as SHA-256 hashes) |
+| `MCP_AUTH_SCHEMA` | `mcp_auth` | Schema for OAuth clients, codes, tokens and accounts (tokens stored as SHA-256 hashes, accounts as keyed hashes of the address) |
 | `HOST` / `PORT` | `0.0.0.0` / `8000` | Where `serve-http` listens (bind address) |
 | `MCP_PUBLIC_HOSTS` | — | Comma-separated extra hostnames clients use (e.g. a custom domain), added to `RENDER_EXTERNAL_HOSTNAME`; `serve-http` rejects other `Host` headers (DNS-rebinding protection) |
 | `MIN_INTERCHANGE_MINUTES` | `5` | Minimum change time for planning |
@@ -210,6 +217,8 @@ All configuration is by environment variable, read from `.env` in the project fo
 |---|---|
 | `traintracker` | Run the MCP server on stdio (what Claude runs) |
 | `traintracker serve-http` | Run the MCP server over streamable HTTP at `/mcp`, behind OAuth sign-in and/or a static bearer token, with a `/healthz` check |
+| `traintracker forget EMAIL` | Delete the account for an email address, with its tokens (an erasure request) |
+| `traintracker block EMAIL` | Stop an address signing in, and its tokens working |
 | `traintracker refresh` | Download the SCHEDULE feed and rebuild the timetable (in demo mode, regenerate the demo timetable) |
 | `traintracker import FILE.json.gz` | Build the timetable from a feed file you downloaded yourself |
 | `traintracker status` | Show configured sources and timetable details |
@@ -240,12 +249,33 @@ claude mcp add -s user --transport http traintracker https://<your-service-host>
 
 ### Add as a claude.ai connector
 
-With `MCP_OAUTH_PASSPHRASE` set, the server is its own OAuth authorization server, so it can be added once in claude.ai and used from claude.ai, Claude Desktop and the mobile apps.
+The server is its own OAuth authorization server, so it can be added once in claude.ai and used from claude.ai, Claude Desktop and the mobile apps. ChatGPT connects the same way.
 
 1. In claude.ai: **Settings → Connectors → Add custom connector**, name `traintracker`, URL `https://<your-service-host>/mcp`. Leave the OAuth client fields empty: Claude registers itself.
-2. Claude opens the server's sign-in page. Enter the passphrase and click **Allow**.
+2. Claude opens the server's sign-in page. Sign in (see [Sign-in](#sign-in)).
 
-Sign-in hands Claude a one-hour access token and a 90-day refresh token, rotated on each refresh. Five wrong passphrases discard the sign-in attempt. Clients, codes and tokens are stored in the `mcp_auth` schema, tokens as SHA-256 hashes. To sign every client out, run `TRUNCATE mcp_auth.tokens` against the database. Changing the passphrase doesn't sign anyone out; truncate the tokens as well.
+Sign-in hands Claude a one-hour access token and a 90-day refresh token, rotated on each refresh. Clients, codes, tokens and accounts are stored in the `mcp_auth` schema, tokens as SHA-256 hashes. To sign every client out, run `TRUNCATE mcp_auth.tokens` against the database. Changing the passphrase doesn't sign anyone out; truncate the tokens as well.
+
+### Sign-in
+
+`/mcp` always needs a bearer token. The sign-in page offers up to two ways to get one, depending on what is configured:
+
+| Way in | For | Turned on by |
+|---|---|---|
+| A six-digit code sent by email | Anyone | `RESEND_API_KEY`, `MAIL_FROM` and `MCP_ACCOUNT_SECRET` |
+| The passphrase | The owner, and directory reviewers, who need credentials that work without a mailbox | `MCP_OAUTH_PASSPHRASE` |
+
+With only the passphrase set, the page is the passphrase form and nothing else. With both, the passphrase sits behind a *Have a passphrase?* link.
+
+**Email codes.** The person enters an address and receives a code that lasts 10 minutes and works once, for that sign-in only. Five wrong codes discard the sign-in, as five wrong passphrases do. To limit what the page can be made to send, a sign-in can ask for three codes, an address is sent five an hour, and the server sends `MAIL_MAX_PER_HOUR` an hour in all.
+
+**Accounts.** The address is passed to Resend to deliver the code and is not stored. The account is an HMAC-SHA256 of the lower-cased address under `MCP_ACCOUNT_SECRET`, so the stored ID can't be turned back into the address, or tested against a guess, without the secret. An account holds its ID, when it was created, when it was last used (a sign-in or a token refresh) and whether it is blocked. Accounts not used for 180 days are deleted, with their tokens. `traintracker forget EMAIL` deletes one on request; `traintracker block EMAIL` shuts one out, and `UPDATE mcp_auth.accounts SET blocked = false` lets them all back in.
+
+Everyone who signs in with the passphrase shares one account, `passphrase`.
+
+**Rate limit.** Tool calls over HTTP are limited per account: `RATE_LIMIT_BURST` calls at once, refilled at `RATE_LIMIT_PER_MINUTE`. One Darwin key serves every user, and the limit stops one account spending the whole allowance. A call over the limit comes back as a tool error, *Too many requests. Try again in N seconds.*, which the model can read and relay. The counts are held in memory, so a restart clears them. The static token counts as one account. The stdio server is not limited.
+
+**Running it locally.** `MAIL_BACKEND=console` with `MCP_ACCOUNT_SECRET` set writes the code to the log in place of sending it. Don't use it on a host whose logs other people can read.
 
 ## Limitations
 
@@ -270,7 +300,7 @@ uvx --with tox-uv tox -e tests -- -k platform   # arguments after -- go to the t
 | `format` | `ruff format --check` |
 | `lint` | `ruff check` |
 | `type` | `mypy` (strict) |
-| `tests` | `pytest`: importer, STP rules, planner, download, clients, demo mode, tools end to end |
+| `tests` | `pytest`: importer, STP rules, planner, download, clients, demo mode, tools end to end, sign-in, rate limit |
 
 Tests use a synthetic SCHEDULE feed in Network Rail's JSON format (`tests/feedgen.py`) and API fixtures shaped on the published Darwin schema. They aren't live recordings, so the first run against real services is the final check.
 
@@ -278,7 +308,9 @@ Tests use a synthetic SCHEDULE feed in Network Rail's JSON format (`tests/feedge
 src/traintracker/
   server.py      MCP tools, source fallback, live overlay, CLI
   http_app.py    Streamable-HTTP entry point: auth wiring, Host check, health check
-  oauth.py       OAuth provider (Postgres) and passphrase sign-in page
+  oauth.py       OAuth provider (Postgres), sign-in page, accounts
+  mail.py        Sends the sign-in code (Resend, or the log in development)
+  ratelimit.py   Per-account limit on tool calls
   timetable.py   SCHEDULE importer and Postgres queries (STP resolution)
   planner.py     Connection Scan journey planner, London links
   darwin.py      Rail Data Marketplace LDBWS client

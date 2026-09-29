@@ -1,7 +1,8 @@
 """traintracker MCP server: GB train times for Claude.
 
-Run with `traintracker` (stdio). Other commands: `traintracker refresh`,
-`traintracker import FILE`, `traintracker status`.
+Run with `traintracker` (stdio). Other commands: `traintracker serve-http`,
+`traintracker refresh`, `traintracker import FILE`, `traintracker status`,
+`traintracker forget EMAIL`, `traintracker block EMAIL`.
 """
 
 from __future__ import annotations
@@ -937,14 +938,12 @@ def main(argv: list[str] | None = None) -> None:
     if cmd == "serve":
         mcp.run("stdio")
     elif cmd == "serve-http":
-        if not (settings.mcp_auth_token or settings.oauth_passphrase):
-            print(
-                "serve-http needs MCP_AUTH_TOKEN (static bearer token), MCP_OAUTH_PASSPHRASE "
-                "(OAuth sign-in), or both.",
-                file=sys.stderr,
-            )
+        if problem := _sign_in_problem(settings):
+            print(problem, file=sys.stderr)
             sys.exit(2)
         http_app.serve(http_app.build_app(mcp, settings), settings.host, settings.port)
+    elif cmd in ("forget", "block") and len(argv) == 2:
+        _account_command(cmd, argv[1], settings)
     elif cmd == "refresh":
         meta = (
             demo.build_timetable(settings)
@@ -969,10 +968,40 @@ def main(argv: list[str] | None = None) -> None:
         )
     else:
         print(
-            "usage: traintracker [serve | serve-http | refresh | import FILE.json.gz | status]",
+            "usage: traintracker [serve | serve-http | refresh | import FILE.json.gz | status"
+            " | forget EMAIL | block EMAIL]",
             file=sys.stderr,
         )
         sys.exit(2)
+
+
+def _sign_in_problem(settings: Settings) -> str | None:
+    """Why serve-http can't start with these settings; None if it can."""
+    if missing := settings.email_sign_in_missing:
+        return f"Email sign-in is partly configured: also set {', '.join(missing)}."
+    if settings.mcp_auth_token or settings.oauth_passphrase or settings.email_sign_in:
+        return None
+    return (
+        "serve-http needs a way to sign in: email codes (RESEND_API_KEY, MAIL_FROM and "
+        "MCP_ACCOUNT_SECRET), MCP_OAUTH_PASSPHRASE, MCP_AUTH_TOKEN (static bearer token), "
+        "or any mix of them."
+    )
+
+
+def _account_command(cmd: str, address: str, settings: Settings) -> None:
+    """`forget` answers an erasure request; `block` shuts out an abusive account."""
+    if not settings.account_secret:
+        print("MCP_ACCOUNT_SECRET is not set, so there are no email accounts.", file=sys.stderr)
+        sys.exit(2)
+    provider = http_app.build_provider(settings)
+    provider.create_tables()
+    if cmd == "block":
+        provider.block(address)
+        print("Blocked: the address can't sign in and its tokens no longer work.", file=sys.stderr)
+    elif provider.forget(address):
+        print("Forgotten: the account and its tokens are deleted.", file=sys.stderr)
+    else:
+        print("No account for that address.", file=sys.stderr)
 
 
 def _yn(flag: bool) -> str:

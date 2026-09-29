@@ -336,7 +336,14 @@ src/traintracker/
 
 ## Data and licences
 
-- Darwin data via the Rail Data Marketplace, and Network Rail data feeds, are used under the terms you accept when you subscribe. Check those terms before redistributing any output.
-- The bundled station list comes from [davwheat/uk-railway-stations](https://github.com/davwheat/uk-railway-stations) under the Open Database License (ODbL).
+Darwin data via the Rail Data Marketplace, and Network Rail data feeds, are used under the terms you accept when you subscribe. Check those terms before redistributing any output. Both ask for the source to be credited:
+
+| Data | Credit | Where the wording comes from |
+|---|---|---|
+| Darwin (live times) | "Powered by National Rail Enquiries", with a link to [nationalrail.co.uk](https://www.nationalrail.co.uk/) and the logo from the NRE Brand Guidelines | [NRE Developer Guidelines](https://www.nationalrail.co.uk/developers/darwin-data-feeds/) v06-01, section 4. Where the feed is combined with other data, the credit may go on an attribution page |
+| Network Rail SCHEDULE (timetable) | "Contains public sector information licensed under the Open Government Licence v3.0." | The [Network Rail data feeds licence](https://www.networkrail.co.uk/who-we-are/transparency-and-ethics/transparency/open-data-feeds/network-rail-infrastructure-limited-data-feeds-licence/) releases the feeds under the [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/) and gives no statement of its own, so the licence's default applies |
+| Station list | [davwheat/uk-railway-stations](https://github.com/davwheat/uk-railway-stations), Open Database License (ODbL) | The repository's licence |
+
+The credits are in the footer of every page of the [site](#site) and on `/docs`. The server's instructions carry one line naming the sources, so an assistant can credit them when it says where an answer comes from; tool responses are not padded with it. The footer has the words and the link but not the NRE logo, which has to be taken from the Brand Guidelines (`TODO(hugo)` in `layout.html`).
 
 Code: MIT.

@@ -70,6 +70,17 @@ async def test_lists_all_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         }
 
 
+async def test_instructions_credit_the_data_sources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Attribution is a condition of both data licences; the wording is theirs.
+    async with connect(tmp_path, monkeypatch) as client:
+        instructions = client.instructions or ""
+    assert "Powered by National Rail Enquiries" in instructions
+    assert "Network Rail" in instructions
+    assert "Open Government Licence v3.0" in instructions
+
+
 async def test_every_tool_is_annotated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # The connector directories reject a tool without a title and a read-only
     # hint. Every listed tool is checked, so a new one can't ship without them.

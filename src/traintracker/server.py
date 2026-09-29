@@ -68,7 +68,10 @@ GB (National Rail) train times.
   live times for today's trains where available.
 - More about one train (all stops, delays): service_details with a service_id from any tool.
 - If something isn't configured, data_status explains what's missing.
-Times are UK local."""
+Times are UK local.
+Sources, to credit when you say where the information comes from: live times are
+"Powered by National Rail Enquiries"; timetable times are from Network Rail data feeds
+(contains public sector information licensed under the Open Government Licence v3.0)."""
 
 
 # --------------------------------------------------------------------- state

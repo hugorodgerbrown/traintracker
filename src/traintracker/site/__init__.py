@@ -9,6 +9,7 @@ data attribution in it exist once.
 
 from __future__ import annotations
 
+import hashlib
 import html
 from collections.abc import Awaitable, Callable
 from importlib import resources
@@ -62,6 +63,13 @@ def _read(name: str) -> str:
     return resources.files(__name__).joinpath(name).read_text("utf-8")
 
 
+def asset_url(path: str) -> str:
+    """The asset's address with a hash of its content, so a browser that has
+    cached the old file fetches the new one as soon as it changes."""
+    digest = hashlib.sha256(_read(ASSETS[path][0]).encode()).hexdigest()
+    return f"{path}?v={digest[:10]}"
+
+
 def _nav(current: str) -> str:
     items = []
     for path, (_, text, _, _) in PAGES.items():
@@ -78,7 +86,8 @@ def render(path: str, fields: dict[str, str]) -> str:
     # The page goes in first, so that fields are filled in inside it too.
     for key, markup in {"content": _read(name), "nav": _nav(path)}.items():
         page = page.replace("{{ " + key + " }}", markup)
-    for key, text in {"title": title, "description": description, **fields}.items():
+    addresses = {"stylesheet": asset_url(STYLESHEET), "script": asset_url(SCRIPT)}
+    for key, text in {"title": title, "description": description, **addresses, **fields}.items():
         page = page.replace("{{ " + key + " }}", html.escape(text))
     return page
 

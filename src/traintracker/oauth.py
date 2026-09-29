@@ -48,6 +48,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Route
 
+from traintracker import site
 from traintracker.config import SCHEMA_NAME
 from traintracker.mail import CODE_MINUTES, Mailer, MailError
 
@@ -702,12 +703,12 @@ def _login_code_hash(sign_in_id: str, code: str) -> str:
 
 # The sign-in page is only reached from an OAuth flow and is never shared, so it
 # opts out of link unfurling (noindex, no Open Graph tags) and of framing.
-_HEAD = """<!doctype html>
+_HEAD = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Sign in · Traintrackr</title>
-<link rel="stylesheet" href="/static/site.css">
+<link rel="stylesheet" href="{html.escape(site.asset_url(site.STYLESHEET))}">
 </head><body><main class="sign-in">
 """
 _FOOT = "</main></body></html>"

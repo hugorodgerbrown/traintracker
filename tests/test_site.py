@@ -100,7 +100,13 @@ async def test_the_privacy_policy_says_what_the_code_does(client: httpx.AsyncCli
 
 
 async def test_assets_are_served(client: httpx.AsyncClient) -> None:
-    css = await client.get(site.STYLESHEET)
+    # Pages link to an address that changes with the file, so the long cache
+    # time can't leave a browser with an old stylesheet.
+    home = (await client.get("/")).text
+    assert re.fullmatch(r"/static/site\.css\?v=[0-9a-f]{10}", site.asset_url(site.STYLESHEET))
+    assert f'href="{site.asset_url(site.STYLESHEET)}"' in home
+    assert f'src="{site.asset_url(site.SCRIPT)}"' in home
+    css = await client.get(site.asset_url(site.STYLESHEET))
     assert css.status_code == 200 and css.headers["content-type"] == "text/css; charset=utf-8"
     assert "prefers-color-scheme: dark" in css.text
     js = await client.get(site.SCRIPT)
@@ -111,7 +117,8 @@ async def test_assets_are_served(client: httpx.AsyncClient) -> None:
 
 async def test_the_sign_in_page_uses_the_site_stylesheet(client: httpx.AsyncClient) -> None:
     page = await client.get("/sign-in", params={"request": "made-up"})
-    assert f'href="{site.STYLESHEET}"' in page.text and "<style" not in page.text
+    assert f'href="{site.asset_url(site.STYLESHEET)}"' in page.text
+    assert "<style" not in page.text
     assert page.headers["content-security-policy"] == "default-src 'none'; style-src 'self'"
 
 

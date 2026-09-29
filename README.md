@@ -304,7 +304,7 @@ Everyone who signs in with the passphrase shares one account, `passphrase`.
 
 The pages are files in [`src/traintracker/site/`](src/traintracker/site): HTML fragments placed inside `layout.html`, one stylesheet and one script for the copy button. There is no build step. They are filled in once at start-up with the server's own values (the connector address from `MCP_PUBLIC_URL`, the rate limit), so a copy deployed elsewhere describes itself. The privacy policy names this repository's deployment and its operator: change `privacy.html` and the support address when you deploy your own.
 
-The pages set no cookies and load nothing from another origin; the `Content-Security-Policy` header allows only the site's own stylesheet and script. They follow the reader's light or dark setting and work at phone width.
+The stylesheet and script are linked by an address that carries a hash of the file, so a browser fetches a changed file at once and can cache an unchanged one for an hour. The pages set no cookies and load nothing from another origin; the `Content-Security-Policy` header allows only the site's own stylesheet and script. They follow the reader's light or dark setting and work at phone width.
 
 ## MCP Registry
 

@@ -30,7 +30,7 @@ flowchart LR
 | `timetable` | Booked departures/arrivals at a station on any date | Local timetable |
 | `service_details` | Every stop for one train | Whichever source issued the ID |
 | `plan_journey` | A to B with changes (up to `max_changes`, default 4), incl. cross-London links | Local timetable + Darwin live overlay |
-| `data_status` | What's configured, timetable freshness, what's missing | — |
+| `data_status` | What's configured, timetable freshness, Darwin allowance used, what's missing | — |
 
 Every tool accepts station names or CRS codes. Ambiguous names ("Sudbury", "Harrow") return the candidates so Claude can ask which one you meant.
 
@@ -121,6 +121,20 @@ flowchart TD
 | Darwin | Real time | Now → +2 hours | 20 s | Darwin service IDs expire soon after the train runs |
 | Timetable (Postgres) | Daily (Network Rail publishes ~06:00) | Two days back → end of the published timetable (usually months) | Until the next rebuild | Booked times only; last-minute changes show up in Darwin, not here |
 
+### Darwin allowance
+
+Free Darwin access covers 5 million requests per four-week railway period, and one server key serves every user. The server counts the requests it sends to Darwin and reports the total in `data_status` and `traintracker status`:
+
+```
+Darwin usage: 412,906 requests in the last 28 days, 8.26% of 5,000,000
+```
+
+- **What is counted:** each request sent to Darwin, failed ones included. A board answered from the 20-second cache sends nothing and counts nothing. Demo mode counts nothing.
+- **The period:** a rolling 28 days. Railway periods are not simple to derive (the first and last of the year vary in length), and a rolling window is never less strict than the period it overlaps.
+- **Per product:** the count is kept for each Rail Data Marketplace product (`departures`, `arrivals`, `service`) and the percentage uses the total. If your allowance is per product, the percentage overstates your usage.
+- **Warnings:** the log gets a warning when usage passes 70% of the allowance and another at 90%. Each is given once, and again only if usage falls below the mark and returns, or the server restarts above it.
+- **Storage:** one small table, `darwin_requests`, in its own schema (`USAGE_SCHEMA`), so the count survives restarts and timetable refreshes. Counts gather in memory and are written when 50 are waiting or a minute has passed, and at shutdown; a server that is killed loses at most that many. A failed write is logged and retried, and never fails a tool call. Rows older than 60 days are deleted.
+
 ### What the timetable keeps
 
 The SCHEDULE feed is large (all trains, freight included). On import, traintracker keeps only what a passenger needs:
@@ -191,6 +205,7 @@ All configuration is by environment variable, read from `.env` in the project fo
 | `NR_SCHEDULE_URL` | full daily JSON extract | Override if the portal gives a different link |
 | `DATABASE_URL` | — | Postgres database for the timetable (required) |
 | `TIMETABLE_SCHEMA` | `timetable` | Schema the timetable lives in (demo mode appends `_demo`) |
+| `USAGE_SCHEMA` | `traintracker_usage` | Schema for the count of requests sent to Darwin (see [Darwin allowance](#darwin-allowance)) |
 | `TIMETABLE_AUTO_REFRESH` | `1` | `0` stops the server downloading the timetable itself (use a cron job instead) |
 | `TIMETABLE_MAX_AGE_HOURS` | `26` | Re-download when older than this |
 | `TRAINTRACKER_DATA_DIR` | `$XDG_DATA_HOME/traintracker` if set, else `~/.traintracker` | Where the feed is downloaded to before import |
@@ -221,7 +236,7 @@ All configuration is by environment variable, read from `.env` in the project fo
 | `traintracker block EMAIL` | Stop an address signing in, and its tokens working |
 | `traintracker refresh` | Download the SCHEDULE feed and rebuild the timetable (in demo mode, regenerate the demo timetable) |
 | `traintracker import FILE.json.gz` | Build the timetable from a feed file you downloaded yourself |
-| `traintracker status` | Show configured sources and timetable details |
+| `traintracker status` | Show configured sources, Darwin allowance used and timetable details |
 
 Logs go to stderr; stdout carries the MCP protocol.
 
@@ -314,7 +329,7 @@ uvx --with tox-uv tox -e tests -- -k platform   # arguments after -- go to the t
 | `format` | `ruff format --check` |
 | `lint` | `ruff check` |
 | `type` | `mypy` (strict) |
-| `tests` | `pytest`: importer, STP rules, planner, download, clients, demo mode, tools end to end, sign-in, rate limit |
+| `tests` | `pytest`: importer, STP rules, planner, download, clients, demo mode, tools end to end, sign-in, rate limit, site, Darwin usage |
 
 Tests use a synthetic SCHEDULE feed in Network Rail's JSON format (`tests/feedgen.py`) and API fixtures shaped on the published Darwin schema. They aren't live recordings, so the first run against real services is the final check.
 
@@ -329,6 +344,7 @@ src/traintracker/
   timetable.py   SCHEDULE importer and Postgres queries (STP resolution)
   planner.py     Connection Scan journey planner, London links
   darwin.py      Rail Data Marketplace LDBWS client
+  usage.py       Count of requests sent to Darwin, against the allowance
   stations.py    Station search and name resolution
   models.py      Output models shared by all sources
   demo.py        Demo mode: generated timetable and in-process Darwin

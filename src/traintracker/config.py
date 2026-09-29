@@ -117,6 +117,7 @@ class Settings:
     mail_max_per_hour: int = 200
     rate_limit_per_minute: int = 30
     rate_limit_burst: int = 10
+    usage_schema: str = "traintracker_usage"
 
     @property
     def timetable_db(self) -> TimetableDB:
@@ -201,6 +202,7 @@ class Settings:
             mail_max_per_hour=int(_env("MAIL_MAX_PER_HOUR") or 200),
             rate_limit_per_minute=int(_env("RATE_LIMIT_PER_MINUTE") or 30),
             rate_limit_burst=int(_env("RATE_LIMIT_BURST") or 10),
+            usage_schema=_env("USAGE_SCHEMA") or "traintracker_usage",
         )
         if (_env("TRAINTRACKER_DEMO") or "").lower() not in TRUE:
             return settings

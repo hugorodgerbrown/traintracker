@@ -51,6 +51,7 @@ from traintracker.timetable import (
     fmt_minutes,
     minutes_on,
 )
+from traintracker.usage import DarwinUsage
 
 log = logging.getLogger("traintracker")
 P = ParamSpec("P")
@@ -82,6 +83,7 @@ class App:
     settings: Settings
     http: httpx.AsyncClient
     darwin: DarwinClient
+    usage: DarwinUsage | None = None
     refresh_task: asyncio.Task[Any] | None = None
     refresh_error: str | None = None
     refresh_started: datetime | None = None
@@ -169,10 +171,12 @@ async def lifespan(_server: MCPServer[None]) -> AsyncIterator[None]:
         # Demo mode answers Darwin requests in-process; nothing leaves the machine.
         transport=demo.transport(settings) if settings.demo else None,
     ) as http:
+        usage = darwin_usage(settings)
         _app = App(
             settings=settings,
             http=http,
-            darwin=DarwinClient(settings, http),
+            darwin=DarwinClient(settings, http, usage),
+            usage=usage,
         )
         _app.maybe_refresh()
         # Building a day's network takes a few seconds; do today's up front.
@@ -183,7 +187,17 @@ async def lifespan(_server: MCPServer[None]) -> AsyncIterator[None]:
             prewarm.cancel()
             if _app.refresh_task:
                 _app.refresh_task.cancel()
+            if usage:
+                await usage.flush(force=True)  # counts not yet written
             _app = None
+
+
+def darwin_usage(settings: Settings) -> DarwinUsage | None:
+    """The Darwin request counter; None where no request reaches Darwin (demo
+    mode, no key) or there is no database to keep the count in."""
+    if settings.demo or not settings.has_darwin or not settings.database_url:
+        return None
+    return DarwinUsage(settings.database_url, settings.usage_schema)
 
 
 def _prewarm(settings: Settings) -> None:
@@ -884,8 +898,9 @@ def _at_risk(j: Journey, mct: int) -> bool:
 
 @mcp.tool(title="Data status", annotations=LOCAL)
 async def data_status() -> dict[str, Any]:
-    """Which data sources this server has configured, how fresh its timetable is, and
-    what is missing. Takes no arguments."""
+    """Which data sources this server has configured, how fresh its timetable is, how
+    much of the Darwin request allowance has been used, and what is missing. Takes no
+    arguments."""
     a = app()
     s = a.settings
     age = a.timetable_age()
@@ -909,6 +924,8 @@ async def data_status() -> dict[str, Any]:
         },
         "min_interchange_minutes": s.min_interchange_minutes,
     }
+    if a.usage:
+        status["darwin_usage"] = await _usage_status(a.usage)
     if s.demo:
         # Replace the account details: none are used in demo mode.
         status = {
@@ -918,6 +935,13 @@ async def data_status() -> dict[str, Any]:
             "min_interchange_minutes": s.min_interchange_minutes,
         }
     return status
+
+
+async def _usage_status(usage: DarwinUsage) -> dict[str, Any]:
+    try:
+        return (await asyncio.to_thread(usage.read)).as_dict()
+    except psycopg.Error as exc:
+        return {"error": f"The usage count couldn't be read: {exc}"}
 
 
 # ----------------------------------------------------------------------- CLI
@@ -966,7 +990,8 @@ def main(argv: list[str] | None = None) -> None:
         print(
             ("Demo mode (generated data)\n" if settings.demo else "")
             + f"Darwin: {_yn(settings.has_darwin)}; NR: {_yn(settings.has_nr)}\n"
-            f"Timetable schema {settings.timetable_db.schema}: {info}",
+            + _usage_line(settings)
+            + f"Timetable schema {settings.timetable_db.schema}: {info}",
             file=sys.stderr,
         )
     else:
@@ -1005,6 +1030,16 @@ def _account_command(cmd: str, address: str, settings: Settings) -> None:
         print("Forgotten: the account and its tokens are deleted.", file=sys.stderr)
     else:
         print("No account for that address.", file=sys.stderr)
+
+
+def _usage_line(settings: Settings) -> str:
+    usage = darwin_usage(settings)
+    if not usage:
+        return ""
+    try:
+        return f"Darwin usage: {usage.read().line()}\n"
+    except psycopg.Error as exc:
+        return f"Darwin usage: couldn't be read ({exc})\n"
 
 
 def _yn(flag: bool) -> str:

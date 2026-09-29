@@ -1,10 +1,12 @@
 """Streamable-HTTP entry point for hosting the server (e.g. on Render).
 
 /mcp needs a bearer token: either the static MCP_AUTH_TOKEN, or an OAuth access
-token issued by this server after the passphrase sign-in (see oauth.py), which
-is what lets claude.ai add the server as a connector. The OAuth metadata,
+token issued by this server after sign-in (see oauth.py), which is what lets
+claude.ai and ChatGPT add the server as a connector. The OAuth metadata,
 registration, authorize, token and revoke endpoints come from the MCP SDK.
-/healthz is open for the platform's health check.
+Tool calls are rate limited per account (see ratelimit.py).
+/healthz is open for the platform's health check, and so are the public pages
+(see site/): /, /docs and /privacy.
 """
 
 from __future__ import annotations
@@ -16,7 +18,10 @@ from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, Re
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.routing import Route
 
+from traintracker import site
+from traintracker.mail import build_mailer
 from traintracker.oauth import TraintrackerOAuthProvider, health
+from traintracker.ratelimit import RateLimiter, RateLimitMiddleware
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
@@ -43,15 +48,49 @@ def transport_security(public_hosts: list[str]) -> TransportSecuritySettings | N
     )
 
 
-def build_app(server: MCPServer[Any], settings: Settings) -> Starlette:
-    provider = TraintrackerOAuthProvider(
+def build_provider(settings: Settings) -> TraintrackerOAuthProvider:
+    return TraintrackerOAuthProvider(
         dsn=settings.database_url or "",
         public_url=settings.public_url,
         passphrase=settings.oauth_passphrase,
         static_token=settings.mcp_auth_token,
         schema=settings.auth_schema,
+        account_secret=settings.account_secret,
+        mailer=build_mailer(settings),
+        mail_max_per_hour=settings.mail_max_per_hour,
     )
+
+
+def limit_tool_calls(server: MCPServer[Any], settings: Settings) -> None:
+    """Put the rate limiter on the server, in place of any from an earlier app.
+
+    The server object outlives the app (tests build many apps around one
+    server), so the old limiter is removed rather than stacked.
+    """
+    chain = server.middleware
+    chain[:] = [m for m in chain if not isinstance(m, RateLimitMiddleware)]
+    if settings.rate_limit_per_minute > 0:
+        limiter = RateLimiter(settings.rate_limit_per_minute, settings.rate_limit_burst)
+        chain.append(RateLimitMiddleware(limiter))
+
+
+def site_fields(settings: Settings) -> dict[str, str]:
+    """This server's own values for the public pages."""
+    if settings.rate_limit_per_minute > 0:
+        fair_use = (
+            f"each account can make {max(1, settings.rate_limit_burst)} requests at once and "
+            f"{settings.rate_limit_per_minute} a minute. Over that, the assistant is told how "
+            "long to wait."
+        )
+    else:
+        fair_use = "there is no set limit on requests; please don't automate them."
+    return {"mcp_url": f"{settings.public_url}/mcp", "fair_use": fair_use}
+
+
+def build_app(server: MCPServer[Any], settings: Settings) -> Starlette:
+    provider = build_provider(settings)
     provider.create_tables()
+    limit_tool_calls(server, settings)
     auth = AuthSettings(
         issuer_url=settings.public_url,
         resource_server_url=provider.resource,
@@ -68,7 +107,11 @@ def build_app(server: MCPServer[Any], settings: Settings) -> Starlette:
         auth=auth,
         auth_server_provider=provider,
         token_verifier=ProviderTokenVerifier(provider),
-        custom_starlette_routes=[*provider.routes(), Route(HEALTH_PATH, health)],
+        custom_starlette_routes=[
+            *provider.routes(),
+            *site.routes(site_fields(settings)),
+            Route(HEALTH_PATH, health),
+        ],
     )
 
 

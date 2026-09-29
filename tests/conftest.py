@@ -26,6 +26,7 @@ def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     base = f"test_{uuid.uuid4().hex[:12]}"
     monkeypatch.setenv("DATABASE_URL", TEST_DATABASE_URL)
     monkeypatch.setenv("TIMETABLE_SCHEMA", base)
+    monkeypatch.setenv("USAGE_SCHEMA", f"{base}_usage")
     yield
     Timetable.clear_caches()
     with psycopg.connect(TEST_DATABASE_URL, autocommit=True) as con:

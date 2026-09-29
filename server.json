@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "live.traintrackr/traintracker",
+  "title": "Traintrackr",
+  "description": "GB (National Rail) train times: live departures, platforms, timetables and journey planning.",
+  "version": "0.1.0",
+  "websiteUrl": "https://traintrackr.live",
+  "repository": {
+    "url": "https://github.com/hugorodgerbrown/traintracker",
+    "source": "github"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://traintrackr.live/mcp"
+    }
+  ]
+}

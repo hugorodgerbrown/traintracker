@@ -110,6 +110,14 @@ class Settings:
     min_interchange_minutes: int
     http_timeout: float
     demo: bool = False
+    resend_api_key: str | None = field(default=None, repr=False)
+    mail_from: str | None = None
+    account_secret: str | None = field(default=None, repr=False)
+    mail_backend: str = "resend"
+    mail_max_per_hour: int = 200
+    rate_limit_per_minute: int = 30
+    rate_limit_burst: int = 10
+    usage_schema: str = "traintracker_usage"
 
     @property
     def timetable_db(self) -> TimetableDB:
@@ -128,6 +136,35 @@ class Settings:
     @property
     def has_darwin_arrivals(self) -> bool:
         return self.darwin_arrivals_key is not None and self.darwin_arrivals_url is not None
+
+    @property
+    def has_any_darwin(self) -> bool:
+        """Whether any Darwin product can be called: each has its own key, and a
+        server may hold the arrivals or service-details one without departures."""
+        return self.has_darwin or self.has_darwin_arrivals or self.darwin_service_key is not None
+
+    @property
+    def email_sign_in_missing(self) -> list[str]:
+        """Variables still needed for email sign-in, once any part of it is set.
+
+        Empty when email sign-in is either complete or not asked for, so a
+        half-configured server is refused at start-up rather than found out by
+        the first person who tries to sign in.
+        """
+        console = self.mail_backend == "console"
+        if not (console or self.resend_api_key or self.mail_from or self.account_secret):
+            return []
+        needed = {"MCP_ACCOUNT_SECRET": self.account_secret}
+        if not console:
+            needed |= {"RESEND_API_KEY": self.resend_api_key, "MAIL_FROM": self.mail_from}
+        return [name for name, value in needed.items() if not value]
+
+    @property
+    def email_sign_in(self) -> bool:
+        """Whether people can sign in with a code sent to their email address."""
+        console = self.mail_backend == "console"
+        asked = console or bool(self.resend_api_key or self.mail_from or self.account_secret)
+        return asked and not self.email_sign_in_missing
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -164,6 +201,14 @@ class Settings:
             timetable_max_age_hours=float(_env("TIMETABLE_MAX_AGE_HOURS") or 26),
             min_interchange_minutes=int(_env("MIN_INTERCHANGE_MINUTES") or 5),
             http_timeout=float(_env("HTTP_TIMEOUT_SECONDS") or 15),
+            resend_api_key=_env("RESEND_API_KEY"),
+            mail_from=_env("MAIL_FROM"),
+            account_secret=_env("MCP_ACCOUNT_SECRET"),
+            mail_backend=(_env("MAIL_BACKEND") or "resend").lower(),
+            mail_max_per_hour=int(_env("MAIL_MAX_PER_HOUR") or 200),
+            rate_limit_per_minute=int(_env("RATE_LIMIT_PER_MINUTE") or 30),
+            rate_limit_burst=int(_env("RATE_LIMIT_BURST") or 10),
+            usage_schema=_env("USAGE_SCHEMA") or "traintracker_usage",
         )
         if (_env("TRAINTRACKER_DEMO") or "").lower() not in TRUE:
             return settings

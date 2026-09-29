@@ -6,7 +6,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import quote
 
 import httpx
@@ -22,6 +22,9 @@ from traintracker.models import (
     StationRef,
     Status,
 )
+
+if TYPE_CHECKING:
+    from traintracker.usage import DarwinUsage
 
 SOURCE = "Darwin"
 LIVE_TTL = 20.0
@@ -145,15 +148,24 @@ class _Page:
 
 
 class DarwinClient:
-    def __init__(self, settings: Settings, http: httpx.AsyncClient) -> None:
+    def __init__(
+        self, settings: Settings, http: httpx.AsyncClient, usage: DarwinUsage | None = None
+    ) -> None:
         self.s = settings
         self.http = http
         self.cache = TTLCache()
+        self.usage = usage
 
-    async def _get(self, url: str, key: str, params: dict[str, Any]) -> dict[str, Any]:
+    async def _get(
+        self, product: str, url: str, key: str, params: dict[str, Any]
+    ) -> dict[str, Any]:
         cache_key = (url, tuple(sorted(params.items())))
         if (hit := self.cache.get(cache_key)) is not None:
             return hit  # type: ignore[no-any-return]
+        if self.usage:
+            # Every request sent counts against the allowance, failed ones too.
+            self.usage.count(product)
+            await self.usage.flush()
         resp = await self.http.get(
             url, params=params, headers={"x-apikey": key}, timeout=self.s.http_timeout
         )
@@ -236,7 +248,7 @@ class DarwinClient:
             params["filterCrs"] = filter_crs
             params["filterType"] = "to" if board == "departures" else "from"
 
-        data = await self._get(f"{url}/{op}/{crs}", key, params)
+        data = await self._get(board, f"{url}/{op}/{crs}", key, params)
         services = [_service(s, board) for s in data.get("trainServices") or []]
         services += [_service(s, board) for s in data.get("busServices") or []]
         services += [_service(s, board) for s in data.get("ferryServices") or []]
@@ -267,7 +279,7 @@ class DarwinClient:
         if not self.s.darwin_service_key:
             raise NotConfigured("DARWIN_SERVICE_API_KEY (or DARWIN_API_KEY) is not set.")
         url = f"{self.s.darwin_service_url}/GetServiceDetails/{quote(service_id, safe='')}"
-        data = await self._get(url, self.s.darwin_service_key, {})
+        data = await self._get("service", url, self.s.darwin_service_key, {})
         if not data:
             raise ServiceNotFound(
                 "Darwin no longer has that service. Darwin IDs expire soon after the train runs."

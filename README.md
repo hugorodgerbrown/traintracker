@@ -30,7 +30,7 @@ flowchart LR
 | `timetable` | Booked departures/arrivals at a station on any date | Local timetable |
 | `service_details` | Every stop for one train | Whichever source issued the ID |
 | `plan_journey` | A to B with changes (up to `max_changes`, default 4), incl. cross-London links | Local timetable + Darwin live overlay |
-| `data_status` | What's configured, timetable freshness, what's missing | — |
+| `data_status` | What's configured, timetable freshness, Darwin allowance used, what's missing | — |
 
 Every tool accepts station names or CRS codes. Ambiguous names ("Sudbury", "Harrow") return the candidates so Claude can ask which one you meant.
 
@@ -121,6 +121,20 @@ flowchart TD
 | Darwin | Real time | Now → +2 hours | 20 s | Darwin service IDs expire soon after the train runs |
 | Timetable (Postgres) | Daily (Network Rail publishes ~06:00) | Two days back → end of the published timetable (usually months) | Until the next rebuild | Booked times only; last-minute changes show up in Darwin, not here |
 
+### Darwin allowance
+
+Free Darwin access covers 5 million requests per four-week railway period, and one server key serves every user. The server counts the requests it sends to Darwin and reports the total in `data_status` and `traintracker status`:
+
+```
+Darwin usage: 412,906 requests in the last 28 days, 8.26% of 5,000,000
+```
+
+- **What is counted:** each request sent to Darwin, failed ones included. A board answered from the 20-second cache sends nothing and counts nothing. Demo mode counts nothing.
+- **The period:** a rolling 28 days. Railway periods are not simple to derive (the first and last of the year vary in length), and a rolling window is never less strict than the period it overlaps.
+- **Per product:** the count is kept for each Rail Data Marketplace product (`departures`, `arrivals`, `service`) and the percentage uses the total. If your allowance is per product, the percentage overstates your usage.
+- **Warnings:** the log gets a warning when usage passes 70% of the allowance and another at 90%. Each is given once, and again only if usage falls below the mark and returns, or the server restarts above it.
+- **Storage:** one small table, `darwin_requests`, in its own schema (`USAGE_SCHEMA`), so the count survives restarts and timetable refreshes. Counts gather in memory and are written when 50 are waiting or a minute has passed, and at shutdown; a server that is killed loses at most that many. A failed write is logged and retried, and never fails a tool call. Rows older than 60 days are deleted.
+
 ### What the timetable keeps
 
 The SCHEDULE feed is large (all trains, freight included). On import, traintracker keeps only what a passenger needs:
@@ -191,13 +205,21 @@ All configuration is by environment variable, read from `.env` in the project fo
 | `NR_SCHEDULE_URL` | full daily JSON extract | Override if the portal gives a different link |
 | `DATABASE_URL` | — | Postgres database for the timetable (required) |
 | `TIMETABLE_SCHEMA` | `timetable` | Schema the timetable lives in (demo mode appends `_demo`) |
+| `USAGE_SCHEMA` | `traintracker_usage` | Schema for the count of requests sent to Darwin (see [Darwin allowance](#darwin-allowance)) |
 | `TIMETABLE_AUTO_REFRESH` | `1` | `0` stops the server downloading the timetable itself (use a cron job instead) |
 | `TIMETABLE_MAX_AGE_HOURS` | `26` | Re-download when older than this |
 | `TRAINTRACKER_DATA_DIR` | `$XDG_DATA_HOME/traintracker` if set, else `~/.traintracker` | Where the feed is downloaded to before import |
 | `MCP_AUTH_TOKEN` | — | Static bearer token accepted by `serve-http` |
-| `MCP_OAUTH_PASSPHRASE` | — | Passphrase for the OAuth sign-in page, which lets claude.ai add the server as a connector. `serve-http` needs this, `MCP_AUTH_TOKEN`, or both |
+| `MCP_OAUTH_PASSPHRASE` | — | Passphrase accepted by the OAuth sign-in page, for the owner and for directory reviewers. `serve-http` needs this, email sign-in, `MCP_AUTH_TOKEN`, or any mix of them |
+| `RESEND_API_KEY` | — | [Resend](https://resend.com) API key. With `MAIL_FROM` and `MCP_ACCOUNT_SECRET` it turns on email sign-in (see [Sign-in](#sign-in)) |
+| `MAIL_FROM` | — | Sender of the sign-in code, e.g. `Traintrackr <login@traintrackr.live>`; the domain must be verified with Resend |
+| `MCP_ACCOUNT_SECRET` | — | Key that turns an email address into an account ID. Long and random; changing it gives every address a new account |
+| `MAIL_BACKEND` | `resend` | `console` writes the sign-in code to the log instead of sending it. For local development only |
+| `MAIL_MAX_PER_HOUR` | `200` | Most sign-in codes sent in an hour, over all addresses |
+| `RATE_LIMIT_PER_MINUTE` | `30` | Tool calls per account per minute over HTTP; `0` turns the limit off |
+| `RATE_LIMIT_BURST` | `10` | Tool calls an account can make at once before the per-minute rate applies |
 | `MCP_PUBLIC_URL` | `https://` + first public host | Base URL clients use; the OAuth issuer and resource (`<url>/mcp`) derive from it |
-| `MCP_AUTH_SCHEMA` | `mcp_auth` | Schema for OAuth clients, codes and tokens (tokens stored as SHA-256 hashes) |
+| `MCP_AUTH_SCHEMA` | `mcp_auth` | Schema for OAuth clients, codes, tokens and accounts (tokens stored as SHA-256 hashes, accounts as keyed hashes of the address) |
 | `HOST` / `PORT` | `0.0.0.0` / `8000` | Where `serve-http` listens (bind address) |
 | `MCP_PUBLIC_HOSTS` | — | Comma-separated extra hostnames clients use (e.g. a custom domain), added to `RENDER_EXTERNAL_HOSTNAME`; `serve-http` rejects other `Host` headers (DNS-rebinding protection) |
 | `MIN_INTERCHANGE_MINUTES` | `5` | Minimum change time for planning |
@@ -209,10 +231,12 @@ All configuration is by environment variable, read from `.env` in the project fo
 | Command | Does |
 |---|---|
 | `traintracker` | Run the MCP server on stdio (what Claude runs) |
-| `traintracker serve-http` | Run the MCP server over streamable HTTP at `/mcp`, behind OAuth sign-in and/or a static bearer token, with a `/healthz` check |
+| `traintracker serve-http` | Run the MCP server over streamable HTTP at `/mcp`, behind OAuth sign-in and/or a static bearer token, with a `/healthz` check and the [public site](#site) |
+| `traintracker forget EMAIL` | Delete the account for an email address, with its tokens (an erasure request) |
+| `traintracker block EMAIL` | Stop an address signing in, and its tokens working |
 | `traintracker refresh` | Download the SCHEDULE feed and rebuild the timetable (in demo mode, regenerate the demo timetable) |
 | `traintracker import FILE.json.gz` | Build the timetable from a feed file you downloaded yourself |
-| `traintracker status` | Show configured sources and timetable details |
+| `traintracker status` | Show configured sources, Darwin allowance used and timetable details |
 
 Logs go to stderr; stdout carries the MCP protocol.
 
@@ -240,12 +264,53 @@ claude mcp add -s user --transport http traintracker https://<your-service-host>
 
 ### Add as a claude.ai connector
 
-With `MCP_OAUTH_PASSPHRASE` set, the server is its own OAuth authorization server, so it can be added once in claude.ai and used from claude.ai, Claude Desktop and the mobile apps.
+The server is its own OAuth authorization server, so it can be added once in claude.ai and used from claude.ai, Claude Desktop and the mobile apps. ChatGPT connects the same way.
 
 1. In claude.ai: **Settings → Connectors → Add custom connector**, name `traintracker`, URL `https://<your-service-host>/mcp`. Leave the OAuth client fields empty: Claude registers itself.
-2. Claude opens the server's sign-in page. Enter the passphrase and click **Allow**.
+2. Claude opens the server's sign-in page. Sign in (see [Sign-in](#sign-in)).
 
-Sign-in hands Claude a one-hour access token and a 90-day refresh token, rotated on each refresh. Five wrong passphrases discard the sign-in attempt. Clients, codes and tokens are stored in the `mcp_auth` schema, tokens as SHA-256 hashes. To sign every client out, run `TRUNCATE mcp_auth.tokens` against the database. Changing the passphrase doesn't sign anyone out; truncate the tokens as well.
+Sign-in hands Claude a one-hour access token and a 90-day refresh token, rotated on each refresh. Clients, codes, tokens and accounts are stored in the `mcp_auth` schema, tokens as SHA-256 hashes. To sign every client out, run `TRUNCATE mcp_auth.tokens` against the database. Changing the passphrase doesn't sign anyone out; truncate the tokens as well.
+
+### Sign-in
+
+`/mcp` always needs a bearer token. The sign-in page offers up to two ways to get one, depending on what is configured:
+
+| Way in | For | Turned on by |
+|---|---|---|
+| A six-digit code sent by email | Anyone | `RESEND_API_KEY`, `MAIL_FROM` and `MCP_ACCOUNT_SECRET` |
+| The passphrase | The owner, and directory reviewers, who need credentials that work without a mailbox | `MCP_OAUTH_PASSPHRASE` |
+
+With only the passphrase set, the page is the passphrase form and nothing else. With both, the passphrase sits behind a *Have a passphrase?* link.
+
+**Email codes.** The person enters an address and receives a code that lasts 10 minutes and works once, for that sign-in only. Five wrong codes discard the sign-in, as five wrong passphrases do. To limit what the page can be made to send, a sign-in can ask for three codes, an address is sent five an hour, and the server sends `MAIL_MAX_PER_HOUR` an hour in all.
+
+**Accounts.** The address is passed to Resend to deliver the code and is not stored. The account is an HMAC-SHA256 of the lower-cased address under `MCP_ACCOUNT_SECRET`, so the stored ID can't be turned back into the address, or tested against a guess, without the secret. An account holds its ID, when it was created, when it was last used (a sign-in or a token refresh) and whether it is blocked. Accounts not used for 180 days are deleted, with their tokens. `traintracker forget EMAIL` deletes one on request; `traintracker block EMAIL` shuts one out, and `UPDATE mcp_auth.accounts SET blocked = false` lets them all back in.
+
+Everyone who signs in with the passphrase shares one account, `passphrase`.
+
+**Rate limit.** Tool calls over HTTP are limited per account: `RATE_LIMIT_BURST` calls at once, refilled at `RATE_LIMIT_PER_MINUTE`. One Darwin key serves every user, and the limit stops one account spending the whole allowance. A call over the limit comes back as a tool error, *Too many requests. Try again in N seconds.*, which the model can read and relay. The counts are held in memory, so a restart clears them. The static token counts as one account. The stdio server is not limited.
+
+**Running it locally.** `MAIL_BACKEND=console` with `MCP_ACCOUNT_SECRET` set writes the code to the log in place of sending it. Don't use it on a host whose logs other people can read.
+
+## Site
+
+`serve-http` also serves a small public site from the same app, so there is one deploy and one domain:
+
+| Path | Page |
+|---|---|
+| `/` | What the server does, the connector address with a copy button, how to add it to Claude and ChatGPT, three example prompts |
+| `/docs` | Each tool in plain English, three worked examples with what the answer contains, the limits, data sources, support |
+| `/privacy` | Privacy policy (UK GDPR): what is processed, why, for how long, and by whom |
+
+The pages are files in [`src/traintracker/site/`](src/traintracker/site): HTML fragments placed inside `layout.html`, one stylesheet and one script for the copy button. There is no build step. They are filled in once at start-up with the server's own values (the connector address from `MCP_PUBLIC_URL`, the rate limit), so a copy deployed elsewhere describes itself. The privacy policy names this repository's deployment and its operator: change `privacy.html` and the support address when you deploy your own.
+
+The stylesheet and script are linked by an address that carries a hash of the file, so a browser fetches a changed file at once and can cache an unchanged one for an hour. The pages set no cookies and load nothing from another origin; the `Content-Security-Policy` header allows only the site's own stylesheet and script. They follow the reader's light or dark setting and work at phone width.
+
+## MCP Registry
+
+[`server.json`](server.json) describes the server for the official [MCP Registry](https://registry.modelcontextprotocol.io): the name `live.traintrackr/traintracker`, the version, and one remote, streamable HTTP at `https://traintrackr.live/mcp`. It follows the registry's `2025-12-11` schema. A test keeps its version in step with `pyproject.toml`.
+
+It is not published by CI. Publishing under a `live.traintrackr/` name needs proof that you hold the domain: a TXT record on the apex of `traintrackr.live` carrying a public key, then `mcp-publisher login dns` and `mcp-publisher publish`. For your own deployment, change the name and the URL to your domain.
 
 ## Limitations
 
@@ -270,7 +335,7 @@ uvx --with tox-uv tox -e tests -- -k platform   # arguments after -- go to the t
 | `format` | `ruff format --check` |
 | `lint` | `ruff check` |
 | `type` | `mypy` (strict) |
-| `tests` | `pytest`: importer, STP rules, planner, download, clients, demo mode, tools end to end |
+| `tests` | `pytest`: importer, STP rules, planner, download, clients, demo mode, tools end to end, sign-in, rate limit, site, Darwin usage |
 
 Tests use a synthetic SCHEDULE feed in Network Rail's JSON format (`tests/feedgen.py`) and API fixtures shaped on the published Darwin schema. They aren't live recordings, so the first run against real services is the final check.
 
@@ -278,10 +343,14 @@ Tests use a synthetic SCHEDULE feed in Network Rail's JSON format (`tests/feedge
 src/traintracker/
   server.py      MCP tools, source fallback, live overlay, CLI
   http_app.py    Streamable-HTTP entry point: auth wiring, Host check, health check
-  oauth.py       OAuth provider (Postgres) and passphrase sign-in page
+  oauth.py       OAuth provider (Postgres), sign-in page, accounts
+  mail.py        Sends the sign-in code (Resend, or the log in development)
+  ratelimit.py   Per-account limit on tool calls
+  site/          Public pages: landing, docs, privacy policy
   timetable.py   SCHEDULE importer and Postgres queries (STP resolution)
   planner.py     Connection Scan journey planner, London links
   darwin.py      Rail Data Marketplace LDBWS client
+  usage.py       Count of requests sent to Darwin, against the allowance
   stations.py    Station search and name resolution
   models.py      Output models shared by all sources
   demo.py        Demo mode: generated timetable and in-process Darwin
@@ -289,7 +358,14 @@ src/traintracker/
 
 ## Data and licences
 
-- Darwin data via the Rail Data Marketplace, and Network Rail data feeds, are used under the terms you accept when you subscribe. Check those terms before redistributing any output.
-- The bundled station list comes from [davwheat/uk-railway-stations](https://github.com/davwheat/uk-railway-stations) under the Open Database License (ODbL).
+Darwin data via the Rail Data Marketplace, and Network Rail data feeds, are used under the terms you accept when you subscribe. Check those terms before redistributing any output. Both ask for the source to be credited:
+
+| Data | Credit | Where the wording comes from |
+|---|---|---|
+| Darwin (live times) | "Powered by National Rail Enquiries", with a link to [nationalrail.co.uk](https://www.nationalrail.co.uk/) and the logo from the NRE Brand Guidelines | [NRE Developer Guidelines](https://www.nationalrail.co.uk/developers/darwin-data-feeds/) v06-01, section 4. Where the feed is combined with other data, the credit may go on an attribution page |
+| Network Rail SCHEDULE (timetable) | "Contains public sector information licensed under the Open Government Licence v3.0." | The [Network Rail data feeds licence](https://www.networkrail.co.uk/who-we-are/transparency-and-ethics/transparency/open-data-feeds/network-rail-infrastructure-limited-data-feeds-licence/) releases the feeds under the [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/) and gives no statement of its own, so the licence's default applies |
+| Station list | [davwheat/uk-railway-stations](https://github.com/davwheat/uk-railway-stations), Open Database License (ODbL) | The repository's licence |
+
+The credits are in the footer of every page of the [site](#site) and on `/docs`. The server's instructions carry one line naming the sources, so an assistant can credit them when it says where an answer comes from; tool responses are not padded with it. The footer has the words and the link but not the NRE logo, which has to be taken from the Brand Guidelines (`TODO(hugo)` in `layout.html`).
 
 Code: MIT.

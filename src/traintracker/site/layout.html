@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<meta name="description" content="{{ description }}">
+<link rel="stylesheet" href="{{ stylesheet }}">
+<script src="{{ script }}" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header>
+<a class="name" href="/">Traintrackr</a>
+<nav aria-label="Site">
+<ul>
+{{ nav }}
+</ul>
+</nav>
+</header>
+<main id="main">
+{{ content }}
+</main>
+<footer>
+<!-- TODO(hugo): add the "Powered by National Rail Enquiries" logo from the NRE
+     Brand Guidelines beside this line. Developer Guidelines v06-01, section 4,
+     asks for the logo and a link to the NRE website; the words alone are what
+     it gives for text-only displays. -->
+<p>Live train times: <a href="https://www.nationalrail.co.uk/">Powered by National Rail Enquiries</a>.</p>
+<p>Timetable: Network Rail Infrastructure Limited data feeds. Contains public sector information licensed under the <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/">Open Government Licence v3.0</a>.</p>
+<p>Station list: <a href="https://github.com/davwheat/uk-railway-stations">davwheat/uk-railway-stations</a>, under the <a href="https://opendatacommons.org/licenses/odbl/">Open Database License</a>.</p>
+<p>Traintrackr is not run by, or endorsed by, National Rail Enquiries or Network Rail. <a href="/docs">Docs</a> · <a href="/privacy">Privacy</a> · <a href="mailto:support@traintrackr.live">support@traintrackr.live</a></p>
+</footer>
+</body>
+</html>

@@ -1,7 +1,8 @@
 """traintracker MCP server: GB train times for Claude.
 
-Run with `traintracker` (stdio). Other commands: `traintracker refresh`,
-`traintracker import FILE`, `traintracker status`.
+Run with `traintracker` (stdio). Other commands: `traintracker serve-http`,
+`traintracker refresh`, `traintracker import FILE`, `traintracker status`,
+`traintracker forget EMAIL`, `traintracker block EMAIL`.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ import httpx
 import psycopg
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from traintracker import demo, http_app, planner, stations
@@ -49,6 +51,7 @@ from traintracker.timetable import (
     fmt_minutes,
     minutes_on,
 )
+from traintracker.usage import DarwinUsage
 
 log = logging.getLogger("traintracker")
 P = ParamSpec("P")
@@ -66,7 +69,10 @@ GB (National Rail) train times.
   live times for today's trains where available.
 - More about one train (all stops, delays): service_details with a service_id from any tool.
 - If something isn't configured, data_status explains what's missing.
-Times are UK local."""
+Times are UK local.
+Sources, to credit when you say where the information comes from: live times are
+"Powered by National Rail Enquiries"; timetable times are from Network Rail data feeds
+(contains public sector information licensed under the Open Government Licence v3.0)."""
 
 
 # --------------------------------------------------------------------- state
@@ -77,6 +83,7 @@ class App:
     settings: Settings
     http: httpx.AsyncClient
     darwin: DarwinClient
+    usage: DarwinUsage | None = None
     refresh_task: asyncio.Task[Any] | None = None
     refresh_error: str | None = None
     refresh_started: datetime | None = None
@@ -164,10 +171,12 @@ async def lifespan(_server: MCPServer[None]) -> AsyncIterator[None]:
         # Demo mode answers Darwin requests in-process; nothing leaves the machine.
         transport=demo.transport(settings) if settings.demo else None,
     ) as http:
+        usage = darwin_usage(settings)
         _app = App(
             settings=settings,
             http=http,
-            darwin=DarwinClient(settings, http),
+            darwin=DarwinClient(settings, http, usage),
+            usage=usage,
         )
         _app.maybe_refresh()
         # Building a day's network takes a few seconds; do today's up front.
@@ -178,7 +187,17 @@ async def lifespan(_server: MCPServer[None]) -> AsyncIterator[None]:
             prewarm.cancel()
             if _app.refresh_task:
                 _app.refresh_task.cancel()
+            if usage:
+                await usage.flush(force=True)  # counts not yet written
             _app = None
+
+
+def darwin_usage(settings: Settings) -> DarwinUsage | None:
+    """The Darwin request counter; None where no request reaches Darwin (demo
+    mode, no key for any product) or there is no database to keep the count in."""
+    if settings.demo or not settings.has_any_darwin or not settings.database_url:
+        return None
+    return DarwinUsage(settings.database_url, settings.usage_schema)
 
 
 def _prewarm(settings: Settings) -> None:
@@ -332,20 +351,31 @@ def _timetable_board(
 
 # --------------------------------------------------------------------- tools
 
+# Every tool only reads. The hints differ in one respect: whether a call can
+# reach Darwin (open world) or stays within the server's own data. The timetable
+# came from Network Rail, but a call reads the local copy, so it counts as closed.
+LIVE = ToolAnnotations(
+    read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=True
+)
+LOCAL = ToolAnnotations(
+    read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False
+)
 
-@mcp.tool()
+
+@mcp.tool(title="Find a station", annotations=LOCAL)
 async def find_station(
     query: Annotated[str, Field(description="Station name, partial name or 3-letter CRS code.")],
     limit: Annotated[int, Field(ge=1, le=20)] = 5,
 ) -> list[StationMatch]:
-    """Look up GB railway stations by name or CRS code, best match first."""
+    """Find GB (National Rail) railway stations by name, part of a name or 3-letter CRS
+    code. Returns the closest matches first, each with its name and CRS code."""
     return [
         StationMatch(name=s.name, crs=s.crs, score=round(sc, 1))
         for s, sc in stations.search(query, limit)
     ]
 
 
-@mcp.tool()
+@mcp.tool(title="Live departures", annotations=LIVE)
 @_tool_errors
 async def live_departures(
     station: Annotated[str, Field(description="Station name or CRS code.")],
@@ -356,9 +386,10 @@ async def live_departures(
     ] = 0,
     include_calling_points: bool = False,
 ) -> Board:
-    """Live departure board for the next ~2 hours: expected times, platforms, delays,
-    cancellations. Uses Darwin (National Rail); if Darwin is offline, says so and shows
-    booked timetable times."""
+    """Live departure board for a GB railway station, covering the next two hours:
+    expected times, platforms, delays and cancellations. The data comes from Darwin
+    (National Rail Enquiries). If Darwin is offline, the board shows booked timetable
+    times and says so."""
     return await _live_board(
         app(),
         _station(station),
@@ -436,7 +467,7 @@ def _why(exc: Exception) -> str:
     return str(exc) or type(exc).__name__
 
 
-@mcp.tool()
+@mcp.tool(title="Live arrivals", annotations=LIVE)
 @_tool_errors
 async def live_arrivals(
     station: Annotated[str, Field(description="Station name or CRS code.")],
@@ -446,8 +477,9 @@ async def live_arrivals(
     rows: Annotated[int, Field(ge=1, le=50)] = 10,
     include_calling_points: bool = False,
 ) -> Board:
-    """Live arrivals for the next ~2 hours. Uses Darwin's arrivals product if configured,
-    else booked timetable times."""
+    """Live arrivals board for a GB railway station, covering the next two hours. The
+    data comes from Darwin (National Rail Enquiries) where the server has its arrivals
+    feed; otherwise the board shows booked timetable times and says so."""
     return await _live_board(
         app(),
         _station(station),
@@ -459,7 +491,7 @@ async def live_arrivals(
     )
 
 
-@mcp.tool()
+@mcp.tool(title="Departure platform", annotations=LIVE)
 @_tool_errors
 async def departure_platform(
     station: Annotated[str, Field(description="Station name or CRS code.")],
@@ -468,9 +500,10 @@ async def departure_platform(
         str | None, Field(description="Booked departure HH:MM (24h). Default: the next train.")
     ] = None,
 ) -> PlatformCheck:
-    """Which platform one train leaves from. Live platforms are often announced only
-    ~10 minutes before departure at large stations; until then the booked (timetable)
-    platform is returned and flagged as 'booked'."""
+    """The platform one train leaves from at a GB railway station: the next departure,
+    or the one booked at a given time. Large stations often announce the live platform
+    about 10 minutes before departure; until then the booked (timetable) platform is
+    returned and flagged as 'booked'."""
     a = app()
     st = _station(station)
     other = _station(to) if to else None
@@ -514,16 +547,16 @@ def _platform_note(svc: BoardService, b: Board) -> str:
     return "Platform not yet announced. Check again nearer departure."
 
 
-@mcp.tool()
+@mcp.tool(title="Departures from a platform", annotations=LIVE)
 @_tool_errors
 async def platform_departures(
     station: Annotated[str, Field(description="Station name or CRS code.")],
     platform: Annotated[str, Field(description="Platform, e.g. '4' or '9B'.")],
     count: Annotated[int, Field(ge=1, le=10)] = 3,
 ) -> Board:
-    """The next trains leaving from one platform in the next ~2 hours. A train whose live
-    platform isn't announced yet is matched on its booked platform (platform_source
-    'booked'), which can still change."""
+    """The next trains leaving from one platform of a GB railway station in the next two
+    hours. A train whose live platform isn't announced yet is matched on its booked
+    platform (platform_source 'booked'), which can still change."""
     a = app()
     st = _station(station)
     want = _norm_platform(platform)
@@ -606,7 +639,7 @@ def _minutes_until(hhmm: str | None) -> int:
     return diff - 24 * 60 if diff > 12 * 60 else diff
 
 
-@mcp.tool()
+@mcp.tool(title="Timetable", annotations=LOCAL)
 @_tool_errors
 async def timetable(
     station: Annotated[str, Field(description="Station name or CRS code.")],
@@ -624,8 +657,9 @@ async def timetable(
     rows: Annotated[int, Field(ge=1, le=100)] = 20,
     include_calling_points: bool = False,
 ) -> Board:
-    """Booked train times at a station for any date the timetable covers (usually months
-    ahead). Use for future trips; for right now prefer live_departures."""
+    """Booked (timetabled) departures or arrivals at a GB railway station on any date the
+    Network Rail timetable covers, usually months ahead. For future dates; for trains in
+    the next two hours, live_departures has live times."""
     a = app()
     st = _station(station)
     other_q = to if board == "departures" else from_station
@@ -641,14 +675,15 @@ async def timetable(
     return b
 
 
-@mcp.tool()
+@mcp.tool(title="Service details", annotations=LIVE)
 @_tool_errors
 async def service_details(
     service_id: Annotated[
         str, Field(description="A service_id from another tool (darwin:… or tt:…).")
     ],
 ) -> ServiceDetail:
-    """All stops for one train, with live times where available."""
+    """Every stop of one GB train, with booked times and, for a train taken from a live
+    board, expected and actual times. Takes a service_id returned by another tool."""
     a = app()
     if service_id.startswith("darwin:"):
         return await a.darwin.service(service_id.removeprefix("darwin:"))
@@ -683,7 +718,7 @@ async def service_details(
     raise ToolError("service_id must start with darwin: or tt:.")
 
 
-@mcp.tool()
+@mcp.tool(title="Plan a journey", annotations=LIVE)
 @_tool_errors
 async def plan_journey(
     origin: Annotated[str, Field(description="Start station name or CRS code.")],
@@ -695,10 +730,10 @@ async def plan_journey(
     max_changes: Annotated[int, Field(ge=0, le=6)] = 4,
     live: Annotated[bool, Field(description="Overlay Darwin live times for today.")] = True,
 ) -> JourneyPlan:
-    """Plan journeys between two stations, with changes up to max_changes. Returns the
-    fastest options first plus the fewest-changes option. Cross-London transfers between
-    terminals are included as approximate walk/Tube links. For today's trains in the next
-    two hours, live Darwin times are added and at-risk connections flagged."""
+    """Plan rail journeys between two GB stations, with changes up to max_changes.
+    Returns the fastest options first plus the fewest-changes option. Transfers between
+    London terminals are included as approximate walk/Tube links. For today's trains in
+    the next two hours, live Darwin times are added and at-risk connections flagged."""
     a = app()
     o, d = _station(origin), _station(destination)
     if o.crs == d.crs:
@@ -861,9 +896,11 @@ def _at_risk(j: Journey, mct: int) -> bool:
     return False
 
 
-@mcp.tool()
+@mcp.tool(title="Data status", annotations=LOCAL)
 async def data_status() -> dict[str, Any]:
-    """Which data sources are configured, how fresh the timetable is, and what to set up."""
+    """Which data sources this server has configured, how fresh its timetable is, how
+    much of the Darwin request allowance has been used, and what is missing. Takes no
+    arguments."""
     a = app()
     s = a.settings
     age = a.timetable_age()
@@ -887,6 +924,8 @@ async def data_status() -> dict[str, Any]:
         },
         "min_interchange_minutes": s.min_interchange_minutes,
     }
+    if a.usage:
+        status["darwin_usage"] = await _usage_status(a.usage)
     if s.demo:
         # Replace the account details: none are used in demo mode.
         status = {
@@ -896,6 +935,13 @@ async def data_status() -> dict[str, Any]:
             "min_interchange_minutes": s.min_interchange_minutes,
         }
     return status
+
+
+async def _usage_status(usage: DarwinUsage) -> dict[str, Any]:
+    try:
+        return (await asyncio.to_thread(usage.read)).as_dict()
+    except psycopg.Error as exc:
+        return {"error": f"The usage count couldn't be read: {exc}"}
 
 
 # ----------------------------------------------------------------------- CLI
@@ -919,14 +965,12 @@ def main(argv: list[str] | None = None) -> None:
     if cmd == "serve":
         mcp.run("stdio")
     elif cmd == "serve-http":
-        if not (settings.mcp_auth_token or settings.oauth_passphrase):
-            print(
-                "serve-http needs MCP_AUTH_TOKEN (static bearer token), MCP_OAUTH_PASSPHRASE "
-                "(OAuth sign-in), or both.",
-                file=sys.stderr,
-            )
+        if problem := _sign_in_problem(settings):
+            print(problem, file=sys.stderr)
             sys.exit(2)
         http_app.serve(http_app.build_app(mcp, settings), settings.host, settings.port)
+    elif cmd in ("forget", "block") and len(argv) == 2:
+        _account_command(cmd, argv[1], settings)
     elif cmd == "refresh":
         meta = (
             demo.build_timetable(settings)
@@ -946,15 +990,56 @@ def main(argv: list[str] | None = None) -> None:
         print(
             ("Demo mode (generated data)\n" if settings.demo else "")
             + f"Darwin: {_yn(settings.has_darwin)}; NR: {_yn(settings.has_nr)}\n"
-            f"Timetable schema {settings.timetable_db.schema}: {info}",
+            + _usage_line(settings)
+            + f"Timetable schema {settings.timetable_db.schema}: {info}",
             file=sys.stderr,
         )
     else:
         print(
-            "usage: traintracker [serve | serve-http | refresh | import FILE.json.gz | status]",
+            "usage: traintracker [serve | serve-http | refresh | import FILE.json.gz | status"
+            " | forget EMAIL | block EMAIL]",
             file=sys.stderr,
         )
         sys.exit(2)
+
+
+def _sign_in_problem(settings: Settings) -> str | None:
+    """Why serve-http can't start with these settings; None if it can."""
+    if missing := settings.email_sign_in_missing:
+        return f"Email sign-in is partly configured: also set {', '.join(missing)}."
+    if settings.mcp_auth_token or settings.oauth_passphrase or settings.email_sign_in:
+        return None
+    return (
+        "serve-http needs a way to sign in: email codes (RESEND_API_KEY, MAIL_FROM and "
+        "MCP_ACCOUNT_SECRET), MCP_OAUTH_PASSPHRASE, MCP_AUTH_TOKEN (static bearer token), "
+        "or any mix of them."
+    )
+
+
+def _account_command(cmd: str, address: str, settings: Settings) -> None:
+    """`forget` answers an erasure request; `block` shuts out an abusive account."""
+    if not settings.account_secret:
+        print("MCP_ACCOUNT_SECRET is not set, so there are no email accounts.", file=sys.stderr)
+        sys.exit(2)
+    provider = http_app.build_provider(settings)
+    provider.create_tables()
+    if cmd == "block":
+        provider.block(address)
+        print("Blocked: the address can't sign in and its tokens no longer work.", file=sys.stderr)
+    elif provider.forget(address):
+        print("Forgotten: the account and its tokens are deleted.", file=sys.stderr)
+    else:
+        print("No account for that address.", file=sys.stderr)
+
+
+def _usage_line(settings: Settings) -> str:
+    usage = darwin_usage(settings)
+    if not usage:
+        return ""
+    try:
+        return f"Darwin usage: {usage.read().line()}\n"
+    except psycopg.Error as exc:
+        return f"Darwin usage: couldn't be read ({exc})\n"
 
 
 def _yn(flag: bool) -> str:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import tomllib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
@@ -15,6 +17,7 @@ import respx
 from mcp import Client
 from psycopg import sql
 
+import traintracker
 from traintracker import server
 from traintracker.config import DARWIN_DEPARTURES_URL, UK_TZ, TimetableDB
 from traintracker.models import Journey, JourneyLeg, StationRef
@@ -68,6 +71,59 @@ async def test_lists_all_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
             "plan_journey",
             "data_status",
         }
+
+
+def test_registry_metadata_matches_the_package() -> None:
+    # server.json is what the MCP Registry publishes; a release that forgets to
+    # update it would list the wrong version.
+    root = Path(__file__).parent.parent
+    listing = json.loads((root / "server.json").read_text())
+    project = tomllib.loads((root / "pyproject.toml").read_text())["project"]
+    assert listing["version"] == project["version"] == traintracker.__version__
+    assert listing["name"] == "live.traintrackr/traintracker"
+    assert len(listing["description"]) <= 100  # the registry's limit
+    assert listing["remotes"] == [
+        {"type": "streamable-http", "url": "https://traintrackr.live/mcp"}
+    ]
+
+
+async def test_instructions_credit_the_data_sources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Attribution is a condition of both data licences; the wording is theirs.
+    async with connect(tmp_path, monkeypatch) as client:
+        instructions = client.instructions or ""
+    assert "Powered by National Rail Enquiries" in instructions
+    assert "Network Rail" in instructions
+    assert "Open Government Licence v3.0" in instructions
+
+
+async def test_every_tool_is_annotated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The connector directories reject a tool without a title and a read-only
+    # hint. Every listed tool is checked, so a new one can't ship without them.
+    async with connect(tmp_path, monkeypatch) as client:
+        tools = (await client.list_tools()).tools
+    assert tools
+    for tool in tools:
+        assert tool.title, tool.name
+        assert len(tool.name) <= 64, tool.name
+        assert tool.description, tool.name
+        hints = tool.annotations
+        assert hints is not None, tool.name
+        assert hints.read_only_hint is True, tool.name
+        assert hints.destructive_hint is False, tool.name
+        assert hints.idempotent_hint is True, tool.name
+        assert hints.open_world_hint is not None, tool.name
+    open_world = {t.name for t in tools if t.annotations and t.annotations.open_world_hint}
+    # Only the tools that can reach Darwin talk to anything outside the server.
+    assert open_world == {
+        "live_departures",
+        "live_arrivals",
+        "departure_platform",
+        "platform_departures",
+        "service_details",
+        "plan_journey",
+    }
 
 
 async def test_find_station(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

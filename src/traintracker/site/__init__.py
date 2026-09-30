@@ -30,7 +30,10 @@ LISTING_ICON = "/static/icon-512.png"  # the PNG uploaded to the directory listi
 # link's title, and has no transparent corners: a square icon fills the chat.
 SHARE_IMAGE = "/static/share.png"
 SHARE_IMAGE_SIZE = (1200, 630)
-SHARE_IMAGE_ALT = "Live Departures, above a split-flap board of four trains, all on time"
+SHARE_IMAGE_ALT = (
+    "The departure board for London Liverpool Street: seven trains, with their "
+    "platforms and whether they are on time"
+)
 
 # path -> (file, link text, title, description)
 PAGES = {

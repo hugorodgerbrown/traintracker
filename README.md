@@ -223,6 +223,7 @@ All configuration is by environment variable, read from `.env` in the project fo
 | `MCP_AUTH_SCHEMA` | `mcp_auth` | Schema for OAuth clients, codes, tokens and accounts (tokens stored as SHA-256 hashes, accounts as keyed hashes of the address) |
 | `HOST` / `PORT` | `0.0.0.0` / `8000` | Where `serve-http` listens (bind address) |
 | `MCP_PUBLIC_HOSTS` | — | Comma-separated extra hostnames clients use (e.g. a custom domain), added to `RENDER_EXTERNAL_HOSTNAME`; `serve-http` rejects other `Host` headers (DNS-rebinding protection) |
+| `OPENAI_APPS_CHALLENGE` | — | Token from OpenAI's plugin portal. When set, `serve-http` returns it at `/.well-known/openai-apps-challenge`, which OpenAI fetches to verify the domain |
 | `MIN_INTERCHANGE_MINUTES` | `5` | Minimum change time for planning |
 | `HTTP_TIMEOUT_SECONDS` | `15` | Upstream request timeout |
 | `TRAINTRACKER_DEMO` | off | `1` uses generated example data instead of any account (see [demo mode](#try-it-without-accounts-demo-mode)) |

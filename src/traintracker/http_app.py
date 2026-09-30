@@ -6,7 +6,8 @@ claude.ai and ChatGPT add the server as a connector. The OAuth metadata,
 registration, authorize, token and revoke endpoints come from the MCP SDK.
 Tool calls are rate limited per account (see ratelimit.py).
 /healthz is open for the platform's health check, and so are the public pages
-(see site/): /, /docs, /privacy and /terms.
+(see site/): /, /docs, /privacy and /terms. With OPENAI_APPS_CHALLENGE set,
+/.well-known/openai-apps-challenge returns it, for OpenAI's domain check.
 """
 
 from __future__ import annotations
@@ -18,6 +19,8 @@ from mcp.server.auth.provider import ProviderTokenVerifier
 from mcp.server.auth.routes import build_metadata, cors_middleware
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
 from mcp.server.transport_security import TransportSecuritySettings
+from starlette.requests import Request
+from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 
 from traintracker import site
@@ -33,6 +36,7 @@ if TYPE_CHECKING:
 
 HEALTH_PATH = "/healthz"
 METADATA_PATH = "/.well-known/oauth-authorization-server"
+OPENAI_CHALLENGE_PATH = "/.well-known/openai-apps-challenge"
 
 
 def transport_security(public_hosts: list[str]) -> TransportSecuritySettings | None:
@@ -94,6 +98,18 @@ def site_fields(settings: Settings) -> dict[str, str]:
     }
 
 
+def openai_challenge(token: str | None) -> list[Route]:
+    """The token OpenAI's plugin portal issues to prove this server's domain,
+    returned as the bare text it expects. No route at all until one is set."""
+    if not token:
+        return []
+
+    async def endpoint(_request: Request) -> PlainTextResponse:
+        return PlainTextResponse(token)
+
+    return [Route(OPENAI_CHALLENGE_PATH, endpoint)]
+
+
 def build_app(server: MCPServer[Any], settings: Settings) -> Starlette:
     provider = build_provider(settings)
     provider.create_tables()
@@ -118,6 +134,7 @@ def build_app(server: MCPServer[Any], settings: Settings) -> Starlette:
             *provider.routes(),
             *site.routes(site_fields(settings)),
             Route(HEALTH_PATH, health),
+            *openai_challenge(settings.openai_apps_challenge),
         ],
     )
     advertise_refresh_tokens(app, auth)

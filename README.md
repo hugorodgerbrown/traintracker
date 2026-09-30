@@ -1,8 +1,22 @@
-# traintracker
+# Traintrackr
 
-An MCP server that lets Claude answer questions about GB (National Rail) trains: *"when's the next train to Sudbury?"*, *"is the 13:00 from Liverpool Street on time?"*, *"how do I get from Cambridge to Sudbury next Saturday morning?"*
+An MCP server that lets Claude and ChatGPT answer questions about GB (National Rail) trains: *"when's the next train to Sudbury?"*, *"is the 13:00 from Liverpool Street on time?"*, *"how do I get from Cambridge to Sudbury next Saturday morning?"*
 
-It runs locally over stdio for the Claude desktop app, or hosted over HTTP (see [Deploy to Render](#deploy-to-render)). The timetable is stored in Postgres.
+The public service runs at [traintrackr.live](https://traintrackr.live). It is free, and you sign in with an email address; there is no password. The connector address is:
+
+```
+https://traintrackr.live/mcp
+```
+
+## Use it
+
+**Claude.** In claude.ai, open **Settings → Connectors → Add custom connector**. Name it *Traintrackr*, paste the connector address, and leave the OAuth fields empty. Choose **Connect**: Claude opens the Traintrackr sign-in page, where you enter your email address and then the six-digit code sent to it. A connector added in claude.ai also works in Claude Desktop and the mobile apps.
+
+**ChatGPT.** Traintrackr isn't in the ChatGPT directory yet. Until it is, ChatGPT can add it only in Business, Enterprise and Edu workspaces, using developer mode on the web, which a workspace admin has to allow. Turn on **Settings → Apps → Advanced settings → Developer mode**, then in **Settings → Apps** choose **Create**, paste the connector address and choose OAuth. Sign in with your email address as above.
+
+Then ask about trains. [traintrackr.live/docs](https://traintrackr.live/docs) shows what each answer contains, and the limits. The [privacy policy](https://traintrackr.live/privacy) and [terms of use](https://traintrackr.live/terms) are on the site too. The server is listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as `live.traintrackr/traintracker`.
+
+The rest of this README describes how the server works and how to run your own copy: locally over stdio for the Claude desktop app, or hosted over HTTP (see [Deploy to Render](#deploy-to-render)). The timetable is stored in Postgres.
 
 ```mermaid
 flowchart LR
@@ -34,6 +48,10 @@ flowchart LR
 | `privacy_policy` | "What do you keep about me?" The privacy policy as text, with the page's address | The `/privacy` page |
 
 Every tool accepts station names or CRS codes. Ambiguous names ("Sudbury", "Harrow") return the candidates so Claude can ask which one you meant.
+
+## Run your own copy
+
+Everything from here on is for running the server yourself. The public service at traintrackr.live is this code, deployed as described in [Deploy to Render](#deploy-to-render).
 
 ## Try it without accounts (demo mode)
 
@@ -313,7 +331,7 @@ The stylesheet and script are linked by an address that carries a hash of the fi
 
 [`server.json`](server.json) describes the server for the official [MCP Registry](https://registry.modelcontextprotocol.io): the name `live.traintrackr/traintracker`, the version, and one remote, streamable HTTP at `https://traintrackr.live/mcp`. It follows the registry's `2025-12-11` schema. A test keeps its version in step with `pyproject.toml`.
 
-It is not published by CI. Publishing under a `live.traintrackr/` name needs proof that you hold the domain: a TXT record on the apex of `traintrackr.live` carrying a public key, then `mcp-publisher login dns` and `mcp-publisher publish`. For your own deployment, change the name and the URL to your domain.
+Version 0.1.0 is published. CI doesn't publish: a new version is published by hand, with `mcp-publisher login dns` and then `mcp-publisher publish`. A `live.traintrackr/` name needs proof that you hold the domain, which is a TXT record on the apex of `traintrackr.live` carrying the public half of the signing key. For your own deployment, change the name and the URL to your domain.
 
 ## Limitations
 

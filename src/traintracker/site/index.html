@@ -1,75 +1,162 @@
-<h1>Live GB train times in Claude and ChatGPT</h1>
-<p class="lede">Traintrackr is a connector that answers questions about National Rail trains: which platform, what is running late, and how to get from one station to another.</p>
+<h1>Live UK train times in Claude (ChatGPT coming soon)</h1>
+<p class="lede">
+  Traintrackr enables AI chatbots to query live UK train information.
+</p>
 
-<h2 id="examples">Things to ask</h2>
-<blockquote><p>Which platform is the next train from Cambridge to Kings Cross?</p></blockquote>
-<blockquote><p>What are the next trains from Liverpool Street to Colchester, and are they on time?</p></blockquote>
-<blockquote><p>How do I get from Cambridge to Sudbury on Saturday morning?</p></blockquote>
-<p>The <a href="/docs">docs</a> show what each answer contains, and what Traintrackr can't tell you.</p>
+<h2 id="examples">Examples</h2>
+<blockquote>
+  <p>Which platform is the next train from Cambridge to Kings Cross?</p>
+</blockquote>
+<blockquote>
+  <p>Does the 13:42 stop at Manningtree?</p>
+</blockquote>
+<blockquote>
+  <p>How do I get from Cambridge to Huntingdon on Saturday morning?</p>
+</blockquote>
 
-<h2 id="compare">The same question, without and with it</h2>
-<p>Without a connector, Claude searches the web for departure boards. Most of them load their times in the browser, so it can't read them.</p>
+<h2 id="compare">Why install Traintrackr?</h2>
+<p>
+  Without a connector, Claude searches the web for departure boards. Most load
+  their times in the browser, and it can't read them.
+</p>
 <figure class="chat">
-<figcaption>Without Traintrackr</figcaption>
-<p class="ask">next trains from liverpool street</p>
-<p class="tool">Read 3 pages</p>
-<p>I couldn't get a trustworthy live board for right now. The one feed that answered returned departures starting at 17:35, about four hours after your 13:45, so it's either cached or showing evening peak. I don't want to give you times that could be wrong.</p>
-<p>If you just want to check it yourself, the live board is <a href="https://www.nationalrail.co.uk/live-trains/departures/london-liverpool-street/">National Rail – London Liverpool Street departures</a>.</p>
+  <figcaption>Without Traintrackr</figcaption>
+  <p class="ask">next trains from liverpool street</p>
+  <p class="tool">Read 3 pages</p>
+  <p>
+    I couldn't get a trustworthy live board for right now. The one feed that
+    answered returned departures starting at 17:35, about four hours after your
+    13:45, so it's either cached or showing evening peak. I don't want to give
+    you times that could be wrong.
+  </p>
+  <p>
+    If you just want to check it yourself, the live board is
+    <span class="link">National Rail - London Liverpool Street departures</span
+    >.
+  </p>
 </figure>
 <figure class="chat">
-<figcaption>With Traintrackr</figcaption>
-<p class="ask">next trains from Liverpool Street</p>
-<p class="tool">Used Traintrackr: Live departures</p>
-<p>Live board for <strong>London Liverpool Street</strong> as of 15:35:</p>
-<div class="scroll">
-<table>
-<thead><tr><th>Time</th><th>Destination</th><th>Operator</th><th>Plat</th><th>Status</th></tr></thead>
-<tbody>
-<tr><td>15:35</td><td data-label="Destination">Reading</td><td data-label="Operator">Elizabeth line</td><td data-label="Platform">B</td><td data-label="Status">On time (departing now)</td></tr>
-<tr><td>15:36</td><td data-label="Destination">Colchester Town</td><td data-label="Operator">Greater Anglia</td><td data-label="Platform">14</td><td data-label="Status">On time</td></tr>
-<tr><td>15:36</td><td data-label="Destination">Stansted Airport</td><td data-label="Operator">Greater Anglia</td><td data-label="Platform">4</td><td data-label="Status">On time</td></tr>
-<tr><td>15:37</td><td data-label="Destination">Abbey Wood</td><td data-label="Operator">Elizabeth line</td><td data-label="Platform">A</td><td data-label="Status">On time</td></tr>
-<tr><td>15:38</td><td data-label="Destination">Hertford East</td><td data-label="Operator">Greater Anglia</td><td data-label="Platform">3</td><td data-label="Status">On time</td></tr>
-<tr><td>15:39</td><td data-label="Destination">London Paddington</td><td data-label="Operator">Elizabeth line</td><td data-label="Platform">B</td><td data-label="Status">On time</td></tr>
-<tr><td>15:41</td><td data-label="Destination">Shenfield</td><td data-label="Operator">Elizabeth line</td><td data-label="Platform">A</td><td data-label="Status">On time</td></tr>
-<tr><td>15:42</td><td data-label="Destination"><s>Heathrow T4</s></td><td data-label="Operator">Elizabeth line</td><td data-label="Platform">B</td><td data-label="Status"><strong class="cancelled">Cancelled</strong></td></tr>
-<tr><td>15:43</td><td data-label="Destination">Cheshunt</td><td data-label="Operator">Overground</td><td data-label="Platform">1</td><td data-label="Status">On time</td></tr>
-<tr><td>15:45</td><td data-label="Destination"><s>Abbey Wood</s></td><td data-label="Operator">Elizabeth line</td><td data-label="Platform">A</td><td data-label="Status"><strong class="cancelled">Cancelled</strong></td></tr>
-<tr><td>15:46</td><td data-label="Destination">Chingford</td><td data-label="Operator">Overground</td><td data-label="Platform">5</td><td data-label="Status">On time</td></tr>
-<tr><td>15:46</td><td data-label="Destination">London Paddington</td><td data-label="Operator">Elizabeth line</td><td data-label="Platform">B</td><td data-label="Status">On time</td></tr>
-<tr><td>15:48</td><td data-label="Destination">Braintree</td><td data-label="Operator">Greater Anglia</td><td data-label="Platform">13</td><td data-label="Status">On time</td></tr>
-<tr><td>15:48</td><td data-label="Destination">Shenfield</td><td data-label="Operator">Elizabeth line</td><td data-label="Platform">A</td><td data-label="Status">On time</td></tr>
-</tbody>
-</table>
-</div>
-<p><strong>Heads up:</strong></p>
-<ul>
-<li>Two Elizabeth line services were cancelled after a safety inspection of the track earlier today. If you're heading to Heathrow, take the 15:39 or 15:46 to Paddington and change there, or wait for the next through train.</li>
-<li>The escalator at the Liverpool Street entrance is out of service. Use the Bishopsgate entrance or the lift.</li>
-</ul>
+  <figcaption>With Traintrackr</figcaption>
+  <p class="ask">next trains from Liverpool Street</p>
+  <p class="tool">Used Traintrackr: Live departures</p>
+  <p>Live board for <strong>London Liverpool Street</strong> as of 15:35:</p>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Destination</th>
+          <th>Operator</th>
+          <th>Plat</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>15:36</td>
+          <td data-label="Destination">Colchester Town</td>
+          <td data-label="Operator">Greater Anglia</td>
+          <td data-label="Platform">14</td>
+          <td data-label="Status">On time</td>
+        </tr>
+        <tr>
+          <td>15:36</td>
+          <td data-label="Destination">Stansted Airport</td>
+          <td data-label="Operator">Greater Anglia</td>
+          <td data-label="Platform">4</td>
+          <td data-label="Status">On time</td>
+        </tr>
+        <tr>
+          <td>15:38</td>
+          <td data-label="Destination">Hertford East</td>
+          <td data-label="Operator">Greater Anglia</td>
+          <td data-label="Platform">3</td>
+          <td data-label="Status">On time</td>
+        </tr>
+        <tr>
+          <td>15:43</td>
+          <td data-label="Destination">Cheshunt</td>
+          <td data-label="Operator">Overground</td>
+          <td data-label="Platform">1</td>
+          <td data-label="Status">On time</td>
+        </tr>
+        <tr>
+          <td>15:46</td>
+          <td data-label="Destination">Chingford</td>
+          <td data-label="Operator">Overground</td>
+          <td data-label="Platform">5</td>
+          <td data-label="Status">On time</td>
+        </tr>
+        <tr>
+          <td>15:48</td>
+          <td data-label="Destination">Braintree</td>
+          <td data-label="Operator">Greater Anglia</td>
+          <td data-label="Platform">13</td>
+          <td data-label="Status">On time</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p><strong>Heads up:</strong></p>
+  <ul>
+    <li>
+      The escalator at the Liverpool Street entrance is out of service. Use the
+      Bishopsgate entrance or the lift.
+    </li>
+  </ul>
+  <p>
+    Where are you heading? I can filter the board to your destination and check
+    the calling points.
+  </p>
 </figure>
 
 <h2 id="url">Connector address</h2>
 <div class="copy">
-<code id="mcp-url">{{ mcp_url }}</code>
-<button type="button" data-copy="#mcp-url" hidden>Copy address</button>
-<p role="status"></p>
+  <code id="mcp-url">{{ mcp_url }}</code>
+  <button type="button" data-copy="#mcp-url" hidden>Copy address</button>
+  <p role="status"></p>
 </div>
-<p>Traintrackr is free to use. You sign in with an email address; there is no password.</p>
+<p>
+  Traintrackr is free to use. You sign in with an email address; there is no
+  password.
+</p>
 
 <h2 id="claude">Add it to Claude</h2>
 <ol>
-<li>Open <strong>Settings</strong>, then <strong>Connectors</strong>, and choose <strong>Add custom connector</strong>.</li>
-<li>Give it the name <em>Traintrackr</em> and paste the connector address. Leave the OAuth fields empty.</li>
-<li>Choose <strong>Connect</strong>. Claude opens the Traintrackr sign-in page.</li>
-<li>Enter your email address, then the six-digit code sent to it.</li>
+  <li>
+    Open <strong>Settings</strong>, then <strong>Connectors</strong>, and choose
+    <strong>Add custom connector</strong>.
+  </li>
+  <li>
+    Give it the name <em>Traintrackr</em> and paste the connector address. Leave
+    the OAuth fields empty.
+  </li>
+  <li>
+    Choose <strong>Connect</strong>. Claude opens the Traintrackr sign-in page.
+  </li>
+  <li>Enter your email address, then the six-digit code sent to it.</li>
 </ol>
 
 <h2 id="chatgpt">Add it to ChatGPT</h2>
-<p>Traintrackr isn't in the ChatGPT directory yet. Until it is, ChatGPT can add it only in Business, Enterprise and Edu workspaces, using developer mode on the web. A workspace admin has to allow developer mode first.</p>
+<p>
+  Traintrackr isn't in the ChatGPT directory yet. Until it is, ChatGPT can add
+  it only in Business, Enterprise and Edu workspaces, using developer mode on
+  the web. A workspace admin has to allow developer mode first.
+</p>
 <ol>
-<li>In ChatGPT, open <strong>Settings</strong>, then <strong>Apps</strong>, then <strong>Advanced settings</strong>, and turn on <strong>Developer mode</strong>.</li>
-<li>In <strong>Settings</strong>, then <strong>Apps</strong>, choose <strong>Create</strong>. Give it the name <em>Traintrackr</em>, paste the connector address and choose OAuth.</li>
-<li>ChatGPT opens the Traintrackr sign-in page. Enter your email address, then the six-digit code sent to it, and finish creating the app.</li>
-<li>In a new chat, choose Traintrackr from the tools menu.</li>
+  <li>
+    In ChatGPT, open <strong>Settings</strong>, then <strong>Apps</strong>, then
+    <strong>Advanced settings</strong>, and turn on
+    <strong>Developer mode</strong>.
+  </li>
+  <li>
+    In <strong>Settings</strong>, then <strong>Apps</strong>, choose
+    <strong>Create</strong>. Give it the name <em>Traintrackr</em>, paste the
+    connector address and choose OAuth.
+  </li>
+  <li>
+    ChatGPT opens the Traintrackr sign-in page. Enter your email address, then
+    the six-digit code sent to it, and finish creating the app.
+  </li>
+  <li>In a new chat, choose Traintrackr from the tools menu.</li>
 </ol>

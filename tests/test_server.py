@@ -111,6 +111,9 @@ async def test_every_tool_is_annotated(tmp_path: Path, monkeypatch: pytest.Monke
         assert tool.description, tool.name
         hints = tool.annotations
         assert hints is not None, tool.name
+        # Claude's submission portal reads the title from the annotations, not
+        # from the tool's own title field; both must be set, and agree.
+        assert hints.title == tool.title, tool.name
         assert hints.read_only_hint is True, tool.name
         assert hints.destructive_hint is False, tool.name
         assert hints.idempotent_hint is True, tool.name

@@ -67,6 +67,7 @@ MAX_SENDS = 3  # codes one sign-in may ask for
 MAX_CODES_PER_ADDRESS = 5  # codes one address may be sent in an hour
 MAIL_LOG_TTL = 24 * 60 * 60
 ACCOUNT_IDLE_DAYS = 180  # an account not used for this long is deleted
+OFFLINE_ACCESS = "offline_access"  # the scope that asks for a refresh token
 PASSPHRASE_SUBJECT = "passphrase"  # the account everyone using the passphrase shares
 BLOCKED = "This address can't sign in to this server."
 _EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
@@ -194,7 +195,17 @@ class TraintrackerOAuthProvider(
             (f"SELECT info FROM {self.schema}.clients WHERE client_id = %s", (client_id,)),
             fetch=True,
         )
-        return OAuthClientInformationFull.model_validate(rows[0][0]) if rows else None
+        if not rows:
+            return None
+        client = OAuthClientInformationFull.model_validate(rows[0][0])
+        # The metadata lists offline_access, so clients ask for it at /authorize.
+        # The SDK only lets a client ask for scopes it registered with, and most
+        # register with none (every client registered before the scope was
+        # listed did), so every client is allowed it here.
+        scopes = (client.scope or "").split()
+        if OFFLINE_ACCESS not in scopes:
+            client.scope = " ".join([*scopes, OFFLINE_ACCESS])
+        return client
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
         await self._db(

@@ -65,6 +65,8 @@ async def test_the_landing_page_has_the_address_and_the_examples(
     found = [text.index(prompt) for prompt in PROMPTS]
     assert found == sorted(found), "platforms first, then departures, then journeys"
     assert "Claude" in text and "ChatGPT" in text
+    # ChatGPT can't add a server outside its directory without developer mode.
+    assert "Developer mode" in text and "isn't in the ChatGPT directory yet" in text
 
 
 async def test_the_docs_cover_every_tool_and_the_limits(client: httpx.AsyncClient) -> None:
@@ -89,14 +91,42 @@ async def test_the_privacy_policy_says_what_the_code_does(client: httpx.AsyncCli
         "180 days",
         "24 hours",
         "90 days",
+        "14 days",
+        "12 months",
         "IP address",
         "Frankfurt",
         "Resend",
+        "Google",
+        "Data Privacy Framework",
         "no cookies",
         "no analytics",
         "ico.org.uk",
     ):
         assert claim.lower() in text.lower(), claim
+
+
+async def test_the_terms_cover_what_the_directories_ask_for(client: httpx.AsyncClient) -> None:
+    text = (await client.get("/terms")).text
+    for claim in (
+        "provided as it is",
+        "Check with the train operator",
+        "death or personal injury",
+        "can be blocked",
+        "4 requests at once and 12 a minute",  # the limits as configured
+        "Open Government Licence v3.0",
+        'href="/privacy"',
+        "England and Wales",
+    ):
+        assert claim in text, claim
+
+
+async def test_no_page_is_left_with_a_placeholder(client: httpx.AsyncClient) -> None:
+    # The site's own TODO comments are removed as each item is settled; the logo
+    # one stays until National Rail answers (TRA-9).
+    for path in site.PAGES:
+        text = (await client.get(path)).text
+        todos = re.findall(r"TODO\(hugo\)[^\n]*", text)
+        assert all("logo" in t for t in todos), (path, todos)
 
 
 async def test_assets_are_served(client: httpx.AsyncClient) -> None:

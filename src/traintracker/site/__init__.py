@@ -42,6 +42,12 @@ PAGES = {
         "Privacy policy · Traintrackr",
         "What Traintrackr processes about you, why, and for how long.",
     ),
+    "/terms": (
+        "terms.html",
+        "Terms",
+        "Terms of use · Traintrackr",
+        "The rules for using Traintrackr.",
+    ),
 }
 ASSETS = {
     STYLESHEET: ("site.css", "text/css; charset=utf-8"),

@@ -110,6 +110,80 @@ async def test_discovery_and_unauthenticated_mcp(client: httpx.AsyncClient) -> N
     assert (await client.get("/healthz")).text == "ok"
 
 
+async def test_metadata_advertises_refresh_tokens_and_public_clients(
+    client: httpx.AsyncClient,
+) -> None:
+    # ChatGPT keeps a connection past the first hour only if the server lists
+    # offline_access; Claude asks for it when it is listed. Registration already
+    # accepts public clients, so the metadata says so too.
+    meta = (await client.get("/.well-known/oauth-authorization-server")).json()
+    assert meta["scopes_supported"] == ["offline_access"]
+    assert "none" in meta["token_endpoint_auth_methods_supported"]
+    assert "client_secret_post" in meta["token_endpoint_auth_methods_supported"]
+    assert meta["grant_types_supported"] == ["authorization_code", "refresh_token"]
+    assert meta["registration_endpoint"] == f"{BASE}/register"
+
+
+async def _authorize(
+    client: httpx.AsyncClient, client_id: str, scope: str | None
+) -> httpx.Response:
+    params = {
+        "response_type": "code",
+        "client_id": client_id,
+        "redirect_uri": CALLBACK,
+        "code_challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+        "code_challenge_method": "S256",
+        "state": "xyz",
+        "resource": f"{BASE}/mcp",
+    }
+    if scope is not None:
+        params["scope"] = scope
+    return await client.get("/authorize", params=params)
+
+
+async def test_offline_access_is_allowed_for_every_client(client: httpx.AsyncClient) -> None:
+    # Clients registered before offline_access was advertised, and clients that
+    # register without a scope, ask for it once they read the metadata.
+    client_id = await _register(client)
+    for scope in (None, "offline_access"):
+        r = await _authorize(client, client_id, scope)
+        assert r.status_code == 302, r.text
+        assert urlparse(r.headers["location"]).path == "/sign-in", scope
+    # Other scopes are still refused.
+    refused = await _authorize(client, client_id, "admin")
+    assert "error=invalid_scope" in refused.headers["location"]
+
+
+async def test_a_sign_in_asking_for_offline_access_can_refresh(
+    client: httpx.AsyncClient, settings: Settings
+) -> None:
+    client_id = await _register(client)
+    started = await _authorize(client, client_id, "offline_access")
+    sign_in = parse_qs(urlparse(started.headers["location"]).query)["request"][0]
+    ok = await client.post("/sign-in", data={"request": sign_in, "passphrase": PASSPHRASE})
+    code = parse_qs(urlparse(ok.headers["location"]).query)["code"][0]
+    tokens = await _token(
+        client,
+        grant_type="authorization_code",
+        code=code,
+        redirect_uri=CALLBACK,
+        client_id=client_id,
+        # RFC 7636 appendix B: the verifier for the challenge _authorize sends.
+        code_verifier="dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+    )
+    assert tokens.status_code == 200, tokens.text
+    assert tokens.json()["scope"] == "offline_access"
+    rotated = await _token(
+        client,
+        grant_type="refresh_token",
+        refresh_token=tokens.json()["refresh_token"],
+        client_id=client_id,
+    )
+    assert rotated.status_code == 200, rotated.text
+    access = await _provider(settings).load_access_token(rotated.json()["access_token"])
+    assert access is not None and access.scopes == ["offline_access"]
+
+
 async def test_sign_in_issues_tokens_that_rotate_and_revoke(
     client: httpx.AsyncClient, settings: Settings
 ) -> None:

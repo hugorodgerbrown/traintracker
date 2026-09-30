@@ -6,21 +6,23 @@ claude.ai and ChatGPT add the server as a connector. The OAuth metadata,
 registration, authorize, token and revoke endpoints come from the MCP SDK.
 Tool calls are rate limited per account (see ratelimit.py).
 /healthz is open for the platform's health check, and so are the public pages
-(see site/): /, /docs and /privacy.
+(see site/): /, /docs, /privacy and /terms.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from mcp.server.auth.handlers.metadata import MetadataHandler
 from mcp.server.auth.provider import ProviderTokenVerifier
+from mcp.server.auth.routes import build_metadata, cors_middleware
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.routing import Route
 
 from traintracker import site
 from traintracker.mail import build_mailer
-from traintracker.oauth import TraintrackerOAuthProvider, health
+from traintracker.oauth import OFFLINE_ACCESS, TraintrackerOAuthProvider, health
 from traintracker.ratelimit import RateLimiter, RateLimitMiddleware
 
 if TYPE_CHECKING:
@@ -30,6 +32,7 @@ if TYPE_CHECKING:
     from traintracker.config import Settings
 
 HEALTH_PATH = "/healthz"
+METADATA_PATH = "/.well-known/oauth-authorization-server"
 
 
 def transport_security(public_hosts: list[str]) -> TransportSecuritySettings | None:
@@ -78,12 +81,12 @@ def site_fields(settings: Settings) -> dict[str, str]:
     """This server's own values for the public pages."""
     if settings.rate_limit_per_minute > 0:
         fair_use = (
-            f"each account can make {max(1, settings.rate_limit_burst)} requests at once and "
+            f"Each account can make {max(1, settings.rate_limit_burst)} requests at once and "
             f"{settings.rate_limit_per_minute} a minute. Over that, the assistant is told how "
             "long to wait."
         )
     else:
-        fair_use = "there is no set limit on requests; please don't automate them."
+        fair_use = "There is no set limit on requests; please don't automate them."
     return {"mcp_url": f"{settings.public_url}/mcp", "fair_use": fair_use}
 
 
@@ -101,7 +104,7 @@ def build_app(server: MCPServer[Any], settings: Settings) -> Starlette:
     # MCPServer.streamable_http_app takes its auth from constructor settings; the
     # module-level server is built before configuration is read, so pass the
     # auth pieces to the low-level app directly.
-    return server._lowlevel_server.streamable_http_app(
+    app = server._lowlevel_server.streamable_http_app(
         host=settings.host,
         transport_security=transport_security(list(settings.public_hosts)),
         auth=auth,
@@ -113,6 +116,41 @@ def build_app(server: MCPServer[Any], settings: Settings) -> Starlette:
             Route(HEALTH_PATH, health),
         ],
     )
+    advertise_refresh_tokens(app, auth)
+    return app
+
+
+def advertise_refresh_tokens(app: Starlette, auth: AuthSettings) -> None:
+    """Replace the SDK's authorization server metadata with one that lists
+    `offline_access` and public clients.
+
+    ChatGPT may drop a connection when its access token expires unless the
+    metadata lists `offline_access`, and Claude asks for that scope when it is
+    listed. The server issues a refresh token on every sign-in either way. The
+    SDK takes `scopes_supported` from the registration options' `valid_scopes`,
+    which would also make registration refuse any other scope a client asks
+    for, and it never lists `none`, though registration accepts public clients.
+    So the metadata is built here and swapped in; the provider accepts
+    `offline_access` from every client (see `TraintrackerOAuthProvider.get_client`).
+    """
+    metadata = build_metadata(
+        auth.issuer_url,
+        auth.service_documentation_url,
+        auth.client_registration_options or ClientRegistrationOptions(),
+        auth.revocation_options or RevocationOptions(),
+    )
+    metadata.scopes_supported = [OFFLINE_ACCESS]
+    metadata.token_endpoint_auth_methods_supported = [
+        *(metadata.token_endpoint_auth_methods_supported or []),
+        "none",
+    ]
+    endpoint = cors_middleware(MetadataHandler(metadata).handle, ["GET", "OPTIONS"])
+    routes = app.router.routes
+    for i, route in enumerate(routes):
+        if isinstance(route, Route) and route.path == METADATA_PATH:
+            routes[i] = Route(METADATA_PATH, endpoint=endpoint, methods=["GET", "OPTIONS"])
+            return
+    raise RuntimeError(f"The MCP SDK no longer serves {METADATA_PATH}; update this function.")
 
 
 def serve(app: Starlette, host: str, port: int) -> None:

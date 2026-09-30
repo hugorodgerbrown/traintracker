@@ -212,7 +212,7 @@ All configuration is by environment variable, read from `.env` in the project fo
 | `MCP_AUTH_TOKEN` | — | Static bearer token accepted by `serve-http` |
 | `MCP_OAUTH_PASSPHRASE` | — | Passphrase accepted by the OAuth sign-in page, for the owner and for directory reviewers. `serve-http` needs this, email sign-in, `MCP_AUTH_TOKEN`, or any mix of them |
 | `RESEND_API_KEY` | — | [Resend](https://resend.com) API key. With `MAIL_FROM` and `MCP_ACCOUNT_SECRET` it turns on email sign-in (see [Sign-in](#sign-in)) |
-| `MAIL_FROM` | — | Sender of the sign-in code, e.g. `Traintrackr <login@traintrackr.live>`; the domain must be verified with Resend |
+| `MAIL_FROM` | — | Sender of the sign-in code, e.g. `Traintrackr <login@mail.traintrackr.live>`; the domain (here the subdomain `mail.traintrackr.live`) must be verified with Resend |
 | `MCP_ACCOUNT_SECRET` | — | Key that turns an email address into an account ID. Long and random; changing it gives every address a new account |
 | `MAIL_BACKEND` | `resend` | `console` writes the sign-in code to the log instead of sending it. For local development only |
 | `MAIL_MAX_PER_HOUR` | `200` | Most sign-in codes sent in an hour, over all addresses |
@@ -269,7 +269,7 @@ The server is its own OAuth authorization server, so it can be added once in cla
 1. In claude.ai: **Settings → Connectors → Add custom connector**, name `traintracker`, URL `https://<your-service-host>/mcp`. Leave the OAuth client fields empty: Claude registers itself.
 2. Claude opens the server's sign-in page. Sign in (see [Sign-in](#sign-in)).
 
-Sign-in hands Claude a one-hour access token and a 90-day refresh token, rotated on each refresh. Clients, codes, tokens and accounts are stored in the `mcp_auth` schema, tokens as SHA-256 hashes. To sign every client out, run `TRUNCATE mcp_auth.tokens` against the database. Changing the passphrase doesn't sign anyone out; truncate the tokens as well.
+Sign-in hands Claude a one-hour access token and a 90-day refresh token, rotated on each refresh. The authorization server metadata lists the `offline_access` scope and public clients (`none`), which the MCP SDK's own metadata leaves out: ChatGPT may drop a connection when its access token expires unless `offline_access` is listed. Every client may ask for that scope; a refresh token is issued either way. Clients, codes, tokens and accounts are stored in the `mcp_auth` schema, tokens as SHA-256 hashes. To sign every client out, run `TRUNCATE mcp_auth.tokens` against the database. Changing the passphrase doesn't sign anyone out; truncate the tokens as well.
 
 ### Sign-in
 
@@ -301,8 +301,9 @@ Everyone who signs in with the passphrase shares one account, `passphrase`.
 | `/` | What the server does, the connector address with a copy button, how to add it to Claude and ChatGPT, three example prompts |
 | `/docs` | Each tool in plain English, three worked examples with what the answer contains, the limits, data sources, support |
 | `/privacy` | Privacy policy (UK GDPR): what is processed, why, for how long, and by whom |
+| `/terms` | Terms of use: the service as is, accuracy, liability, fair use, data licences, governing law |
 
-The pages are files in [`src/traintracker/site/`](src/traintracker/site): HTML fragments placed inside `layout.html`, one stylesheet and one script for the copy button. There is no build step. They are filled in once at start-up with the server's own values (the connector address from `MCP_PUBLIC_URL`, the rate limit), so a copy deployed elsewhere describes itself. The privacy policy names this repository's deployment and its operator: change `privacy.html` and the support address when you deploy your own.
+The pages are files in [`src/traintracker/site/`](src/traintracker/site): HTML fragments placed inside `layout.html`, one stylesheet and one script for the copy button. There is no build step. They are filled in once at start-up with the server's own values (the connector address from `MCP_PUBLIC_URL`, the rate limit), so a copy deployed elsewhere describes itself. The privacy policy and terms name this repository's deployment and its operator: change `privacy.html`, `terms.html` and the support address when you deploy your own.
 
 The stylesheet and script are linked by an address that carries a hash of the file, so a browser fetches a changed file at once and can cache an unchanged one for an hour. The pages set no cookies and load nothing from another origin; the `Content-Security-Policy` header allows only the site's own stylesheet and script. They follow the reader's light or dark setting and work at phone width.
 
@@ -346,7 +347,7 @@ src/traintracker/
   oauth.py       OAuth provider (Postgres), sign-in page, accounts
   mail.py        Sends the sign-in code (Resend, or the log in development)
   ratelimit.py   Per-account limit on tool calls
-  site/          Public pages: landing, docs, privacy policy
+  site/          Public pages: landing, docs, privacy policy, terms
   timetable.py   SCHEDULE importer and Postgres queries (STP resolution)
   planner.py     Connection Scan journey planner, London links
   darwin.py      Rail Data Marketplace LDBWS client
@@ -366,6 +367,6 @@ Darwin data via the Rail Data Marketplace, and Network Rail data feeds, are used
 | Network Rail SCHEDULE (timetable) | "Contains public sector information licensed under the Open Government Licence v3.0." | The [Network Rail data feeds licence](https://www.networkrail.co.uk/who-we-are/transparency-and-ethics/transparency/open-data-feeds/network-rail-infrastructure-limited-data-feeds-licence/) releases the feeds under the [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/) and gives no statement of its own, so the licence's default applies |
 | Station list | [davwheat/uk-railway-stations](https://github.com/davwheat/uk-railway-stations), Open Database License (ODbL) | The repository's licence |
 
-The credits are in the footer of every page of the [site](#site) and on `/docs`. The server's instructions carry one line naming the sources, so an assistant can credit them when it says where an answer comes from; tool responses are not padded with it. The footer has the words and the link but not the NRE logo, which has to be taken from the Brand Guidelines (`TODO(hugo)` in `layout.html`).
+The credits are in the footer of every page of the [site](#site) and on `/docs`. The server's instructions carry one line naming the sources, so an assistant can credit them when it says where an answer comes from; tool responses are not padded with it. The footer has the words and the link but not the NRE logo: the brand pack on the Darwin data feeds page makes the logo's use subject to National Rail's permission, which was asked for on 2026-09-30 (`TODO(hugo)` in `layout.html`).
 
 Code: MIT.

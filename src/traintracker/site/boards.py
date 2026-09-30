@@ -84,6 +84,12 @@ FEED_HEADERS = {
 }
 
 
+def _refused(wait: int) -> dict[str, str]:
+    """The headers of an answer over one address's limit. It is that address's
+    alone, so no shared cache may keep it and give it to anyone else."""
+    return {"Retry-After": str(wait), "Cache-Control": "private, no-store"}
+
+
 class BoardUnavailable(Exception):
     """The board couldn't be fetched. The message is safe to show."""
 
@@ -368,7 +374,7 @@ def routes(fields: dict[str, str], fetch: Fetch, ip_header: str | None = None) -
         return Response(
             limited(wait),
             429,
-            headers={**PAGE_HEADERS, "Retry-After": str(wait)},
+            headers={**PAGE_HEADERS, **_refused(wait)},
             media_type="text/plain",
         )
 
@@ -472,7 +478,7 @@ def routes(fields: dict[str, str], fetch: Fetch, ip_header: str | None = None) -
             return JSONResponse({"error": "No such board."}, 404, headers=FEED_HEADERS)
         if wait := limiter.take(client_address(request.scope, header)):
             return JSONResponse(
-                {"error": limited(wait)}, 429, headers={**FEED_HEADERS, "Retry-After": str(wait)}
+                {"error": limited(wait)}, 429, headers={**FEED_HEADERS, **_refused(wait)}
             )
         try:
             return JSONResponse(await boards.get(crs, platform), headers=FEED_HEADERS)

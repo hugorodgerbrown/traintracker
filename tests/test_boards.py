@@ -316,6 +316,9 @@ async def test_one_address_can_open_boards_only_so_fast(
     assert refused.status_code == 429 and int(refused.headers["retry-after"]) >= 1
     page = await client.get("/board/LST", headers=here)
     assert page.status_code == 429
+    # A refusal is for this address only: no shared cache may hand it to others.
+    for r in (refused, page):
+        assert r.headers["cache-control"] == "private, no-store"
     # Another address is not held back.
     other = {"x-forwarded-for": "198.51.100.7"}
     assert (await client.get("/api/board/LST", headers=other)).status_code == 200

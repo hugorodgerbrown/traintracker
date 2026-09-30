@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Departure board</title>
+    <!-- An MCP App (SEP-1865). The host shows this page in a sandboxed iframe
+         next to the result of show_board and sends it that result over
+         postMessage; the page draws it as a split-flap board.
+         It loads nothing and sends nothing anywhere else: the host's default
+         policy for a ui:// resource allows inline script and style only. -->
+    <style>
+      :root {
+        --green: #0b5d3b;
+        --board: #0a2a1c;
+        --flap: #113a29;
+        --amber: #ffb020;
+        --text: #ffffff;
+        --muted: #cfe3d6;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+      }
+
+      /* Until the host has sized the frame the page is taller than it. A
+         scrollbar there would narrow the board, which changes its height. */
+      html {
+        scrollbar-width: none;
+      }
+
+      html::-webkit-scrollbar {
+        display: none;
+      }
+
+      body {
+        font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        color: var(--text);
+      }
+
+      /* The board is dark in both of the host's themes, as a real one is. */
+      .panel {
+        max-width: 760px;
+        padding: 14px;
+        border-radius: 12px;
+        background: var(--green);
+        container-type: inline-size;
+      }
+
+      header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+      }
+
+      .kind {
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .board {
+        --cols: 38;
+        /* One column of the grid. Every size below follows from it, so the
+           board keeps its proportions at any width. */
+        --pitch: calc((100cqw - 16px) / var(--cols));
+        padding: 8px;
+        border-radius: 8px;
+        background: var(--board);
+      }
+
+      .line {
+        display: grid;
+        grid-template-columns: repeat(var(--cols), 1fr);
+      }
+
+      .heads {
+        margin-bottom: 2px;
+        color: var(--muted);
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .heads span {
+        overflow: hidden;
+        padding-left: 1px;
+        white-space: nowrap;
+      }
+
+      .service + .service {
+        margin-top: calc(var(--pitch) * 0.45);
+      }
+
+      .cell {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: calc(var(--pitch) * 1.6);
+        margin: 1px;
+        border-radius: 2px;
+        background: var(--flap);
+        color: var(--amber);
+        font: 600 calc(var(--pitch) * 1.05) / 1 ui-monospace, "SF Mono", Menlo, Consolas,
+          "Liberation Mono", monospace;
+      }
+
+      /* The seam where a flap folds. */
+      .cell::after {
+        content: "";
+        position: absolute;
+        inset: 50% 0 auto;
+        height: 1px;
+        background: rgb(0 0 0 / 45%);
+      }
+
+      .empty {
+        margin: 0;
+        padding: 10px 4px;
+        color: var(--amber);
+      }
+
+      .notes {
+        margin: 10px 0 0;
+        padding: 0;
+        list-style: none;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .notes li {
+        display: -webkit-box;
+        overflow: hidden;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 3;
+        line-clamp: 3;
+      }
+
+      .notes li + li {
+        margin-top: 4px;
+      }
+
+      footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      footer a {
+        color: inherit;
+      }
+
+      button {
+        padding: 4px 10px;
+        border: 1px solid rgb(255 255 255 / 35%);
+        border-radius: 999px;
+        background: transparent;
+        color: var(--text);
+        font: inherit;
+        cursor: pointer;
+      }
+
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+
+      button:focus-visible,
+      a:focus-visible {
+        outline: 2px solid var(--amber);
+        outline-offset: 2px;
+      }
+
+      /* The same services as a table, for a screen reader: the board itself is
+         one letter per cell and is hidden from it. The class goes on a wrapper,
+         because a table grows to its content whatever size it is given. */
+      .sr {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="panel">
+      <header>
+        <h1 id="station">&nbsp;</h1>
+        <span class="kind" id="kind"></span>
+      </header>
+      <div class="board" id="board" aria-hidden="true"></div>
+      <div class="sr"><table id="table"></table></div>
+      <ul class="notes" id="notes"></ul>
+      <footer>
+        <span id="source"></span>
+        <span id="status" role="status"></span>
+        <button type="button" id="refresh" hidden>Refresh</button>
+      </footer>
+    </div>
+    <script>
+      "use strict";
+
+      const PROTOCOL = "2026-01-26";
+      const TOOL = "show_board"; // the tool this page is shown with; Refresh calls it again
+      const MAX_SERVICES = 12;
+      // The order the flaps turn in. A character outside it is shown without turning.
+      const FLAPS = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:.-&'/()";
+      const MAX_TURNS = 8;
+      const TICK_MS = 45;
+      const NARROW_BELOW = 480; // px of panel width
+      const WAITING = 3; // blank services shown until the result arrives
+
+      // Each layout is the lines of one service. A field is [key, width]; a
+      // number is that many columns of gap. Every line of a layout has the
+      // same number of columns.
+      const WIDE = [[["time", 5], 1, ["place", 18], 1, ["platform", 3], 1, ["expected", 9]]];
+      const NARROW = [
+        [["time", 5], 1, ["place", 18]],
+        [6, ["expected", 9], 1, ["plat", 8]],
+      ];
+      const HEADINGS = { time: "Time", platform: "Plat", expected: "Expected" };
+
+      const $ = (id) => document.getElementById(id);
+      const still = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+      let host = null; // the result of ui/initialize
+      let toolArguments = {};
+      let shown = null; // the Board on display
+      let cells = []; // the flap elements, in reading order
+      let built = ""; // what `cells` was built for: layout and number of services
+      let laidOut = null; // the layout on display
+
+      // ---------------------------------------------------------------- host
+
+      const waiting = new Map();
+      let nextId = 1;
+
+      function request(method, params) {
+        const id = nextId++;
+        window.parent.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
+        return new Promise((resolve, reject) => waiting.set(id, { resolve, reject }));
+      }
+
+      function notify(method, params) {
+        window.parent.postMessage({ jsonrpc: "2.0", method, params }, "*");
+      }
+
+      window.addEventListener("message", (event) => {
+        const message = event.data;
+        if (event.source !== window.parent || !message || message.jsonrpc !== "2.0") return;
+        if (message.method) {
+          const result = handle(message.method, message.params || {});
+          if (message.id === undefined) return;
+          const reply = result
+            ? { result }
+            : { error: { code: -32601, message: "Method not found" } };
+          window.parent.postMessage({ jsonrpc: "2.0", id: message.id, ...reply }, "*");
+        } else if (waiting.has(message.id)) {
+          const { resolve, reject } = waiting.get(message.id);
+          waiting.delete(message.id);
+          if (message.error) reject(new Error(message.error.message || "Request failed"));
+          else resolve(message.result);
+        }
+      });
+
+      /** Act on a message from the host. Returns the result if it was a request this page answers. */
+      function handle(method, params) {
+        if (method === "ui/notifications/tool-input") toolArguments = params.arguments || {};
+        else if (method === "ui/notifications/tool-result") showResult(params);
+        else if (method === "ui/notifications/tool-cancelled") say("Cancelled.");
+        else if (method === "ui/resource-teardown" || method === "ping") return {};
+        return null;
+      }
+
+      // --------------------------------------------------------------- board
+
+      /** The Board in a tool result, or null if the call failed. */
+      function boardIn(result) {
+        if (!result || result.isError) return null;
+        let board = result.structuredContent;
+        if (!board) {
+          // A host that passes on the text only: it is the same Board as JSON.
+          const block = (result.content || []).find((c) => c.type === "text");
+          try {
+            board = JSON.parse(block.text);
+          } catch {
+            return null;
+          }
+        }
+        return board && Array.isArray(board.services) ? board : null;
+      }
+
+      function showResult(result) {
+        const board = boardIn(result);
+        if (!board) {
+          // The assistant has the error text and explains it; don't repeat it here.
+          if (!shown) say("No board to show.");
+          return false;
+        }
+        shown = board;
+        say("");
+        draw();
+        return true;
+      }
+
+      function names(places) {
+        return (places || []).map((p) => p.name).join(" & ");
+      }
+
+      /** What each field of the board says for one service. */
+      function fields(service, arrivals) {
+        const expected = service.status === "cancelled" ? "Cancelled" : service.expected || "";
+        const platform = service.platform || "";
+        return {
+          time: service.scheduled || "",
+          place: names(arrivals ? service.origin : service.destination),
+          platform,
+          plat: platform ? `Plat ${platform}` : "",
+          expected: expected.replace(/\*$/, ""),
+        };
+      }
+
+      function columns(line) {
+        return line.reduce((n, part) => n + (Array.isArray(part) ? part[1] : part), 0);
+      }
+
+      function draw() {
+        const arrivals = shown.board === "arrivals";
+        const services = shown.services.slice(0, MAX_SERVICES);
+        const layout = fitting();
+        const place = arrivals ? "Origin" : "Destination";
+
+        $("station").textContent = shown.station.name;
+        $("kind").textContent = arrivals
+          ? "Arrivals" + (shown.filter ? ` from ${shown.filter.name}` : "")
+          : "Departures" + (shown.filter ? ` to ${shown.filter.name}` : "");
+
+        const key = `${layout === WIDE ? "wide" : "narrow"}:${services.length}`;
+        if (key !== built) build(layout, services.length, place);
+        built = key;
+
+        let i = 0;
+        services.forEach((service, row) => {
+          const text = fields(service, arrivals);
+          for (const line of layout) {
+            let column = 0;
+            for (const part of line) {
+              if (!Array.isArray(part)) {
+                column += part;
+                continue;
+              }
+              const [name, width] = part;
+              const value = text[name].toUpperCase().slice(0, width).padEnd(width);
+              for (const character of value) turn(cells[i++], character, row * 2 + (column++ >> 2));
+            }
+          }
+        });
+
+        drawTable(services, arrivals, place);
+        drawNotes(services.length);
+        drawSource();
+        report();
+      }
+
+      /** The layout that fits the panel as it is now. */
+      function fitting() {
+        return $("board").parentElement.clientWidth < NARROW_BELOW ? NARROW : WIDE;
+      }
+
+      /** Lay out blank flaps for `count` services. */
+      function build(layout, count, place) {
+        const board = $("board");
+        laidOut = layout;
+        board.replaceChildren();
+        board.style.setProperty("--cols", columns(layout[0]));
+        cells = [];
+        if (!count) {
+          const empty = document.createElement("p");
+          empty.className = "empty";
+          empty.textContent = "No trains in the next two hours.";
+          board.append(empty);
+          return;
+        }
+        if (layout === WIDE) board.append(headings(layout[0], place));
+        for (let n = 0; n < count; n++) {
+          const service = document.createElement("div");
+          service.className = "service";
+          for (const parts of layout) {
+            const line = document.createElement("div");
+            line.className = "line";
+            let column = 1;
+            for (const part of parts) {
+              if (!Array.isArray(part)) {
+                column += part;
+                continue;
+              }
+              for (let k = 0; k < part[1]; k++) {
+                const cell = document.createElement("span");
+                cell.className = "cell";
+                cell.style.gridColumn = column++;
+                cell.flap = { now: " ", queue: [], wait: 0 };
+                cells.push(cell);
+                line.append(cell);
+              }
+            }
+            service.append(line);
+          }
+          board.append(service);
+        }
+      }
+
+      function headings(parts, place) {
+        const line = document.createElement("div");
+        line.className = "line heads";
+        let column = 1;
+        for (const part of parts) {
+          if (!Array.isArray(part)) {
+            column += part;
+            continue;
+          }
+          const label = document.createElement("span");
+          label.textContent = HEADINGS[part[0]] || place;
+          label.style.gridColumn = `${column} / span ${part[1]}`;
+          column += part[1];
+          line.append(label);
+        }
+        return line;
+      }
+
+      // --------------------------------------------------------------- flaps
+
+      const turning = new Set();
+      let timer = 0;
+
+      /** Turn one flap to `character`, starting after `wait` ticks. */
+      function turn(cell, character, wait) {
+        const flap = cell.flap;
+        const target = flap.queue.length ? flap.queue[flap.queue.length - 1] : flap.now;
+        if (character === target) return;
+        const from = FLAPS.indexOf(flap.now);
+        const to = FLAPS.indexOf(character);
+        if (still.matches || from < 0 || to < 0) {
+          turning.delete(cell);
+          flap.queue = [];
+          flap.now = character;
+          cell.textContent = character;
+          return;
+        }
+        // Flaps only turn forwards. A long way round is cut to its last few turns.
+        const turns = (to - from + FLAPS.length) % FLAPS.length;
+        flap.queue = [];
+        for (let n = Math.max(1, turns - MAX_TURNS + 1); n <= turns; n++) {
+          flap.queue.push(FLAPS[(from + n) % FLAPS.length]);
+        }
+        flap.wait = wait;
+        turning.add(cell);
+        if (!timer) timer = window.setInterval(tick, TICK_MS);
+      }
+
+      function tick() {
+        for (const cell of turning) {
+          const flap = cell.flap;
+          if (flap.wait > 0) {
+            flap.wait--;
+            continue;
+          }
+          flap.now = flap.queue.shift();
+          cell.textContent = flap.now;
+          cell.animate(
+            [{ transform: "perspective(12em) rotateX(-75deg)", filter: "brightness(0.6)" }, {}],
+            { duration: TICK_MS, easing: "ease-out" },
+          );
+          if (!flap.queue.length) turning.delete(cell);
+        }
+        if (!turning.size) {
+          window.clearInterval(timer);
+          timer = 0;
+        }
+      }
+
+      // ---------------------------------------------------------------- rest
+
+      function drawTable(services, arrivals, place) {
+        const table = $("table");
+        table.replaceChildren();
+        const caption = table.createCaption();
+        caption.textContent = `${arrivals ? "Arrivals at" : "Departures from"} ${shown.station.name}`;
+        const head = table.createTHead().insertRow();
+        for (const label of ["Time", place, "Platform", "Expected"]) {
+          const th = document.createElement("th");
+          th.scope = "col";
+          th.textContent = label;
+          head.append(th);
+        }
+        const body = table.createTBody();
+        for (const service of services) {
+          const text = fields(service, arrivals);
+          const row = body.insertRow();
+          for (const name of ["time", "place", "platform", "expected"]) {
+            row.insertCell().textContent = text[name];
+          }
+        }
+      }
+
+      function drawNotes(count) {
+        const notes = (shown.messages || []).slice(0, 3);
+        if (shown.services.length > count) {
+          notes.push(`${shown.services.length - count} later trains are not shown.`);
+        }
+        $("notes").replaceChildren(
+          ...notes.map((note) => {
+            const item = document.createElement("li");
+            item.textContent = note;
+            return item;
+          }),
+        );
+      }
+
+      function drawSource() {
+        const source = $("source");
+        if (shown.source !== "darwin") {
+          source.textContent = "Booked times: Network Rail data feeds (OGL v3.0).";
+          return;
+        }
+        const link = document.createElement("a");
+        link.href = "https://www.nationalrail.co.uk/";
+        link.textContent = "Powered by National Rail Enquiries";
+        // A sandboxed frame can't open a page itself; the host does it.
+        link.addEventListener("click", (event) => {
+          event.preventDefault();
+          if (host?.hostCapabilities?.openLinks) {
+            request("ui/open-link", { url: link.href }).catch(() => {});
+          }
+        });
+        source.replaceChildren(link);
+      }
+
+      function say(text) {
+        $("status").textContent = text;
+        report();
+      }
+
+      let reported = 0;
+
+      /** Tell the host the page's height; it sizes the frame from that. */
+      function report() {
+        if (!host) return;
+        const height = Math.ceil(document.documentElement.getBoundingClientRect().height);
+        if (height !== reported) notify("ui/notifications/size-changed", { height });
+        reported = height;
+      }
+
+      /** Ask the server for the same board again, through the host. */
+      async function refresh() {
+        const button = $("refresh");
+        button.disabled = true;
+        say("");
+        try {
+          const result = await request("tools/call", { name: TOOL, arguments: toolArguments });
+          if (!showResult(result)) {
+            const block = (result.content || []).find((c) => c.type === "text");
+            say(block ? block.text : "Couldn't refresh.");
+          }
+        } catch (error) {
+          say(error.message);
+        } finally {
+          button.disabled = false;
+        }
+      }
+
+      async function start() {
+        host = await request("ui/initialize", {
+          appInfo: { name: "traintracker-board", version: "1.0.0" },
+          appCapabilities: {},
+          protocolVersion: PROTOCOL,
+        });
+        notify("ui/notifications/initialized", {});
+
+        if (host?.hostCapabilities?.serverTools) {
+          $("refresh").hidden = false;
+          $("refresh").addEventListener("click", refresh);
+        }
+
+        new ResizeObserver(() => {
+          // A board laid out for the other width is drawn again at this one.
+          if (fitting() !== laidOut) {
+            if (shown) draw();
+            else build(fitting(), WAITING, "Destination");
+          }
+          report();
+        }).observe(document.documentElement);
+        report();
+      }
+
+      build(fitting(), WAITING, "Destination");
+      start();
+    </script>
+  </body>
+</html>

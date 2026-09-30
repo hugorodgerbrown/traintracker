@@ -27,7 +27,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from traintracker import demo, http_app, oauth, planner, site, stations
+from traintracker import demo, http_app, oauth, planner, site, stations, ui
 from traintracker.config import UK_TZ, Settings, load_dotenv
 from traintracker.darwin import DarwinClient
 from traintracker.errors import AllowanceSpent, TrainTrackerError, UpstreamError
@@ -67,6 +67,8 @@ GB (National Rail) train times.
 - Resolve places with find_station when unsure; every tool also accepts names or CRS codes.
   If a tool says a name is ambiguous, ask the person which station they mean.
 - "Next train", "is it on time": live_departures (live_arrivals for arrivals).
+- "Show me the board", "display the departures": show_board. Only when the person asks to
+  see a board; it draws one on screen where the app can.
 - "Which platform is my train?": departure_platform. "What's leaving from platform 4?":
   platform_departures. A 'booked' platform_source is the timetabled platform, not yet confirmed.
 - A future date/time, or "what trains are there": timetable.
@@ -258,7 +260,9 @@ def _prewarm(settings: Settings) -> None:
         log.exception("Prewarming today's journey network failed")
 
 
-mcp: MCPServer[None] = MCPServer("traintracker", instructions=INSTRUCTIONS, lifespan=lifespan)
+mcp: MCPServer[None] = MCPServer(
+    "traintracker", instructions=INSTRUCTIONS, lifespan=lifespan, extensions=[ui.apps()]
+)
 
 
 # ------------------------------------------------------------------- helpers
@@ -426,7 +430,9 @@ LIVE, LOCAL = True, False
 NAME = stations.MAX_QUERY
 
 
-def _tool(title: str, open_world: bool) -> Callable[[Callable[P, R]], Callable[P, R]]:
+def _tool(
+    title: str, open_world: bool, app: str | None = None
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Register a tool with its title and hints.
 
     Every tool only reads. The hints differ in one respect: whether a call can
@@ -435,9 +441,13 @@ def _tool(title: str, open_world: bool) -> Callable[[Callable[P, R]], Callable[P
     counts as closed. The title goes in two places because clients read either:
     the tool's own `title`, and `annotations.title`, which is what Claude's
     directory submission portal checks.
+
+    `app` is the ui:// page a client that supports MCP Apps shows with every
+    result of the tool. The result itself is the same with or without it.
     """
     return mcp.tool(
         title=title,
+        meta={"ui": {"resourceUri": app}} if app else None,
         annotations=ToolAnnotations(
             title=title,
             read_only_hint=True,
@@ -587,6 +597,32 @@ async def live_arrivals(
         0,
         include_calling_points,
     )
+
+
+@_tool("Show a departure board", LIVE, app=ui.BOARD_URI)
+@_tool_errors
+async def show_board(
+    station: Annotated[str, Field(max_length=NAME, description="Station name or CRS code.")],
+    board: Annotated[
+        Literal["departures", "arrivals"], Field(description="Which board to show.")
+    ] = "departures",
+    calling_at: Annotated[
+        str | None,
+        Field(
+            max_length=NAME,
+            description="Only trains going on to this station (departures) or coming from "
+            "it (arrivals).",
+        ),
+    ] = None,
+    rows: Annotated[int, Field(ge=1, le=12)] = 10,
+) -> Board:
+    """Draw a GB railway station's live departures or arrivals on screen as a departure
+    board. Use this only when the person asks to see, show or display a board. For any
+    other question about trains use live_departures or live_arrivals: they return the same
+    trains without drawing anything. An app that can't draw the board gets the same
+    answer as from those tools."""
+    other = _station(calling_at) if calling_at else None
+    return await _live_board(app(), _station(station), board, other, rows, 0, False)
 
 
 @_tool("Departure platform", LIVE)

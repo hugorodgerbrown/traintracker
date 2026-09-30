@@ -722,6 +722,8 @@ def _login_code_hash(sign_in_id: str, code: str) -> str:
 
 # The sign-in page is only reached from an OAuth flow and is never shared, so it
 # opts out of link unfurling (noindex, no Open Graph tags) and of framing.
+# No og: or twitter: tags, on purpose: the sign-in page is noindex, lives at a
+# one-time address, and is never shared, so it has no link preview to describe.
 _HEAD = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

@@ -87,7 +87,11 @@ def site_fields(settings: Settings) -> dict[str, str]:
         )
     else:
         fair_use = "There is no set limit on requests; please don't automate them."
-    return {"mcp_url": f"{settings.public_url}/mcp", "fair_use": fair_use}
+    return {
+        "site_url": settings.public_url,
+        "mcp_url": f"{settings.public_url}/mcp",
+        "fair_use": fair_use,
+    }
 
 
 def build_app(server: MCPServer[Any], settings: Settings) -> Starlette:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import os
 import re
 from collections.abc import AsyncIterator
@@ -53,6 +54,32 @@ async def test_pages_are_served(client: httpx.AsyncClient, path: str) -> None:
     assert "Open Government Licence v3.0" in r.text and "Open Database License" in r.text
     assert "mailto:support@traintrackr.live" in r.text
     assert (await client.head(path)).status_code == 200
+
+
+def _meta(text: str) -> dict[str, str]:
+    """The page's og: and twitter: meta tags, as property or name -> content."""
+    pattern = r'<meta (?:property|name)="((?:og|twitter):[^"]+)" content="([^"]*)">'
+    return dict(re.findall(pattern, text))
+
+
+@pytest.mark.parametrize("path", list(site.PAGES))
+async def test_pages_set_the_link_preview_tags(client: httpx.AsyncClient, path: str) -> None:
+    text = (await client.get(path)).text
+    meta = _meta(text)
+    _, _, title, description = site.PAGES[path]
+    assert meta["og:title"] == html.escape(title)
+    assert meta["og:description"] == html.escape(description)
+    assert meta["og:type"] == "website"
+    assert meta["og:site_name"] == "Traintrackr"
+    assert meta["twitter:card"] == "summary"
+    assert meta["og:image:alt"] == site.SHARE_IMAGE_ALT
+    # Previews are fetched with no page address to resolve against: both are absolute.
+    assert meta["og:url"] == f"{BASE}{path}"
+    assert meta["og:image"].startswith(f"{BASE}{site.LISTING_ICON}?v=")
+    assert all(meta.values()), "an empty tag"
+    assert "{{" not in text and "}}" not in text, "an unfilled field"
+    image = await client.get(html.unescape(meta["og:image"]).removeprefix(BASE))
+    assert image.status_code == 200 and image.headers["content-type"] == "image/png"
 
 
 async def test_the_landing_page_has_the_address_and_the_examples(

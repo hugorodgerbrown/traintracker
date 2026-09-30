@@ -352,18 +352,32 @@ def _timetable_board(
 
 # --------------------------------------------------------------------- tools
 
-# Every tool only reads. The hints differ in one respect: whether a call can
-# reach Darwin (open world) or stays within the server's own data. The timetable
-# came from Network Rail, but a call reads the local copy, so it counts as closed.
-LIVE = ToolAnnotations(
-    read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=True
-)
-LOCAL = ToolAnnotations(
-    read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False
-)
+LIVE, LOCAL = True, False
 
 
-@mcp.tool(title="Find a station", annotations=LOCAL)
+def _tool(title: str, open_world: bool) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    """Register a tool with its title and hints.
+
+    Every tool only reads. The hints differ in one respect: whether a call can
+    reach Darwin (open world) or stays within the server's own data. The
+    timetable came from Network Rail, but a call reads the local copy, so it
+    counts as closed. The title goes in two places because clients read either:
+    the tool's own `title`, and `annotations.title`, which is what Claude's
+    directory submission portal checks.
+    """
+    return mcp.tool(
+        title=title,
+        annotations=ToolAnnotations(
+            title=title,
+            read_only_hint=True,
+            destructive_hint=False,
+            idempotent_hint=True,
+            open_world_hint=open_world,
+        ),
+    )
+
+
+@_tool("Find a station", LOCAL)
 async def find_station(
     query: Annotated[str, Field(description="Station name, partial name or 3-letter CRS code.")],
     limit: Annotated[int, Field(ge=1, le=20)] = 5,
@@ -376,7 +390,7 @@ async def find_station(
     ]
 
 
-@mcp.tool(title="Live departures", annotations=LIVE)
+@_tool("Live departures", LIVE)
 @_tool_errors
 async def live_departures(
     station: Annotated[str, Field(description="Station name or CRS code.")],
@@ -468,7 +482,7 @@ def _why(exc: Exception) -> str:
     return str(exc) or type(exc).__name__
 
 
-@mcp.tool(title="Live arrivals", annotations=LIVE)
+@_tool("Live arrivals", LIVE)
 @_tool_errors
 async def live_arrivals(
     station: Annotated[str, Field(description="Station name or CRS code.")],
@@ -492,7 +506,7 @@ async def live_arrivals(
     )
 
 
-@mcp.tool(title="Departure platform", annotations=LIVE)
+@_tool("Departure platform", LIVE)
 @_tool_errors
 async def departure_platform(
     station: Annotated[str, Field(description="Station name or CRS code.")],
@@ -548,7 +562,7 @@ def _platform_note(svc: BoardService, b: Board) -> str:
     return "Platform not yet announced. Check again nearer departure."
 
 
-@mcp.tool(title="Departures from a platform", annotations=LIVE)
+@_tool("Departures from a platform", LIVE)
 @_tool_errors
 async def platform_departures(
     station: Annotated[str, Field(description="Station name or CRS code.")],
@@ -640,7 +654,7 @@ def _minutes_until(hhmm: str | None) -> int:
     return diff - 24 * 60 if diff > 12 * 60 else diff
 
 
-@mcp.tool(title="Timetable", annotations=LOCAL)
+@_tool("Timetable", LOCAL)
 @_tool_errors
 async def timetable(
     station: Annotated[str, Field(description="Station name or CRS code.")],
@@ -676,7 +690,7 @@ async def timetable(
     return b
 
 
-@mcp.tool(title="Service details", annotations=LIVE)
+@_tool("Service details", LIVE)
 @_tool_errors
 async def service_details(
     service_id: Annotated[
@@ -719,7 +733,7 @@ async def service_details(
     raise ToolError("service_id must start with darwin: or tt:.")
 
 
-@mcp.tool(title="Plan a journey", annotations=LIVE)
+@_tool("Plan a journey", LIVE)
 @_tool_errors
 async def plan_journey(
     origin: Annotated[str, Field(description="Start station name or CRS code.")],
@@ -897,7 +911,7 @@ def _at_risk(j: Journey, mct: int) -> bool:
     return False
 
 
-@mcp.tool(title="Data status", annotations=LOCAL)
+@_tool("Data status", LOCAL)
 async def data_status() -> dict[str, Any]:
     """Which data sources this server has configured, how fresh its timetable is, how
     much of the Darwin request allowance has been used, and what is missing. Takes no
@@ -938,7 +952,7 @@ async def data_status() -> dict[str, Any]:
     return status
 
 
-@mcp.tool(title="Privacy policy", annotations=LOCAL)
+@_tool("Privacy policy", LOCAL)
 async def privacy_policy() -> dict[str, Any]:
     """This service's privacy policy: what it processes about the person using it (such
     as their email address at sign-in), why, how long it is kept, who processes it, and

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <title>Traintrackr, above a departure board</title>
+  <rect width="1200" height="630" fill="#0b5d3b"/>
+  <text x="600" y="122" text-anchor="middle" font-family="Menlo, monospace" font-size="76" fill="#ffffff">Traintrackr</text>
+  <rect x="60" y="178" width="1080" height="392" rx="28" fill="#0a2a1c"/>
+  <g font-family="Menlo, monospace" font-size="44" fill="#ffb020">
+    <text x="108" y="262">15:36</text>
+    <text x="108" y="346">15:36</text>
+    <text x="108" y="430">15:38</text>
+    <text x="108" y="514">15:43</text>
+    <g opacity=".75">
+      <text x="284" y="262">Colchester Town</text>
+      <text x="284" y="346">Stansted Airport</text>
+      <text x="284" y="430">Hertford East</text>
+      <text x="284" y="514">Cheshunt</text>
+      <text x="836" y="262" text-anchor="end">14</text>
+      <text x="836" y="346" text-anchor="end">4</text>
+      <text x="836" y="430" text-anchor="end">3</text>
+      <text x="836" y="514" text-anchor="end">1</text>
+    </g>
+    <text x="900" y="262">On time</text>
+    <text x="900" y="346">On time</text>
+    <text x="900" y="430">On time</text>
+    <text x="900" y="514">On time</text>
+  </g>
+</svg>

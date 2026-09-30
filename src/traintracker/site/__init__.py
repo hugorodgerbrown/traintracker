@@ -26,7 +26,11 @@ ICON = "/static/icon.svg"  # the directory icon, and the favicon for browsers th
 ICON_PNG = "/static/icon-32.png"
 TOUCH_ICON = "/static/icon-180.png"
 LISTING_ICON = "/static/icon-512.png"  # the PNG uploaded to the directory listings
-SHARE_IMAGE_ALT = "Traintrackr icon: a departure board"
+# The link-preview card. It is 1200 by 630, the shape chat apps show above a
+# link's title, and has no transparent corners: a square icon fills the chat.
+SHARE_IMAGE = "/static/share.png"
+SHARE_IMAGE_SIZE = (1200, 630)
+SHARE_IMAGE_ALT = "Traintrackr, above a departure board of four trains, all on time"
 
 # path -> (file, link text, title, description)
 PAGES = {
@@ -63,6 +67,7 @@ ASSETS = {
     ICON_PNG: ("icon-32.png", "image/png"),
     TOUCH_ICON: ("icon-180.png", "image/png"),
     LISTING_ICON: ("icon-512.png", "image/png"),
+    SHARE_IMAGE: ("share.png", "image/png"),
 }
 # Browsers ask for /favicon.ico whatever the page links to; answer with the PNG.
 FAVICON = "/favicon.ico"
@@ -110,7 +115,9 @@ def _sharing(path: str, site_url: str) -> dict[str, str]:
     both are absolute, built from this server's public URL."""
     return {
         "page_url": f"{site_url}{path}",
-        "share_image": f"{site_url}{asset_url(LISTING_ICON)}",
+        "share_image": f"{site_url}{asset_url(SHARE_IMAGE)}",
+        "share_image_width": str(SHARE_IMAGE_SIZE[0]),
+        "share_image_height": str(SHARE_IMAGE_SIZE[1]),
         "share_image_alt": SHARE_IMAGE_ALT,
     }
 

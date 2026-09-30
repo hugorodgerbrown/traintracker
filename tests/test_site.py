@@ -91,15 +91,23 @@ async def test_pages_set_the_link_preview_tags(client: httpx.AsyncClient, path: 
     assert meta["og:description"] == html.escape(description)
     assert meta["og:type"] == "website"
     assert meta["og:site_name"] == "Traintrackr"
-    assert meta["twitter:card"] == "summary"
+    assert meta["twitter:card"] == "summary_large_image"
     assert meta["og:image:alt"] == site.SHARE_IMAGE_ALT
     # Previews are fetched with no page address to resolve against: both are absolute.
     assert meta["og:url"] == f"{BASE}{path}"
-    assert meta["og:image"].startswith(f"{BASE}{site.LISTING_ICON}?v=")
+    assert meta["og:image"].startswith(f"{BASE}{site.SHARE_IMAGE}?v=")
     assert all(meta.values()), "an empty tag"
     assert "{{" not in text and "}}" not in text, "an unfilled field"
     image = await client.get(html.unescape(meta["og:image"]).removeprefix(BASE))
     assert image.status_code == 200 and image.headers["content-type"] == "image/png"
+    # The card is the wide shape chat apps show above the title, at the size the tags say.
+    assert meta["og:image:type"] == "image/png"
+    size = int(meta["og:image:width"]), int(meta["og:image:height"])
+    assert size == _png_size(image.content) == (1200, 630)
+    # WhatsApp drops a preview image of more than about 600 kB.
+    assert len(image.content) < 300 * 1024
+    # No alpha channel (PNG colour type 2): transparent corners show as white in a chat.
+    assert image.content[25] == 2
 
 
 async def test_the_landing_page_has_the_address_and_the_examples(

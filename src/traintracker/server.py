@@ -1184,14 +1184,20 @@ def _account_command(cmd: str, address: str, settings: Settings) -> None:
         print("MCP_ACCOUNT_SECRET is not set, so there are no email accounts.", file=sys.stderr)
         sys.exit(2)
     provider = http_app.build_provider(settings)
-    provider.create_tables()
-    if cmd == "block":
-        provider.block(address)
-        print("Blocked: the address can't sign in and its tokens no longer work.", file=sys.stderr)
-    elif provider.forget(address):
-        print("Forgotten: the account and its tokens are deleted.", file=sys.stderr)
-    else:
-        print("No account for that address.", file=sys.stderr)
+    try:
+        provider.create_tables()
+        if cmd == "block":
+            provider.block(address)
+            print(
+                "Blocked: the address can't sign in and its tokens no longer work.",
+                file=sys.stderr,
+            )
+        elif provider.forget(address):
+            print("Forgotten: the account and its tokens are deleted.", file=sys.stderr)
+        else:
+            print("No account for that address.", file=sys.stderr)
+    finally:
+        provider.close()
 
 
 def _usage_line(settings: Settings) -> str:

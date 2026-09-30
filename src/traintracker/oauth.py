@@ -30,7 +30,6 @@ import logging
 import re
 import secrets
 import time
-import weakref
 from typing import Any, ClassVar
 from urllib.parse import urlparse
 
@@ -166,7 +165,10 @@ class TraintrackerOAuthProvider(
     Subclassing the protocol inherits its default for the enterprise
     identity-assertion grant, which rejects it; this server doesn't offer it."""
 
-    _pools: ClassVar[weakref.WeakSet[ConnectionPool]] = weakref.WeakSet()
+    # Open pools, held until they are closed. A pool dropped while open is
+    # closed by its finaliser, from whichever thread the collector ran in, and
+    # that can be one of the pool's own, which it then can't wait for.
+    _pools: ClassVar[set[ConnectionPool]] = set()
 
     def __init__(
         self,
@@ -234,6 +236,11 @@ class TraintrackerOAuthProvider(
 
     async def _db(self, *statements: Statement, fetch: bool = False) -> list[tuple[Any, ...]]:
         return await asyncio.to_thread(self._run, *statements, fetch=fetch)
+
+    def close(self) -> None:
+        """Close this provider's connections; it can't be used afterwards."""
+        self._pool.close()
+        self._pools.discard(self._pool)
 
     @classmethod
     def close_all(cls) -> None:

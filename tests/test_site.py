@@ -145,11 +145,39 @@ async def test_assets_are_served(client: httpx.AsyncClient) -> None:
     assert (await client.get("/static/nope.css")).status_code == 404
 
 
+def _png_size(data: bytes) -> tuple[int, int]:
+    assert data[:8] == b"\x89PNG\r\n\x1a\n"
+    return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+
+
+async def test_the_icon_is_served_at_every_size(client: httpx.AsyncClient) -> None:
+    home = (await client.get("/")).text
+    for path in (site.ICON, site.ICON_PNG, site.TOUCH_ICON):
+        assert f'href="{site.asset_url(path)}"' in home, path
+    svg = await client.get(site.asset_url(site.ICON))
+    assert svg.status_code == 200 and svg.headers["content-type"] == "image/svg+xml"
+    assert svg.text.lstrip().startswith("<svg")
+    # The directory listings take a PNG of at least 48 by 48; ChatGPT caps it at 5 MiB.
+    for path, size in (
+        (site.ICON_PNG, 32),
+        (site.TOUCH_ICON, 180),
+        (site.LISTING_ICON, 512),
+        (site.FAVICON, 32),
+    ):
+        r = await client.get(path)
+        assert r.status_code == 200 and r.headers["content-type"] == "image/png", path
+        assert _png_size(r.content) == (size, size), path
+    assert len((await client.get(site.LISTING_ICON)).content) < 5 * 1024 * 1024
+
+
 async def test_the_sign_in_page_uses_the_site_stylesheet(client: httpx.AsyncClient) -> None:
     page = await client.get("/sign-in", params={"request": "made-up"})
     assert f'href="{site.asset_url(site.STYLESHEET)}"' in page.text
     assert "<style" not in page.text
-    assert page.headers["content-security-policy"] == "default-src 'none'; style-src 'self'"
+    assert f'href="{site.asset_url(site.ICON)}"' in page.text
+    assert page.headers["content-security-policy"] == (
+        "default-src 'none'; style-src 'self'; img-src 'self'"
+    )
 
 
 async def test_mcp_and_the_health_check_are_unchanged(client: httpx.AsyncClient) -> None:

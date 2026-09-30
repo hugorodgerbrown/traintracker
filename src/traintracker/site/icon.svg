@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512">
+  <title>Traintrackr</title>
+  <rect width="64" height="64" rx="14" fill="#0b5d3b"/>
+  <rect x="9" y="15" width="46" height="34" rx="5" fill="#0a2a1c"/>
+  <g fill="#ffb020">
+    <rect x="14" y="21" width="11" height="4.5" rx="1"/>
+    <rect x="28" y="21" width="21" height="4.5" rx="1" opacity=".75"/>
+    <rect x="14" y="29.5" width="11" height="4.5" rx="1"/>
+    <rect x="28" y="29.5" width="15" height="4.5" rx="1" opacity=".75"/>
+    <rect x="14" y="38" width="11" height="4.5" rx="1"/>
+    <rect x="28" y="38" width="18" height="4.5" rx="1" opacity=".75"/>
+  </g>
+</svg>

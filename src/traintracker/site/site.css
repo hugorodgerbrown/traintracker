@@ -272,6 +272,154 @@ blockquote p {
   font-size: 0.9375rem;
 }
 
+/* Homepage: the departure board app (ui/board.html), with example trains. It
+   is dark in both schemes, as the app is. The trains are a table in the
+   board's colours; site.js draws them as flaps and leaves the table to screen
+   readers. */
+
+.departures {
+  margin: 1.5rem 0;
+}
+
+.departures .panel {
+  --pale: #cfe3d6;
+  --well: #0a2a1c;
+  --amber: #ffb020;
+  padding: 0.875rem;
+  border-radius: 0.75rem;
+  background: #0b5d3b;
+  color: #ffffff;
+  container-type: inline-size;
+}
+
+.departures .station {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0 0 0.625rem;
+}
+
+.departures .station span,
+.departures th,
+.departures .heads {
+  color: var(--pale);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.departures .trains {
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--well);
+}
+
+.departures table {
+  margin: 0;
+}
+
+.departures tr,
+.departures th,
+.departures td {
+  border-bottom-color: rgb(255 255 255 / 15%);
+}
+
+.departures td {
+  color: var(--amber);
+  font: 600 0.9375rem/1.4 ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  text-transform: uppercase;
+}
+
+.departures tbody tr:last-child,
+.departures tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.departures.drawn .trains {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.departures .flaps {
+  --cols: 38;
+  /* One column of the grid. Every size below follows from it, so the board
+     keeps its proportions at any width. */
+  --pitch: calc((100cqw - 1rem) / var(--cols));
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  background: var(--well);
+}
+
+.departures .line {
+  display: grid;
+  grid-template-columns: repeat(var(--cols), 1fr);
+}
+
+.departures .heads {
+  margin-bottom: 2px;
+}
+
+.departures .heads span {
+  overflow: hidden;
+  padding-left: 1px;
+  white-space: nowrap;
+}
+
+.departures .service + .service {
+  margin-top: calc(var(--pitch) * 0.45);
+}
+
+.departures .cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(var(--pitch) * 1.6);
+  margin: 1px;
+  border-radius: 2px;
+  background: #113a29;
+  color: var(--amber);
+  font: 600 calc(var(--pitch) * 1.05) / 1 ui-monospace, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+}
+
+/* The seam where a flap folds. */
+.departures .cell::after {
+  content: "";
+  position: absolute;
+  inset: 50% 0 auto;
+  height: 1px;
+  background: rgb(0 0 0 / 45%);
+}
+
+.departures .source {
+  margin: 0.625rem 0 0;
+  color: var(--pale);
+  font-size: 0.75rem;
+}
+
+.departures .source a {
+  color: inherit;
+}
+
+/* The page's accent is the panel's green. */
+.departures .source a:focus-visible {
+  outline-color: var(--amber);
+}
+
+.departures figcaption {
+  margin-top: 0.5rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
 dt {
   margin-top: 1rem;
   font-weight: 600;
@@ -429,6 +577,11 @@ summary {
 
   .chat td[data-label="Platform"]::before {
     content: " · Platform ";
+  }
+
+  /* A train with no platform yet has no platform line. */
+  .departures td:empty {
+    display: none;
   }
 }
 

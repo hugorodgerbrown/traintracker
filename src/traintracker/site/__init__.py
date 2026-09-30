@@ -196,7 +196,9 @@ def _stop(text: str) -> str:
     return text if text.endswith((".", "?", "!")) else text + "."
 
 
-def _fixed(body: str, media_type: str, max_age: int) -> Callable[[Request], Awaitable[Response]]:
+def _fixed(
+    body: str | bytes, media_type: str, max_age: int
+) -> Callable[[Request], Awaitable[Response]]:
     """An endpoint that always answers with `body`; it is rendered once, at start-up."""
     headers = {**HEADERS, "Cache-Control": f"public, max-age={max_age}"}
 

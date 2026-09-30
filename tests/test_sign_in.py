@@ -16,7 +16,7 @@ import psycopg
 import pytest
 import respx
 
-from traintracker import oauth, server
+from traintracker import http_app, oauth, server
 from traintracker.config import Settings
 from traintracker.http_app import build_app, build_provider
 from traintracker.mail import RESEND_URL
@@ -39,6 +39,9 @@ def settings(monkeypatch: pytest.MonkeyPatch) -> Settings:
     monkeypatch.setenv("MCP_ACCOUNT_SECRET", "test-account-secret")
     monkeypatch.delenv("MCP_AUTH_TOKEN", raising=False)
     monkeypatch.delenv("MAIL_BACKEND", raising=False)
+    # Every request in a test comes from one address. The limit on an address
+    # has its own test; the others are about the limits behind it.
+    monkeypatch.setattr(http_app, "EMAIL_LIMIT", (100, 100.0))
     return Settings.from_env()
 
 
@@ -266,7 +269,10 @@ async def test_a_code_asked_for_late_keeps_the_sign_in_open(
 
 
 async def test_all_mail_is_capped_by_the_hour(
-    settings: Settings, resend: respx.Route, monkeypatch: pytest.MonkeyPatch
+    settings: Settings,
+    resend: respx.Route,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     monkeypatch.setenv("MAIL_MAX_PER_HOUR", "1")
     transport = httpx.ASGITransport(app=build_app(server.mcp, Settings.from_env()))
@@ -274,7 +280,40 @@ async def test_all_mail_is_capped_by_the_hour(
         _, sign_in, _ = await _begin(client)
         assert (await _ask(client, sign_in)).status_code == 200
         assert (await _ask(client, sign_in, "someone.else@example.org")).status_code == 429
+        assert (await _ask(client, sign_in, "a.third@example.org")).status_code == 429
     assert resend.call_count == 1
+    # The owner is told, once, that nobody can be sent a code.
+    assert caplog.text.count("Sign-in mail is at its limit of 1 an hour") == 1
+
+
+async def test_an_address_limit_on_codes_is_not_reported_as_the_server_limit(
+    client: httpx.AsyncClient,
+    resend: respx.Route,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setattr(oauth, "MAX_CODES_PER_ADDRESS", 1)
+    _, first, _ = await _begin(client)
+    _, second, _ = await _begin(client)
+    await _ask(client, first)
+    assert (await _ask(client, second)).status_code == 429
+    assert "Sign-in mail is at its limit" not in caplog.text
+
+
+async def test_one_client_address_can_ask_for_a_few_codes_only(
+    settings: Settings, resend: respx.Route, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Whatever addresses are typed in, and however many sign-ins are started.
+    monkeypatch.setattr(http_app, "EMAIL_LIMIT", (2, 10 / 60))
+    transport = httpx.ASGITransport(app=build_app(server.mcp, settings))
+    async with httpx.AsyncClient(transport=transport, base_url=BASE) as client:
+        answers = []
+        for n in range(3):
+            _, sign_in, _ = await _begin(client)
+            answers.append(await _ask(client, sign_in, f"person{n}@example.org"))
+    assert [r.status_code for r in answers] == [200, 200, 429]
+    assert answers[2].text.startswith("Too many requests")
+    assert resend.call_count == 2
 
 
 async def test_an_address_must_look_like_one(

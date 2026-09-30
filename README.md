@@ -239,7 +239,7 @@ All configuration is by environment variable, read from `.env` in the project fo
 | `MAIL_FROM` | — | Sender of the sign-in code, e.g. `Traintrackr <login@mail.traintrackr.live>`; the domain (here the subdomain `mail.traintrackr.live`) must be verified with Resend |
 | `MCP_ACCOUNT_SECRET` | — | Key that turns an email address into an account ID. Long and random; changing it gives every address a new account |
 | `MAIL_BACKEND` | `resend` | `console` writes the sign-in code to the log instead of sending it. For local development only |
-| `MAIL_MAX_PER_HOUR` | `200` | Most sign-in codes sent in an hour, over all addresses |
+| `MAIL_MAX_PER_HOUR` | `100` | Most sign-in codes sent in an hour, over all addresses |
 | `RATE_LIMIT_PER_MINUTE` | `30` | Tool calls per account per minute over HTTP; `0` turns the limit off |
 | `RATE_LIMIT_BURST` | `10` | Tool calls an account can make at once before the per-minute rate applies |
 | `CLIENT_IP_HEADER` | — | Header the hosting platform's proxy puts the caller's address in (`CF-Connecting-IP` on Render), used for the limits before sign-in. Leave unset where clients can reach the server without passing that proxy: the connection's own address is used |
@@ -308,7 +308,7 @@ Sign-in hands Claude a one-hour access token and a 90-day refresh token, rotated
 
 With only the passphrase set, the page is the passphrase form and nothing else. With both, the passphrase sits behind a *Have a passphrase?* link.
 
-**Email codes.** The person enters an address and receives a code that lasts 10 minutes and works once, for that sign-in only. Five wrong codes discard the sign-in, as five wrong passphrases do. To limit what the page can be made to send, a sign-in can ask for three codes, an address is sent five an hour, and the server sends `MAIL_MAX_PER_HOUR` an hour in all.
+**Email codes.** The person enters an address and receives a code that lasts 10 minutes and works once, for that sign-in only. Five wrong codes discard the sign-in, as five wrong passphrases do. To limit what the page can be made to send, a sign-in can ask for three codes, an address is sent five an hour, one client address can ask for five at once and ten an hour, and the server sends `MAIL_MAX_PER_HOUR` an hour in all. When that last limit is reached nobody can be sent a code, and the log gets a warning.
 
 **Accounts.** The address is passed to Resend to deliver the code and is not stored. The account is an HMAC-SHA256 of the lower-cased address, without any `+tag`, under `MCP_ACCOUNT_SECRET`, so the stored ID can't be turned back into the address, or tested against a guess, without the secret. An account holds its ID, when it was created, when it was last used (a sign-in or a token refresh) and whether it is blocked. Accounts not used for 180 days are deleted, with their tokens. `traintracker forget EMAIL` deletes one on request; `traintracker block EMAIL` shuts one out, and `UPDATE mcp_auth.accounts SET blocked = false` lets them all back in.
 

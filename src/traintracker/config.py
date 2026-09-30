@@ -28,6 +28,10 @@ NR_SCHEDULE_URL = (
 # times. The free allowance is 5 million per four weeks, about 178,000 a day.
 DARWIN_DAILY_LIMIT = 170_000
 
+# Sign-in codes sent in an hour, over all addresses. The sign-in page will mail
+# any address typed into it, so this is the most it can be made to send.
+MAIL_MAX_PER_HOUR = 100
+
 TRUE = {"1", "true", "yes", "on"}
 
 
@@ -118,7 +122,7 @@ class Settings:
     mail_from: str | None = None
     account_secret: str | None = field(default=None, repr=False)
     mail_backend: str = "resend"
-    mail_max_per_hour: int = 200
+    mail_max_per_hour: int = MAIL_MAX_PER_HOUR
     rate_limit_per_minute: int = 30
     rate_limit_burst: int = 10
     usage_schema: str = "traintracker_usage"
@@ -212,7 +216,7 @@ class Settings:
             mail_from=_env("MAIL_FROM"),
             account_secret=_env("MCP_ACCOUNT_SECRET"),
             mail_backend=(_env("MAIL_BACKEND") or "resend").lower(),
-            mail_max_per_hour=int(_env("MAIL_MAX_PER_HOUR") or 200),
+            mail_max_per_hour=int(_env("MAIL_MAX_PER_HOUR") or MAIL_MAX_PER_HOUR),
             rate_limit_per_minute=int(_env("RATE_LIMIT_PER_MINUTE") or 30),
             rate_limit_burst=int(_env("RATE_LIMIT_BURST") or 10),
             usage_schema=_env("USAGE_SCHEMA") or "traintracker_usage",

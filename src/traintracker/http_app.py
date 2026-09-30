@@ -76,6 +76,9 @@ OPEN_PATHS = frozenset(
 # servers, a few addresses for all of its users, so it is given more room.
 REGISTER_LIMIT = (30, 20.0)
 AUTHORIZE_LIMIT = (20, 10.0)
+# Asking for a sign-in code sends an email to whatever address was typed: five
+# at once, then ten an hour.
+EMAIL_LIMIT = (5, 10 / 60)
 
 
 class OpenEndpointLimits:
@@ -128,6 +131,7 @@ def open_endpoint_limits() -> dict[tuple[str, str], RateLimiter]:
         ("POST", REGISTRATION_PATH): register,
         ("GET", AUTHORIZATION_PATH): authorize,
         ("POST", AUTHORIZATION_PATH): authorize,
+        ("POST", EMAIL_PATH): RateLimiter(EMAIL_LIMIT[1], EMAIL_LIMIT[0]),
     }
 
 

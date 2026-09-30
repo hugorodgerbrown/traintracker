@@ -50,7 +50,7 @@ from starlette.responses import HTMLResponse, PlainTextResponse, RedirectRespons
 from starlette.routing import Route
 
 from traintracker import site
-from traintracker.config import SCHEMA_NAME
+from traintracker.config import MAIL_MAX_PER_HOUR, SCHEMA_NAME
 from traintracker.mail import CODE_MINUTES, Mailer, MailError
 
 log = logging.getLogger(__name__)
@@ -155,7 +155,7 @@ class TraintrackerOAuthProvider(
         schema: str = "mcp_auth",
         account_secret: str | None = None,
         mailer: Mailer | None = None,
-        mail_max_per_hour: int = 200,
+        mail_max_per_hour: int = MAIL_MAX_PER_HOUR,
     ) -> None:
         if not SCHEMA_NAME.fullmatch(schema):
             raise ValueError(f"Invalid auth schema name {schema!r}.")
@@ -171,6 +171,7 @@ class TraintrackerOAuthProvider(
         # that turns the address into an account.
         self.mailer = mailer if account_secret else None
         self.mail_max_per_hour = mail_max_per_hour
+        self._mail_cap_logged = 0.0
 
     # -- storage -------------------------------------------------------------
 
@@ -574,6 +575,7 @@ class TraintrackerOAuthProvider(
                 ),
             )
         except _Missing:
+            await self._note_mail_cap(now)
             return self._form(
                 pending, error="Too many codes have been sent. Try again in an hour.", status=429
             )
@@ -585,6 +587,23 @@ class TraintrackerOAuthProvider(
                 pending, error="The code could not be sent. Try again shortly.", status=502
             )
         return _code_form(pending, address)
+
+    async def _note_mail_cap(self, now: float) -> None:
+        """Log, at most every ten minutes, that the server-wide mail limit is
+        what refused a code: while it holds, nobody can sign in by email."""
+        if now - self._mail_cap_logged < 600:
+            return
+        rows = await self._db(
+            (f"SELECT count(*) FROM {self.schema}.mail_log WHERE sent_at > %s", (now - 3600,)),
+            fetch=True,
+        )
+        if rows[0][0] >= self.mail_max_per_hour:
+            self._mail_cap_logged = now
+            log.warning(
+                "Sign-in mail is at its limit of %d an hour (MAIL_MAX_PER_HOUR); "
+                "codes are refused until it eases.",
+                self.mail_max_per_hour,
+            )
 
     async def check_code(self, request: Request) -> Response:
         """Finish an email sign-in: the code proves the address can be read."""

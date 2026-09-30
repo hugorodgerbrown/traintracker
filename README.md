@@ -49,6 +49,12 @@ flowchart LR
 
 Every tool accepts station names or CRS codes. Ambiguous names ("Sudbury", "Harrow") return the candidates so Claude can ask which one you meant.
 
+### Departure board
+
+`live_departures` and `live_arrivals` come with an [MCP App](https://modelcontextprotocol.io/specification/draft/extensions/apps): a client that supports MCP Apps shows the result as a split-flap departure board next to the answer. The tools' results are unchanged, and a client without MCP Apps ignores the board.
+
+The board is one page, [`src/traintracker/ui/board.html`](src/traintracker/ui/board.html), served as the resource `ui://traintracker/board.html`. Its style and script are inline and it loads nothing from anywhere. The client hands it the tool's result; it shows up to 12 trains, the station's notices and the data credit. **Refresh** asks the client to call the same tool again with the same arguments, which counts against the rate limit like any other call. The flaps don't turn for someone who has asked their system for reduced motion, and a screen reader gets the trains as a table.
+
 ## Run your own copy
 
 Everything from here on is for running the server yourself. The public service at traintrackr.live is this code, deployed as described in [Deploy to Render](#deploy-to-render).
@@ -368,6 +374,7 @@ src/traintracker/
   mail.py        Sends the sign-in code (Resend, or the log in development)
   ratelimit.py   Per-account limit on tool calls
   site/          Public pages: landing, docs, privacy policy, terms
+  ui/            MCP App: the departure board shown with a live board
   timetable.py   SCHEDULE importer and Postgres queries (STP resolution)
   planner.py     Connection Scan journey planner, London links
   darwin.py      Rail Data Marketplace LDBWS client

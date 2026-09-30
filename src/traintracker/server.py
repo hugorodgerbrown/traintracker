@@ -26,7 +26,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from traintracker import demo, http_app, planner, site, stations
+from traintracker import demo, http_app, planner, site, stations, ui
 from traintracker.config import UK_TZ, Settings, load_dotenv
 from traintracker.darwin import DarwinClient
 from traintracker.errors import TrainTrackerError, UpstreamError
@@ -211,7 +211,9 @@ def _prewarm(settings: Settings) -> None:
         log.exception("Prewarming today's journey network failed")
 
 
-mcp: MCPServer[None] = MCPServer("traintracker", instructions=INSTRUCTIONS, lifespan=lifespan)
+mcp: MCPServer[None] = MCPServer(
+    "traintracker", instructions=INSTRUCTIONS, lifespan=lifespan, extensions=[ui.apps()]
+)
 
 
 # ------------------------------------------------------------------- helpers
@@ -355,7 +357,9 @@ def _timetable_board(
 LIVE, LOCAL = True, False
 
 
-def _tool(title: str, open_world: bool) -> Callable[[Callable[P, R]], Callable[P, R]]:
+def _tool(
+    title: str, open_world: bool, app: str | None = None
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Register a tool with its title and hints.
 
     Every tool only reads. The hints differ in one respect: whether a call can
@@ -364,9 +368,13 @@ def _tool(title: str, open_world: bool) -> Callable[[Callable[P, R]], Callable[P
     counts as closed. The title goes in two places because clients read either:
     the tool's own `title`, and `annotations.title`, which is what Claude's
     directory submission portal checks.
+
+    `app` is the ui:// page a client that supports MCP Apps shows with the
+    result. The result itself is the same with or without it.
     """
     return mcp.tool(
         title=title,
+        meta={"ui": {"resourceUri": app}} if app else None,
         annotations=ToolAnnotations(
             title=title,
             read_only_hint=True,
@@ -390,7 +398,7 @@ async def find_station(
     ]
 
 
-@_tool("Live departures", LIVE)
+@_tool("Live departures", LIVE, app=ui.BOARD_URI)
 @_tool_errors
 async def live_departures(
     station: Annotated[str, Field(description="Station name or CRS code.")],
@@ -482,7 +490,7 @@ def _why(exc: Exception) -> str:
     return str(exc) or type(exc).__name__
 
 
-@_tool("Live arrivals", LIVE)
+@_tool("Live arrivals", LIVE, app=ui.BOARD_URI)
 @_tool_errors
 async def live_arrivals(
     station: Annotated[str, Field(description="Station name or CRS code.")],

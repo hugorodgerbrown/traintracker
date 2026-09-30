@@ -15,12 +15,13 @@ import psycopg
 import pytest
 import respx
 from mcp import Client
+from mcp.types import TextResourceContents
 from psycopg import sql
 
 import traintracker
-from traintracker import server
+from traintracker import server, ui
 from traintracker.config import DARWIN_DEPARTURES_URL, UK_TZ, TimetableDB
-from traintracker.models import Journey, JourneyLeg, StationRef
+from traintracker.models import Board, BoardService, Journey, JourneyLeg, StationRef
 from traintracker.timetable import Timetable, build
 
 from . import feedgen
@@ -72,6 +73,38 @@ async def test_lists_all_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
             "data_status",
             "privacy_policy",
         }
+
+
+async def test_the_live_boards_come_with_the_departure_board_app(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # MCP Apps: a tool names a ui:// page, and the client reads that page as a resource.
+    async with connect(tmp_path, monkeypatch) as client:
+        tools = (await client.list_tools()).tools
+        pages = {t.name: t.meta["ui"]["resourceUri"] for t in tools if t.meta}
+        assert pages == {"live_departures": ui.BOARD_URI, "live_arrivals": ui.BOARD_URI}
+        listed = {r.uri: r.mime_type for r in (await client.list_resources()).resources}
+        page = (await client.read_resource(ui.BOARD_URI)).contents[0]
+    # A client shows a ui:// page only under this type.
+    assert listed == {ui.BOARD_URI: "text/html;profile=mcp-app"}
+    assert page.mime_type == "text/html;profile=mcp-app"
+    assert isinstance(page, TextResourceContents)
+    assert page.text.startswith("<!doctype html>")
+    # A client's default policy for the page allows nothing from another origin.
+    for loads in ("<script src", "<link", "<img", "url(", "@import", "fetch("):
+        assert loads not in page.text, loads
+
+
+def test_the_departure_board_reads_fields_the_board_has() -> None:
+    # The page is handed a Board as JSON. A field renamed in the model would
+    # leave its column blank without failing anything else.
+    page = ui.board_html()
+    for name in ("station", "board", "filter", "services", "messages", "source"):
+        assert name in Board.model_fields and f"shown.{name}" in page, name
+    for name in ("scheduled", "expected", "platform", "status", "origin", "destination"):
+        assert name in BoardService.model_fields and f"service.{name}" in page, name
+    # Refresh calls the tool again by name.
+    assert '"live_departures"' in page and '"live_arrivals"' in page
 
 
 def test_registry_metadata_matches_the_package() -> None:

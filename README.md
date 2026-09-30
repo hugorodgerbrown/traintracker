@@ -364,6 +364,8 @@ uvx --with tox-uv tox -e tests     # one environment
 uvx --with tox-uv tox -e tests -- -k platform   # arguments after -- go to the tool
 ```
 
+CI runs the same environments with the versions of uv, tox and tox-uv written into [`.github/workflows/tox.yml`](.github/workflows/tox.yml), and its Actions pinned to a commit. Dependabot ([`.github/dependabot.yml`](.github/dependabot.yml)) proposes updates to `uv.lock` and to the Actions each week; the uv and tox versions are raised by hand, uv in `render.yaml` as well.
+
 | Environment | Runs |
 |---|---|
 | `format` | `ruff format --check` |

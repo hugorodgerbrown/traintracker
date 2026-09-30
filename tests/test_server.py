@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 import time
 import tomllib
 from collections.abc import AsyncIterator
@@ -18,11 +19,12 @@ import psycopg
 import pytest
 import respx
 from mcp import Client
+from mcp.server.mcpserver.exceptions import ToolError
 from psycopg import sql
 
 import traintracker
 from traintracker import server, stations
-from traintracker.config import DARWIN_DEPARTURES_URL, UK_TZ, TimetableDB
+from traintracker.config import DARWIN_DEPARTURES_URL, UK_TZ, Settings, TimetableDB
 from traintracker.models import Journey, JourneyLeg, StationRef
 from traintracker.timetable import Timetable, build
 
@@ -259,6 +261,30 @@ async def test_what_was_asked_stays_out_of_the_logs(
     assert "sudbury" not in caplog.text.lower() and "marks tey" not in caplog.text.lower()
     # The fault itself is still recorded: what kind, and where.
     assert "RuntimeError in timetable" in caplog.text and "in broken" in caplog.text
+
+
+async def test_a_cancelled_call_keeps_its_turn_until_its_work_ends(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Cancelling a call doesn't stop its thread. If the turn were given up at
+    # once, calls started and cancelled in a run would each leave a thread working.
+    monkeypatch.setattr(server, "HEAVY_AT_ONCE", 1)
+    monkeypatch.setattr(server, "BUSY_AFTER", 0.05)
+    a = server.App(settings=Settings.from_env(), http=None, darwin=None)  # type: ignore[arg-type]
+    finish = threading.Event()
+    first = asyncio.create_task(a.off_loop(finish.wait))
+    await asyncio.sleep(0.05)
+    first.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await first
+    with pytest.raises(ToolError, match="busy"):
+        await a.off_loop(lambda: None)
+    finish.set()
+    for _ in range(100):
+        if not a._heavy.locked():
+            break
+        await asyncio.sleep(0.01)
+    assert await a.off_loop(lambda: 7) == 7
 
 
 async def test_service_details_timetable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

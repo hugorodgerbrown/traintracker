@@ -108,10 +108,18 @@ class App:
             await asyncio.wait_for(self._heavy.acquire(), BUSY_AFTER)
         except TimeoutError:
             raise ToolError("The server is busy. Try again in a few seconds.") from None
-        try:
-            return await asyncio.to_thread(fn, *args, **kwargs)
-        finally:
+        work = asyncio.ensure_future(asyncio.to_thread(fn, *args, **kwargs))
+
+        def finished(done: asyncio.Future[R]) -> None:
             self._heavy.release()
+            if not done.cancelled():
+                done.exception()  # retrieved here if the caller has gone
+
+        # The turn is given up when the thread ends, not when the caller stops
+        # waiting: a cancelled call leaves its thread running, and a run of
+        # cancelled calls would otherwise start any number of them.
+        work.add_done_callback(finished)
+        return await asyncio.shield(work)
 
     def timetable(self) -> Timetable:
         try:

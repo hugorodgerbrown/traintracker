@@ -37,6 +37,9 @@ if TYPE_CHECKING:
 HEALTH_PATH = "/healthz"
 METADATA_PATH = "/.well-known/oauth-authorization-server"
 OPENAI_CHALLENGE_PATH = "/.well-known/openai-apps-challenge"
+# A tool call is a few hundred bytes. The SDK's default of 4 MiB lets one request
+# hand the server megabytes of text to parse.
+MAX_MCP_BODY = 64 * 1024
 
 
 def transport_security(public_hosts: list[str]) -> TransportSecuritySettings | None:
@@ -126,6 +129,7 @@ def build_app(server: MCPServer[Any], settings: Settings) -> Starlette:
     # auth pieces to the low-level app directly.
     app = server._lowlevel_server.streamable_http_app(
         host=settings.host,
+        max_request_body_size=MAX_MCP_BODY,
         transport_security=transport_security(list(settings.public_hosts)),
         auth=auth,
         auth_server_provider=provider,

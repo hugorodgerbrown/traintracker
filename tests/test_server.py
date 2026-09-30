@@ -18,7 +18,7 @@ from mcp import Client
 from psycopg import sql
 
 import traintracker
-from traintracker import server
+from traintracker import server, stations
 from traintracker.config import DARWIN_DEPARTURES_URL, UK_TZ, TimetableDB
 from traintracker.models import Journey, JourneyLeg, StationRef
 from traintracker.timetable import Timetable, build
@@ -135,6 +135,25 @@ async def test_find_station(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
         out = await call(client, "find_station", query="sudbury")
         crs = [m["crs"] for m in out["result"]]
         assert {"SUY", "SDH", "SUD"} <= set(crs)
+
+
+async def test_overlong_text_is_refused_before_it_is_matched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Matching costs time in proportion to the text, so a megabyte of it would
+    # hold the server up for every other caller.
+    long_name = "kings cross " * 10
+    assert stations.search(long_name) == []
+    async with connect(tmp_path, monkeypatch) as client:
+        for tool, args in (
+            ("find_station", {"query": long_name}),
+            ("live_departures", {"station": long_name}),
+            ("plan_journey", {"origin": "LST", "destination": "SUY", "via": long_name}),
+            ("timetable", {"station": "LST", "date": "2026-10-02 and more"}),
+            ("service_details", {"service_id": "darwin:" + "x" * 100}),
+        ):
+            result = await client.call_tool(tool, args)
+            assert result.is_error, tool
 
 
 async def test_ambiguous_station_is_a_clear_error(

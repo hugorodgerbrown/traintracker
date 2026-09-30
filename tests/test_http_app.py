@@ -19,7 +19,7 @@ from starlette.requests import Request
 
 from traintracker import oauth, server
 from traintracker.config import Settings
-from traintracker.http_app import build_app, transport_security
+from traintracker.http_app import MAX_MCP_BODY, build_app, transport_security
 from traintracker.oauth import TraintrackerOAuthProvider
 from traintracker.server import main
 
@@ -108,6 +108,15 @@ async def test_discovery_and_unauthenticated_mcp(client: httpx.AsyncClient) -> N
     assert r.status_code == 401
     assert "resource_metadata" in r.headers["www-authenticate"]
     assert (await client.get("/healthz")).text == "ok"
+
+
+async def test_an_oversized_mcp_request_is_refused(client: httpx.AsyncClient) -> None:
+    r = await client.post(
+        "/mcp",
+        headers={"Authorization": "Bearer static-token"},
+        json={"jsonrpc": "2.0", "id": 1, "method": "ping", "params": {"pad": "x" * MAX_MCP_BODY}},
+    )
+    assert r.status_code == 413
 
 
 @pytest.mark.usefixtures("settings")

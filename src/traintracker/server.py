@@ -353,6 +353,9 @@ def _timetable_board(
 # --------------------------------------------------------------------- tools
 
 LIVE, LOCAL = True, False
+# The longest station name is under 40 characters, and matching a name costs time
+# in proportion to its length, so text from the caller is capped.
+NAME = stations.MAX_QUERY
 
 
 def _tool(title: str, open_world: bool) -> Callable[[Callable[P, R]], Callable[P, R]]:
@@ -379,7 +382,9 @@ def _tool(title: str, open_world: bool) -> Callable[[Callable[P, R]], Callable[P
 
 @_tool("Find a station", LOCAL)
 async def find_station(
-    query: Annotated[str, Field(description="Station name, partial name or 3-letter CRS code.")],
+    query: Annotated[
+        str, Field(max_length=NAME, description="Station name, partial name or 3-letter CRS code.")
+    ],
     limit: Annotated[int, Field(ge=1, le=20)] = 5,
 ) -> list[StationMatch]:
     """Find GB (National Rail) railway stations by name, part of a name or 3-letter CRS
@@ -393,8 +398,10 @@ async def find_station(
 @_tool("Live departures", LIVE)
 @_tool_errors
 async def live_departures(
-    station: Annotated[str, Field(description="Station name or CRS code.")],
-    to: Annotated[str | None, Field(description="Only trains calling at this station.")] = None,
+    station: Annotated[str, Field(max_length=NAME, description="Station name or CRS code.")],
+    to: Annotated[
+        str | None, Field(max_length=NAME, description="Only trains calling at this station.")
+    ] = None,
     rows: Annotated[int, Field(ge=1, le=50)] = 10,
     offset_minutes: Annotated[
         int, Field(ge=-119, le=119, description="Shift the board start (e.g. 30 = from +30 min).")
@@ -485,9 +492,10 @@ def _why(exc: Exception) -> str:
 @_tool("Live arrivals", LIVE)
 @_tool_errors
 async def live_arrivals(
-    station: Annotated[str, Field(description="Station name or CRS code.")],
+    station: Annotated[str, Field(max_length=NAME, description="Station name or CRS code.")],
     from_station: Annotated[
-        str | None, Field(description="Only trains that called at this station earlier.")
+        str | None,
+        Field(max_length=NAME, description="Only trains that called at this station earlier."),
     ] = None,
     rows: Annotated[int, Field(ge=1, le=50)] = 10,
     include_calling_points: bool = False,
@@ -509,10 +517,13 @@ async def live_arrivals(
 @_tool("Departure platform", LIVE)
 @_tool_errors
 async def departure_platform(
-    station: Annotated[str, Field(description="Station name or CRS code.")],
-    to: Annotated[str | None, Field(description="Only trains calling at this station.")] = None,
+    station: Annotated[str, Field(max_length=NAME, description="Station name or CRS code.")],
+    to: Annotated[
+        str | None, Field(max_length=NAME, description="Only trains calling at this station.")
+    ] = None,
     time: Annotated[
-        str | None, Field(description="Booked departure HH:MM (24h). Default: the next train.")
+        str | None,
+        Field(max_length=5, description="Booked departure HH:MM (24h). Default: the next train."),
     ] = None,
 ) -> PlatformCheck:
     """The platform one train leaves from at a GB railway station: the next departure,
@@ -565,8 +576,8 @@ def _platform_note(svc: BoardService, b: Board) -> str:
 @_tool("Departures from a platform", LIVE)
 @_tool_errors
 async def platform_departures(
-    station: Annotated[str, Field(description="Station name or CRS code.")],
-    platform: Annotated[str, Field(description="Platform, e.g. '4' or '9B'.")],
+    station: Annotated[str, Field(max_length=NAME, description="Station name or CRS code.")],
+    platform: Annotated[str, Field(max_length=12, description="Platform, e.g. '4' or '9B'.")],
     count: Annotated[int, Field(ge=1, le=10)] = 3,
 ) -> Board:
     """The next trains leaving from one platform of a GB railway station in the next two
@@ -657,15 +668,22 @@ def _minutes_until(hhmm: str | None) -> int:
 @_tool("Timetable", LOCAL)
 @_tool_errors
 async def timetable(
-    station: Annotated[str, Field(description="Station name or CRS code.")],
-    date: Annotated[str | None, Field(description="YYYY-MM-DD, 'today' or 'tomorrow'.")] = None,
+    station: Annotated[str, Field(max_length=NAME, description="Station name or CRS code.")],
+    date: Annotated[
+        str | None, Field(max_length=10, description="YYYY-MM-DD, 'today' or 'tomorrow'.")
+    ] = None,
     time: Annotated[
         str | None,
-        Field(description="Start time HH:MM (24h). Default: now today, else the whole day."),
+        Field(
+            max_length=5,
+            description="Start time HH:MM (24h). Default: now today, else the whole day.",
+        ),
     ] = None,
-    to: Annotated[str | None, Field(description="Only trains later calling here.")] = None,
+    to: Annotated[
+        str | None, Field(max_length=NAME, description="Only trains later calling here.")
+    ] = None,
     from_station: Annotated[
-        str | None, Field(description="Only trains earlier calling here.")
+        str | None, Field(max_length=NAME, description="Only trains earlier calling here.")
     ] = None,
     board: Literal["departures", "arrivals"] = "departures",
     window_minutes: Annotated[int, Field(ge=10, le=1440)] = 180,
@@ -694,7 +712,8 @@ async def timetable(
 @_tool_errors
 async def service_details(
     service_id: Annotated[
-        str, Field(description="A service_id from another tool (darwin:… or tt:…).")
+        str,
+        Field(max_length=NAME, description="A service_id from another tool (darwin:… or tt:…)."),
     ],
 ) -> ServiceDetail:
     """Every stop of one GB train, with booked times and, for a train taken from a live
@@ -736,11 +755,19 @@ async def service_details(
 @_tool("Plan a journey", LIVE)
 @_tool_errors
 async def plan_journey(
-    origin: Annotated[str, Field(description="Start station name or CRS code.")],
-    destination: Annotated[str, Field(description="End station name or CRS code.")],
-    date: Annotated[str | None, Field(description="YYYY-MM-DD, 'today' or 'tomorrow'.")] = None,
-    time: Annotated[str | None, Field(description="Depart at or after HH:MM. Default now.")] = None,
-    via: Annotated[str | None, Field(description="Force a change at this station.")] = None,
+    origin: Annotated[str, Field(max_length=NAME, description="Start station name or CRS code.")],
+    destination: Annotated[
+        str, Field(max_length=NAME, description="End station name or CRS code.")
+    ],
+    date: Annotated[
+        str | None, Field(max_length=10, description="YYYY-MM-DD, 'today' or 'tomorrow'.")
+    ] = None,
+    time: Annotated[
+        str | None, Field(max_length=5, description="Depart at or after HH:MM. Default now.")
+    ] = None,
+    via: Annotated[
+        str | None, Field(max_length=NAME, description="Force a change at this station.")
+    ] = None,
     count: Annotated[int, Field(ge=1, le=6)] = 3,
     max_changes: Annotated[int, Field(ge=0, le=6)] = 4,
     live: Annotated[bool, Field(description="Overlay Darwin live times for today.")] = True,

@@ -26,6 +26,10 @@ services:
       # it when deploying your own copy.
       - key: MCP_PUBLIC_HOSTS
         value: traintrackr.live
+      # Render's edge puts the caller's address in this header; the limits on the
+      # endpoints that come before sign-in are counted against it.
+      - key: CLIENT_IP_HEADER
+        value: CF-Connecting-IP
       # The cron job below refreshes the timetable; the web service only reads it.
       - key: TIMETABLE_AUTO_REFRESH
         value: "0"

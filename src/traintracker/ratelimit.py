@@ -41,7 +41,7 @@ class _Bucket:
 class RateLimiter:
     def __init__(
         self,
-        per_minute: int,
+        per_minute: float,
         burst: int,
         clock: Callable[[], float] = time.monotonic,
         max_keys: int = MAX_KEYS,

@@ -239,6 +239,7 @@ All configuration is by environment variable, read from `.env` in the project fo
 | `MAIL_MAX_PER_HOUR` | `200` | Most sign-in codes sent in an hour, over all addresses |
 | `RATE_LIMIT_PER_MINUTE` | `30` | Tool calls per account per minute over HTTP; `0` turns the limit off |
 | `RATE_LIMIT_BURST` | `10` | Tool calls an account can make at once before the per-minute rate applies |
+| `CLIENT_IP_HEADER` | — | Header the hosting platform's proxy puts the caller's address in (`CF-Connecting-IP` on Render), used for the limits before sign-in. Leave unset where clients can reach the server without passing that proxy: the connection's own address is used |
 | `MCP_PUBLIC_URL` | `https://` + first public host | Base URL clients use; the OAuth issuer and resource (`<url>/mcp`) derive from it |
 | `MCP_AUTH_SCHEMA` | `mcp_auth` | Schema for OAuth clients, codes, tokens and accounts (tokens stored as SHA-256 hashes, accounts as keyed hashes of the address) |
 | `HOST` / `PORT` | `0.0.0.0` / `8000` | Where `serve-http` listens (bind address) |
@@ -311,6 +312,8 @@ With only the passphrase set, the page is the passphrase form and nothing else. 
 Everyone who signs in with the passphrase shares one account, `passphrase`.
 
 **Rate limit.** Tool calls over HTTP are limited per account: `RATE_LIMIT_BURST` calls at once, refilled at `RATE_LIMIT_PER_MINUTE`. One Darwin key serves every user, and the limit stops one account spending the whole allowance. A call pays for one request to Darwin; a call that makes more (a long board read page by page, a journey with several legs) is charged one for each further request, so the account's next calls wait longer. A call over the limit comes back as a tool error, *Too many requests. Try again in N seconds.*, which the model can read and relay. The counts are held in memory, so a restart clears them. The static token counts as one account. The stdio server is not limited.
+
+**Before sign-in.** Registration and the start of a sign-in need no account, so they are limited another way. A client address can register 30 clients at once and 20 a minute, and start 20 sign-ins at once and 10 a minute; over that the answer is 429 with `Retry-After`. The address comes from `CLIENT_IP_HEADER` where that is set, and from the connection otherwise. These endpoints take bodies up to 16 KiB, a registration up to 4 KiB and a sign-in request up to 8 KiB. The server holds 10,000 registered clients at most, and a registration deletes clients that are a week old with no tokens and no sign-in under way (an assistant registers afresh each time it connects).
 
 **Running it locally.** `MAIL_BACKEND=console` with `MCP_ACCOUNT_SECRET` set writes the code to the log in place of sending it. Don't use it on a host whose logs other people can read.
 

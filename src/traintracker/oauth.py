@@ -40,6 +40,7 @@ from mcp.server.auth.provider import (
     AuthorizeError,
     OAuthAuthorizationServerProvider,
     RefreshToken,
+    RegistrationError,
     TokenError,
     construct_redirect_uri,
 )
@@ -67,6 +68,12 @@ MAX_SENDS = 3  # codes one sign-in may ask for
 MAX_CODES_PER_ADDRESS = 5  # codes one address may be sent in an hour
 MAIL_LOG_TTL = 24 * 60 * 60
 ACCOUNT_IDLE_DAYS = 180  # an account not used for this long is deleted
+# Anyone can register a client and start a sign-in, so what they can store is
+# bounded: a registration is a name and a callback, a sign-in a few short values.
+MAX_CLIENT_BYTES = 4096
+MAX_SIGN_IN_BYTES = 8192
+MAX_CLIENTS = 10_000
+CLIENT_IDLE_DAYS = 7  # a client this old with no tokens and no sign-in under way is deleted
 OFFLINE_ACCESS = "offline_access"  # the scope that asks for a refresh token
 PASSPHRASE_SUBJECT = "passphrase"  # the account everyone using the passphrase shares
 BLOCKED = "This address can't sign in to this server."
@@ -99,6 +106,7 @@ CREATE TABLE IF NOT EXISTS {schema}.tokens (
     expires_at DOUBLE PRECISION NOT NULL
 );
 CREATE INDEX IF NOT EXISTS tokens_family ON {schema}.tokens (family);
+CREATE INDEX IF NOT EXISTS tokens_client ON {schema}.tokens ((data->>'client_id'));
 ALTER TABLE {schema}.sign_ins ADD COLUMN IF NOT EXISTS account TEXT;
 ALTER TABLE {schema}.sign_ins ADD COLUMN IF NOT EXISTS login_code_hash TEXT;
 ALTER TABLE {schema}.sign_ins ADD COLUMN IF NOT EXISTS login_code_expires_at DOUBLE PRECISION;
@@ -208,12 +216,37 @@ class TraintrackerOAuthProvider(
         return client
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
-        await self._db(
-            (
-                f"INSERT INTO {self.schema}.clients (client_id, info) VALUES (%s, %s)",
-                (client_info.client_id, json.dumps(client_info.model_dump(mode="json"))),
+        info = json.dumps(client_info.model_dump(mode="json"))
+        if len(info) > MAX_CLIENT_BYTES:
+            raise RegistrationError("invalid_client_metadata", "The registration is too large.")
+        s = self.schema
+        try:
+            await self._db(
+                # Clients nobody signed in with, or whose tokens have all lapsed.
+                # An assistant registers afresh each time it connects.
+                (
+                    f"DELETE FROM {s}.clients c "
+                    "WHERE c.created_at < now() - make_interval(days => %s) AND NOT EXISTS ("
+                    f"SELECT 1 FROM {s}.tokens t WHERE t.data->>'client_id' = c.client_id) "
+                    "AND NOT EXISTS ("
+                    f"SELECT 1 FROM {s}.sign_ins i WHERE i.client_id = c.client_id) "
+                    "AND NOT EXISTS ("
+                    f"SELECT 1 FROM {s}.codes k WHERE k.data->>'client_id' = c.client_id)",
+                    (CLIENT_IDLE_DAYS,),
+                ),
+                (
+                    f"INSERT INTO {s}.clients (client_id, info) SELECT %s, %s "
+                    f"WHERE (SELECT count(*) FROM {s}.clients) < %s RETURNING client_id",
+                    (client_info.client_id, info, MAX_CLIENTS),
+                    True,
+                ),
             )
-        )
+        except _Missing:
+            log.warning("Client registration refused: %d clients are registered.", MAX_CLIENTS)
+            raise RegistrationError(
+                "invalid_client_metadata",
+                "This server is not taking new registrations at the moment. Try again later.",
+            ) from None
 
     # -- authorization -------------------------------------------------------
 
@@ -224,6 +257,9 @@ class TraintrackerOAuthProvider(
             raise AuthorizeError(
                 "invalid_target", f"This server only issues tokens for {self.resource}."
             )
+        stored = params.model_dump_json()
+        if len(stored) > MAX_SIGN_IN_BYTES:
+            raise AuthorizeError("invalid_request", "The authorization request is too large.")
         sign_in_id = secrets.token_urlsafe(32)
         now = time.time()
         await self._db(
@@ -231,7 +267,7 @@ class TraintrackerOAuthProvider(
             (
                 f"INSERT INTO {self.schema}.sign_ins (id, client_id, params, expires_at) "
                 "VALUES (%s, %s, %s, %s)",
-                (sign_in_id, client.client_id, params.model_dump_json(), now + SIGN_IN_TTL),
+                (sign_in_id, client.client_id, stored, now + SIGN_IN_TTL),
             ),
         )
         return f"{self.public_url}{SIGN_IN_PATH}?request={sign_in_id}"

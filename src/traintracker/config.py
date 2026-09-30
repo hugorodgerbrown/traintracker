@@ -124,6 +124,7 @@ class Settings:
     usage_schema: str = "traintracker_usage"
     openai_apps_challenge: str | None = None
     darwin_daily_limit: int = DARWIN_DAILY_LIMIT
+    client_ip_header: str | None = None
 
     @property
     def timetable_db(self) -> TimetableDB:
@@ -217,6 +218,9 @@ class Settings:
             usage_schema=_env("USAGE_SCHEMA") or "traintracker_usage",
             openai_apps_challenge=_env("OPENAI_APPS_CHALLENGE"),
             darwin_daily_limit=int(_env("DARWIN_DAILY_LIMIT") or DARWIN_DAILY_LIMIT),
+            # The header the platform's proxy puts the caller's address in. Only
+            # set it where clients can't reach the server except through that proxy.
+            client_ip_header=_env("CLIENT_IP_HEADER"),
         )
         if (_env("TRAINTRACKER_DEMO") or "").lower() not in TRUE:
             return settings

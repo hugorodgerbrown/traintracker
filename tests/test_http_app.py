@@ -17,15 +17,28 @@ import pytest
 from mcp.server.transport_security import TransportSecurityMiddleware
 from starlette.requests import Request
 
-from traintracker import oauth, server
+from traintracker import http_app, oauth, server
 from traintracker.config import Settings
-from traintracker.http_app import MAX_MCP_BODY, build_app, transport_security
+from traintracker.http_app import (
+    MAX_MCP_BODY,
+    MAX_OPEN_BODY,
+    OpenEndpointLimits,
+    build_app,
+    transport_security,
+)
 from traintracker.oauth import TraintrackerOAuthProvider
 from traintracker.server import main
 
 BASE = "https://tt.test"
 CALLBACK = "https://claude.ai/api/mcp/auth_callback"
 PASSPHRASE = "correct horse battery staple"
+REGISTRATION = {
+    "client_name": "Claude",
+    "redirect_uris": [CALLBACK],
+    "token_endpoint_auth_method": "none",
+    "grant_types": ["authorization_code", "refresh_token"],
+    "response_types": ["code"],
+}
 
 
 @pytest.fixture
@@ -58,16 +71,7 @@ def _provider(settings: Settings) -> TraintrackerOAuthProvider:
 
 
 async def _register(client: httpx.AsyncClient) -> str:
-    r = await client.post(
-        "/register",
-        json={
-            "client_name": "Claude",
-            "redirect_uris": [CALLBACK],
-            "token_endpoint_auth_method": "none",
-            "grant_types": ["authorization_code", "refresh_token"],
-            "response_types": ["code"],
-        },
-    )
+    r = await client.post("/register", json=REGISTRATION)
     assert r.status_code == 201, r.text
     return str(r.json()["client_id"])
 
@@ -117,6 +121,106 @@ async def test_an_oversized_mcp_request_is_refused(client: httpx.AsyncClient) ->
         json={"jsonrpc": "2.0", "id": 1, "method": "ping", "params": {"pad": "x" * MAX_MCP_BODY}},
     )
     assert r.status_code == 413
+
+
+async def test_a_registration_must_be_small(client: httpx.AsyncClient, settings: Settings) -> None:
+    # Anyone can register, so a registration can't be used to store much.
+    wordy = await client.post("/register", json={**REGISTRATION, "client_name": "C" * 5000})
+    assert wordy.status_code == 400 and "too large" in wordy.json()["error_description"]
+    huge = await client.post("/register", json={**REGISTRATION, "client_name": "C" * MAX_OPEN_BODY})
+    assert huge.status_code == 413
+    with psycopg.connect(settings.database_url or "") as con:
+        assert con.execute(f"SELECT count(*) FROM {settings.auth_schema}.clients").fetchone() == (
+            0,
+        )
+
+
+async def test_registration_stops_at_the_client_limit(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(oauth, "MAX_CLIENTS", 2)
+    await _register(client)
+    await _register(client)
+    full = await client.post("/register", json=REGISTRATION)
+    assert full.status_code == 400 and "Try again later" in full.json()["error_description"]
+
+
+async def test_clients_nobody_uses_are_deleted(
+    client: httpx.AsyncClient, settings: Settings
+) -> None:
+    provider = _provider(settings)
+    abandoned, pending, in_use = [await _register(client) for _ in range(3)]
+    await _start_sign_in(client, pending)
+    sign_in, verifier = await _start_sign_in(client, in_use)
+    ok = await client.post("/sign-in", data={"request": sign_in, "passphrase": PASSPHRASE})
+    code = parse_qs(urlparse(ok.headers["location"]).query)["code"][0]
+    tokens = await _token(
+        client,
+        grant_type="authorization_code",
+        code=code,
+        redirect_uri=CALLBACK,
+        client_id=in_use,
+        code_verifier=verifier,
+    )
+    assert tokens.status_code == 200
+    with psycopg.connect(settings.database_url or "", autocommit=True) as con:
+        con.execute(
+            f"UPDATE {settings.auth_schema}.clients SET created_at = now() - interval '8 days'"
+        )
+    await _register(client)  # the next registration clears them out
+    assert await provider.get_client(abandoned) is None
+    assert await provider.get_client(pending) is not None
+    assert await provider.get_client(in_use) is not None
+
+
+async def test_an_oversized_authorization_request_is_refused(client: httpx.AsyncClient) -> None:
+    client_id = await _register(client)
+    r = await client.get(
+        "/authorize",
+        params={
+            "response_type": "code",
+            "client_id": client_id,
+            "redirect_uri": CALLBACK,
+            "code_challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+            "state": "s" * 9000,
+        },
+    )
+    assert r.status_code == 302 and "error=invalid_request" in r.headers["location"]
+
+
+async def test_each_address_may_register_at_a_limited_rate(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(http_app, "REGISTER_LIMIT", (2, 1.0))
+    monkeypatch.setenv("CLIENT_IP_HEADER", "CF-Connecting-IP")
+    transport = httpx.ASGITransport(app=build_app(server.mcp, Settings.from_env()))
+    async with httpx.AsyncClient(transport=transport, base_url=BASE) as c:
+
+        async def register(address: str) -> httpx.Response:
+            return await c.post(
+                "/register", json=REGISTRATION, headers={"CF-Connecting-IP": address}
+            )
+
+        assert [(await register("203.0.113.7")).status_code for _ in range(3)] == [201, 201, 429]
+        refused = await register("203.0.113.7")
+        assert int(refused.headers["retry-after"]) > 0
+        # Another address has its own count, and other endpoints are not held up.
+        assert (await register("203.0.113.8")).status_code == 201
+        assert (await c.get("/healthz")).status_code == 200
+
+
+def test_the_caller_is_the_connection_unless_a_proxy_header_is_trusted() -> None:
+    scope = {
+        "type": "http",
+        "client": ("10.0.0.1", 4000),
+        "headers": [(b"cf-connecting-ip", b"203.0.113.7")],
+    }
+
+    async def app(*_: object) -> None: ...
+
+    assert OpenEndpointLimits(app, {}).address(scope) == "10.0.0.1"
+    assert OpenEndpointLimits(app, {}, "CF-Connecting-IP").address(scope) == "203.0.113.7"
+    assert OpenEndpointLimits(app, {}, "X-Real-IP").address(scope) == "10.0.0.1"
 
 
 @pytest.mark.usefixtures("settings")

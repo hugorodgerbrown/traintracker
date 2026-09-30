@@ -268,12 +268,6 @@ blockquote p {
   content: " ›";
 }
 
-.chat .link {
-  color: var(--accent);
-  text-decoration: underline;
-  text-underline-offset: 0.15em;
-}
-
 .chat table {
   font-size: 0.9375rem;
 }

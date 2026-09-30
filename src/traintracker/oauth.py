@@ -727,6 +727,7 @@ _HEAD = f"""<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Sign in · Traintrackr</title>
+<link rel="icon" href="{html.escape(site.asset_url(site.ICON))}" type="image/svg+xml">
 <link rel="stylesheet" href="{html.escape(site.asset_url(site.STYLESHEET))}">
 </head><body><main class="sign-in">
 """
@@ -737,7 +738,7 @@ _HEADERS = {
     "X-Frame-Options": "DENY",
     # No form-action: browsers apply it to the redirect after the form is posted,
     # and that redirect goes to the client's callback (claude.ai), not 'self'.
-    "Content-Security-Policy": "default-src 'none'; style-src 'self'",
+    "Content-Security-Policy": "default-src 'none'; style-src 'self'; img-src 'self'",
     "Referrer-Policy": "same-origin",
 }
 

@@ -129,6 +129,25 @@ async def test_the_landing_page_has_the_address_and_the_examples(
     assert "Developer mode" in text and "isn't in the ChatGPT directory yet" in text
 
 
+async def test_the_landing_page_shows_an_example_board(client: httpx.AsyncClient) -> None:
+    text = await _page(client, "/")
+    # Under the lede, above the examples.
+    assert text.index('class="lede"') < text.index('class="departures"') < text.index("<h2")
+    board = text.split('<figure class="departures">', 1)[1].split("</figure>", 1)[0]
+    # The trains are a table in the page: site.js draws the flaps from it, so
+    # the page needs no inline script or style, and reads without JavaScript.
+    assert "<script" not in board and "style=" not in board
+    # The same seven trains as the link-preview card, and the same credit.
+    assert board.count("<tr>") == 8 and "seven trains" in site.SHARE_IMAGE_ALT
+    for cell in ("London Liverpool Street", "Colchester Town", "Cancelled", "Norwich"):
+        assert cell in board
+    assert "Powered by National Rail Enquiries" in board
+    # The times are made up, and the caption says so.
+    assert "An example." in board.split("<figcaption>", 1)[1]
+    js = (await client.get(site.SCRIPT)).text
+    assert ".departures" in js and "prefers-reduced-motion" in js
+
+
 async def test_the_docs_cover_every_tool_and_the_limits(client: httpx.AsyncClient) -> None:
     text = await _page(client, "/docs")
     async with Client(server.mcp) as mcp:

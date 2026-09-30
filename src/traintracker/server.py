@@ -27,7 +27,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from traintracker import demo, http_app, oauth, planner, site, stations, ui
+from traintracker import demo, http_app, oauth, planner, site, stations, trainline, ui
 from traintracker.config import UK_TZ, Settings, load_dotenv
 from traintracker.darwin import DarwinClient
 from traintracker.errors import AllowanceSpent, TrainTrackerError, UpstreamError
@@ -75,6 +75,8 @@ GB (National Rail) train times.
 - Getting from A to B, including changes: plan_journey. It uses the timetable and adds
   live times for today's trains where available.
 - More about one train (all stops, delays): service_details with a service_id from any tool.
+- A timetabled train's trainline_url is its page on Trainline (stops, live running); give it
+  as a link when the person wants to follow that train.
 - If something isn't configured, data_status explains what's missing.
 - Questions about privacy, or what is kept about the person: privacy_policy.
 Times are UK local.
@@ -377,12 +379,38 @@ def _trip_board_service(
         ]
         if points
         else None,
+        # The page is titled "Departures from ...": the station on a departure
+        # board, the train's origin on an arrival board.
+        trainline_url=_trainline(
+            trip.uid,
+            trip.run_date,
+            stop.crs if board == "departures" else trip.stops[0].crs,
+            *(s.crs for s in trip.stops),
+        ),
     )
 
 
 def _ref(crs: str) -> StationRef:
     s = stations.by_crs(crs)
     return StationRef(name=s.name if s else crs, crs=crs)
+
+
+def _trainline(uid: str, run_date: date, *crs_codes: str) -> str | None:
+    """Trainline's page for a timetabled train, titled for the first of these
+    stations it has a board for. None in demo mode, whose trains are made up."""
+    settings = app().settings
+    if settings.demo:
+        return None
+    return trainline.train_url(settings.trainline_live_url, uid, run_date, crs_codes)
+
+
+def _link_legs(journeys: list[Journey]) -> None:
+    """Title each train's page for where the leg is boarded, else where it ends,
+    else the first of the train's other stops Trainline has a board for."""
+    for leg in (leg for j in journeys for leg in j.legs if leg.service_id):
+        _, uid, run = leg.service_id.split(":")
+        ends = [c for c in (leg.board_at.crs, leg.alight_at.crs) if c]
+        leg.trainline_url = _trainline(uid, date.fromisoformat(run), *ends, *leg._calls)
 
 
 def _timetable_board(
@@ -871,6 +899,7 @@ async def service_details(
                 )
                 for s in trip.stops
             ],
+            trainline_url=_trainline(uid, run_date, *(s.crs for s in trip.stops)),
         )
     raise ToolError("service_id must start with darwin: or tt:.")
 
@@ -924,6 +953,7 @@ async def plan_journey(
         )
 
     journeys = await a.off_loop(plan)
+    _link_legs(journeys)
     notes = ["Times are booked (timetable) times unless a leg shows expected times."]
     if a.settings.demo:
         notes.insert(0, demo.DEMO_NOTE)

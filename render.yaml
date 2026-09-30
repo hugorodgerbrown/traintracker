@@ -25,6 +25,15 @@ services:
       # clients that can't.
       - key: MCP_OAUTH_PASSPHRASE
         sync: false
+      # Email sign-in, for everyone else: a Resend API key, the sender of the
+      # code (on a domain verified with Resend), and the key that turns an
+      # address into an account ID. All three, or none to leave it off.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: MCP_ACCOUNT_SECRET
+        sync: false
       # This deployment's custom domain, accepted alongside the service's own
       # onrender.com name; other Host headers are rejected (421). Change or remove
       # it when deploying your own copy.

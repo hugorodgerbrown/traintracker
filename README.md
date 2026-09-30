@@ -275,13 +275,13 @@ Logs go to stderr; stdout carries the MCP protocol.
 
 | Service | Type | Does | Environment |
 |---|---|---|---|
-| `traintracker` | Web service, 512 MB, [traintrackr.live](https://traintrackr.live) | `serve-http`; health check `/healthz` | `DATABASE_URL`, `DARWIN_API_KEY`, `MCP_OAUTH_PASSPHRASE`, `MCP_PUBLIC_HOSTS`, `TIMETABLE_AUTO_REFRESH=0` |
+| `traintracker` | Web service, 512 MB, [traintrackr.live](https://traintrackr.live) | `serve-http`; health check `/healthz` | `DATABASE_URL`, `DARWIN_API_KEY`, `MCP_OAUTH_PASSPHRASE`, `RESEND_API_KEY`, `MAIL_FROM`, `MCP_ACCOUNT_SECRET`, `MCP_PUBLIC_HOSTS`, `CLIENT_IP_HEADER`, `TIMETABLE_AUTO_REFRESH=0` |
 | `traintracker-refresh` | Cron job, 06:30 UTC daily | `traintracker refresh` | `DATABASE_URL`, `NR_USERNAME`, `NR_PASSWORD` |
 
 The web service holds one day's journey network in memory for `plan_journey` (about 200 MB), so it needs at least 512 MB.
 
 1. Create the `traintracker` database and role on your Postgres instance (see [Postgres](#3-postgres)).
-2. In the Render dashboard: **New → Blueprint**, pick this repository, and enter the values Render prompts for. Use the Postgres instance's *internal* URL, with the `traintracker` role and its password in place of the instance's own user, and `/traintracker` as the database name.
+2. In the Render dashboard: **New → Blueprint**, pick this repository, and enter the values Render prompts for. The three email sign-in values go together: give all of them, or leave all three empty and sign in with the passphrase. Use the Postgres instance's *internal* URL, with the `traintracker` role and its password in place of the instance's own user, and `/traintracker` as the database name.
 3. Run the cron job once by hand (**Trigger Run**) to load the first timetable.
 4. Add the server as a claude.ai connector (below). Use your own service's host: its `onrender.com` name, or a custom domain you have added to the service and listed in `MCP_PUBLIC_HOSTS` (the `render.yaml` value is this repository's deployment, `traintrackr.live`).
 

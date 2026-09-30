@@ -6,7 +6,7 @@ claude.ai and ChatGPT add the server as a connector. The OAuth metadata,
 registration, authorize, token and revoke endpoints come from the MCP SDK.
 Tool calls are rate limited per account (see ratelimit.py).
 /healthz is open for the platform's health check, and so are the public pages
-(see site/): /, /docs and /privacy.
+(see site/): /, /docs, /privacy and /terms.
 """
 
 from __future__ import annotations
@@ -81,12 +81,12 @@ def site_fields(settings: Settings) -> dict[str, str]:
     """This server's own values for the public pages."""
     if settings.rate_limit_per_minute > 0:
         fair_use = (
-            f"each account can make {max(1, settings.rate_limit_burst)} requests at once and "
+            f"Each account can make {max(1, settings.rate_limit_burst)} requests at once and "
             f"{settings.rate_limit_per_minute} a minute. Over that, the assistant is told how "
             "long to wait."
         )
     else:
-        fair_use = "there is no set limit on requests; please don't automate them."
+        fair_use = "There is no set limit on requests; please don't automate them."
     return {"mcp_url": f"{settings.public_url}/mcp", "fair_use": fair_use}
 
 

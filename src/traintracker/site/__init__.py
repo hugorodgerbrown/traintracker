@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import hashlib
 import html
+import itertools
 from collections.abc import Awaitable, Callable
+from html.parser import HTMLParser
 from importlib import resources
 
 from starlette.requests import Request
@@ -121,9 +123,80 @@ def render(path: str, fields: dict[str, str]) -> str:
     return page
 
 
-def _fixed(
-    body: str | bytes, media_type: str, max_age: int
-) -> Callable[[Request], Awaitable[Response]]:
+class _TextPage(HTMLParser):
+    """A page fragment as Markdown-style text, for reading outside a browser.
+
+    Comments (the TODOs) are dropped. A table row becomes one bullet: its first
+    cell in bold, then each other cell after its column heading.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.blocks: list[str] = []
+        self.text = ""
+        self.href = ""
+        self.headings: list[str] = []
+        self.cells: list[str] = []
+        self.in_head = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "a":
+            self.href = dict(attrs).get("href") or ""
+        elif tag == "strong":
+            self.text += "**"
+        elif tag == "thead":
+            self.in_head = True
+
+    def handle_endtag(self, tag: str) -> None:
+        text = " ".join(self.text.split())
+        if tag == "a":
+            address = self.href.removeprefix("mailto:")
+            if address and address not in self.text:
+                self.text += f" ({address})"
+        elif tag == "strong":
+            self.text += "**"
+        elif tag in ("h1", "h2"):
+            self._block(f"{'#' * int(tag[1])} {text}")
+        elif tag == "p":
+            self._block(text)
+        elif tag == "li":
+            self._block(f"- {text}")
+        elif tag in ("th", "td"):
+            (self.headings if self.in_head else self.cells).append(text)
+            self.text = ""
+        elif tag == "thead":
+            self.in_head = False
+        elif tag == "tr" and self.cells:
+            first, *rest = self.cells
+            pairs = zip(self.headings[1:], rest, strict=False)
+            self._block(f"- **{first}**. " + " ".join(f"{h}: {_stop(c)}" for h, c in pairs))
+            self.cells = []
+
+    def handle_data(self, data: str) -> None:
+        self.text += data
+
+    def _block(self, text: str) -> None:
+        self.blocks.append(text)
+        self.text = ""
+
+
+def page_text(path: str) -> str:
+    """A page's own content, without the layout, as plain Markdown-style text."""
+    parser = _TextPage()
+    parser.feed(_read(PAGES[path][0]))
+    parser.close()
+    text = parser.blocks[0]
+    for before, block in itertools.pairwise(parser.blocks):
+        # Items of one list sit on consecutive lines; everything else is a paragraph.
+        text += ("\n" if before.startswith("- ") and block.startswith("- ") else "\n\n") + block
+    return text
+
+
+def _stop(text: str) -> str:
+    return text if text.endswith((".", "?", "!")) else text + "."
+
+
+def _fixed(body: str, media_type: str, max_age: int) -> Callable[[Request], Awaitable[Response]]:
     """An endpoint that always answers with `body`; it is rendered once, at start-up."""
     headers = {**HEADERS, "Cache-Control": f"public, max-age={max_age}"}
 

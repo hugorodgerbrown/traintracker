@@ -405,10 +405,12 @@ def _trainline(uid: str, run_date: date, *crs_codes: str) -> str | None:
 
 
 def _link_legs(journeys: list[Journey]) -> None:
+    """Title each train's page for where the leg is boarded, else where it ends,
+    else the first of the train's other stops Trainline has a board for."""
     for leg in (leg for j in journeys for leg in j.legs if leg.service_id):
         _, uid, run = leg.service_id.split(":")
-        ends = (c for c in (leg.board_at.crs, leg.alight_at.crs) if c)
-        leg.trainline_url = _trainline(uid, date.fromisoformat(run), *ends)
+        ends = [c for c in (leg.board_at.crs, leg.alight_at.crs) if c]
+        leg.trainline_url = _trainline(uid, date.fromisoformat(run), *ends, *leg._calls)
 
 
 def _timetable_board(

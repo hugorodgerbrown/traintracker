@@ -384,6 +384,29 @@ async def test_plan_journey(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
             )
 
 
+async def test_a_leg_whose_ends_have_no_trainline_board_links_via_another_stop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    args = {"origin": "LST", "destination": "SUY", "date": "2026-10-02", "time": "12:05"}
+    async with connect(tmp_path, monkeypatch) as client:
+        legs = (await call(client, "plan_journey", **args))["journeys"][0]["legs"]
+        rides = [leg for leg in legs if leg["service_id"]]
+        ends = {leg[k]["crs"] for leg in rides for k in ("board_at", "alight_at")}
+        # As if Trainline had no board at either end of any ride.
+        no_board = {**trainline._exceptions(), **dict.fromkeys(ends)}
+        monkeypatch.setattr(trainline, "_exceptions", lambda: no_board)
+        out = await call(client, "plan_journey", **args)
+        for leg in (leg for leg in out["journeys"][0]["legs"] if leg["service_id"]):
+            detail = await call(client, "service_details", service_id=leg["service_id"])
+            _, uid, run = leg["service_id"].split(":")
+            calls = [c["station"]["crs"] for c in detail["calling_points"]]
+            others = [c for c in calls if c not in ends]
+            assert others, "the test needs a ride that calls somewhere other than its ends"
+            assert leg["trainline_url"] == trainline.train_url(
+                TRAINLINE_LIVE_URL, uid, date.fromisoformat(run), others
+            )
+
+
 async def test_privacy_policy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MCP_PUBLIC_URL", "https://tt.test")
     async with connect(tmp_path, monkeypatch) as client:

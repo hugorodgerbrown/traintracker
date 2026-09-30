@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 Source = Literal["darwin", "timetable"]
 PlatformSource = Literal["live", "booked"]
@@ -103,6 +103,9 @@ class JourneyLeg(BaseModel):
     platform: str | None = None
     cancelled: bool = False
     trainline_url: str | None = Field(None, description=TRAINLINE_URL)
+    # Every stop of the train, for its Trainline link when neither end of the
+    # leg has a board there. Not part of the output.
+    _calls: tuple[str, ...] = PrivateAttr(default=())
 
 
 class Journey(BaseModel):

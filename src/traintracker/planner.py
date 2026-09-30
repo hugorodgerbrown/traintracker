@@ -278,19 +278,19 @@ def to_journey(day: date, raw: list[RawLeg], t0: int) -> Journey:
         trip = leg.trip
         assert trip is not None
         board = trip.stops[leg.board_i]
-        legs.append(
-            JourneyLeg(
-                service_id=trip.service_id,
-                operator=trip.operator,
-                mode=trip.mode,
-                board_at=_ref(leg.frm),
-                alight_at=_ref(leg.to),
-                destination=_ref(trip.stops[-1].crs).name,
-                depart_scheduled=_iso(day, leg.dep),
-                arrive_scheduled=_iso(day, leg.arr),
-                platform=board.platform,
-            )
+        ride = JourneyLeg(
+            service_id=trip.service_id,
+            operator=trip.operator,
+            mode=trip.mode,
+            board_at=_ref(leg.frm),
+            alight_at=_ref(leg.to),
+            destination=_ref(trip.stops[-1].crs).name,
+            depart_scheduled=_iso(day, leg.dep),
+            arrive_scheduled=_iso(day, leg.arr),
+            platform=board.platform,
         )
+        ride._calls = tuple(s.crs for s in trip.stops)
+        legs.append(ride)
     # Leading walk: leave just in time for the first ride (walk/Tube times
     # already include getting in and out of stations), but never before t0.
     if len(raw) > 1 and raw[0].kind == "walk":

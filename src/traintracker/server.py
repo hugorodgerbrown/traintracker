@@ -26,7 +26,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from traintracker import demo, http_app, planner, stations
+from traintracker import demo, http_app, planner, site, stations
 from traintracker.config import UK_TZ, Settings, load_dotenv
 from traintracker.darwin import DarwinClient
 from traintracker.errors import TrainTrackerError, UpstreamError
@@ -69,6 +69,7 @@ GB (National Rail) train times.
   live times for today's trains where available.
 - More about one train (all stops, delays): service_details with a service_id from any tool.
 - If something isn't configured, data_status explains what's missing.
+- Questions about privacy, or what is kept about the person: privacy_policy.
 Times are UK local.
 Sources, to credit when you say where the information comes from: live times are
 "Powered by National Rail Enquiries"; timetable times are from Network Rail data feeds
@@ -935,6 +936,20 @@ async def data_status() -> dict[str, Any]:
             "min_interchange_minutes": s.min_interchange_minutes,
         }
     return status
+
+
+@mcp.tool(title="Privacy policy", annotations=LOCAL)
+async def privacy_policy() -> dict[str, Any]:
+    """This service's privacy policy: what it processes about the person using it (such
+    as their email address at sign-in), why, how long it is kept, who processes it, and
+    how to ask for a copy or deletion. Use it to answer questions about privacy or data
+    held. Takes no arguments."""
+    # The text comes from the /privacy page itself, so the two can't disagree.
+    policy: dict[str, Any] = {"policy": site.page_text("/privacy")}
+    url = app().settings.public_url
+    if not url.startswith("http://localhost"):  # a stdio server has no public page
+        policy["url"] = f"{url}/privacy"
+    return policy
 
 
 async def _usage_status(usage: DarwinUsage) -> dict[str, Any]:

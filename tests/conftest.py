@@ -8,6 +8,7 @@ import psycopg
 import pytest
 
 from traintracker.config import TimetableDB
+from traintracker.oauth import TraintrackerOAuthProvider
 from traintracker.timetable import Timetable
 
 # Tests need a Postgres they can create schemas in. CI provides one as a service;
@@ -29,6 +30,7 @@ def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setenv("USAGE_SCHEMA", f"{base}_usage")
     yield
     Timetable.clear_caches()
+    TraintrackerOAuthProvider.close_all()
     with psycopg.connect(TEST_DATABASE_URL, autocommit=True) as con:
         schemas = con.execute(
             "SELECT nspname FROM pg_namespace WHERE nspname LIKE %s", (f"{base}%",)

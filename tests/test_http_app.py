@@ -580,6 +580,25 @@ async def test_unknown_sign_in_link(client: httpx.AsyncClient) -> None:
     assert r.headers["x-frame-options"] == "DENY"
 
 
+async def test_token_checks_share_connections_and_skip_what_is_not_a_token(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider = _provider(settings)
+    for _ in range(5):
+        assert await provider.load_access_token(secrets.token_urlsafe(32)) is None
+    # The checks shared connections, where each used to open its own. (The
+    # pool may open a second while the first check waits for the first.)
+    stats = provider._pool.get_stats()
+    assert stats["requests_num"] == 5 and stats["connections_num"] <= 2
+
+    async def no_database(*_: object, **__: object) -> list[tuple[object, ...]]:
+        raise AssertionError("the database was asked")
+
+    monkeypatch.setattr(provider, "_db", no_database)
+    for junk in ("", "x", "Bearer", "a" * 42, "a" * 44, "a" * 42 + "!", "a" * 5000):
+        assert await provider.load_access_token(junk) is None
+
+
 async def test_static_token_still_works(settings: Settings) -> None:
     provider = _provider(settings)
     token = await provider.load_access_token("static-token")

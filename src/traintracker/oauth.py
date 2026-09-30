@@ -30,7 +30,8 @@ import logging
 import re
 import secrets
 import time
-from typing import Any
+import weakref
+from typing import Any, ClassVar
 from urllib.parse import urlparse
 
 import psycopg
@@ -46,6 +47,7 @@ from mcp.server.auth.provider import (
     construct_redirect_uri,
 )
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+from psycopg_pool import ConnectionPool
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Route
@@ -85,6 +87,9 @@ LOOPBACK = frozenset({"localhost", "127.0.0.1", "::1"})
 OFFLINE_ACCESS = "offline_access"  # the scope that asks for a refresh token
 PASSPHRASE_SUBJECT = "passphrase"  # the account everyone using the passphrase shares
 BLOCKED = "This address can't sign in to this server."
+POOL_SIZE = 4  # database connections kept for sign-in and token checks
+# What this server issues as a token: secrets.token_urlsafe(32).
+_TOKEN = re.compile(r"[A-Za-z0-9_-]{43}")
 _EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 
 DDL = """
@@ -154,6 +159,8 @@ class TraintrackerOAuthProvider(
     Subclassing the protocol inherits its default for the enterprise
     identity-assertion grant, which rejects it; this server doesn't offer it."""
 
+    _pools: ClassVar[weakref.WeakSet[ConnectionPool]] = weakref.WeakSet()
+
     def __init__(
         self,
         dsn: str,
@@ -183,6 +190,20 @@ class TraintrackerOAuthProvider(
         self._mail_cap_logged = 0.0
         self.redirect_hosts = redirect_hosts
         self._passphrase_failures: collections.deque[float] = collections.deque()
+        # Every request to /mcp checks its token here, so connections are kept
+        # and reused: opening one per check cost more than the check. The pool
+        # opens on first use, and tests a connection before lending it, so a
+        # database restart costs a reconnect and not a failed request.
+        self._pool = ConnectionPool(
+            dsn,
+            min_size=1,
+            max_size=POOL_SIZE,
+            max_idle=600,
+            timeout=10,
+            kwargs={"connect_timeout": 10},
+            check=ConnectionPool.check_connection,
+            open=False,
+        )
 
     # -- storage -------------------------------------------------------------
 
@@ -193,7 +214,10 @@ class TraintrackerOAuthProvider(
         transaction rolls back and _Missing is raised (e.g. a code already spent).
         """
         rows: list[tuple[Any, ...]] = []
-        with psycopg.connect(self.dsn, connect_timeout=10) as con, con.transaction():
+        if self._pool.closed:
+            self._pool.open()
+            self._pools.add(self._pool)
+        with self._pool.connection() as con:
             for query, params, *required in statements:
                 cur = con.execute(query, params)
                 rows = cur.fetchall() if cur.description else []
@@ -203,6 +227,13 @@ class TraintrackerOAuthProvider(
 
     async def _db(self, *statements: Statement, fetch: bool = False) -> list[tuple[Any, ...]]:
         return await asyncio.to_thread(self._run, *statements, fetch=fetch)
+
+    @classmethod
+    def close_all(cls) -> None:
+        """Close every provider's connections (tests build many providers)."""
+        for pool in list(cls._pools):
+            pool.close()
+        cls._pools.clear()
 
     def create_tables(self) -> None:
         with psycopg.connect(self.dsn, autocommit=True, connect_timeout=10) as con:
@@ -413,6 +444,8 @@ class TraintrackerOAuthProvider(
         await self._db((f"DELETE FROM {self.schema}.tokens WHERE expires_at < %s", (time.time(),)))
 
     async def _load(self, token: str, kind: str) -> tuple[dict[str, Any], str] | None:
+        if not _TOKEN.fullmatch(token):
+            return None  # not one of ours: no need to ask the database
         # A blocked account's tokens stop working at once, not when they expire.
         rows = await self._db(
             (

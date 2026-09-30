@@ -45,7 +45,7 @@ flowchart LR
 | `timetable` | Booked departures/arrivals at a station on any date | Local timetable |
 | `service_details` | Every stop for one train | Whichever source issued the ID |
 | `plan_journey` | A to B with changes (up to `max_changes`, default 4), incl. cross-London links | Local timetable + Darwin live overlay |
-| `data_status` | What's configured, timetable freshness, Darwin allowance used, what's missing | — |
+| `data_status` | What's configured, timetable freshness, what's missing; on a server you run yourself, Darwin allowance used | — |
 | `privacy_policy` | "What do you keep about me?" The privacy policy as text, with the page's address | The `/privacy` page |
 
 Every tool accepts station names or CRS codes. Ambiguous names ("Sudbury", "Harrow") return the candidates so Claude can ask which one you meant.
@@ -111,6 +111,8 @@ CREATE DATABASE traintracker OWNER traintracker;
 REVOKE CONNECT ON DATABASE traintracker FROM PUBLIC;
 ```
 
+Put that role in `DATABASE_URL`, not the server's own user. The server's user owns every database on it, so a fault in traintracker would reach the other applications' data; the `traintracker` role reaches its own database only.
+
 The full GB timetable takes about 475 MB (4.3 million stops), and about twice that while a refresh builds the new copy. A refresh takes about 40 seconds plus the download. It builds the new timetable in a staging schema and swaps it in with a rename, so readers never see a half-built timetable, and an advisory lock stops two refreshes running at once.
 
 The tables are `UNLOGGED`: they are rebuilt from the feed every day, so they skip the write-ahead log and don't add to the server's WAL or point-in-time-recovery storage. The cost is that Postgres empties them after a crash; the tools then report "No timetable yet" until the next refresh.
@@ -149,7 +151,7 @@ flowchart TD
 
 ### Darwin allowance
 
-Free Darwin access covers 5 million requests per four-week railway period, and one server key serves every user. The server counts the requests it sends to Darwin and reports the total in `data_status` and `traintracker status`:
+Free Darwin access covers 5 million requests per four-week railway period, and one server key serves every user. The server counts the requests it sends to Darwin and reports the total in `traintracker status`, and in `data_status` on a server you run over stdio (a hosted server doesn't tell everyone who signs in how much is left):
 
 ```
 Darwin usage: 412,906 requests in the last 28 days, 8.26% of 5,000,000
@@ -158,6 +160,7 @@ Darwin usage: 412,906 requests in the last 28 days, 8.26% of 5,000,000
 - **What is counted:** each request sent to Darwin, failed ones included. A board answered from the 20-second cache sends nothing and counts nothing. Demo mode counts nothing.
 - **The period:** a rolling 28 days. Railway periods are not simple to derive (the first and last of the year vary in length), and a rolling window is never less strict than the period it overlaps.
 - **Per product:** the count is kept for each Rail Data Marketplace product (`departures`, `arrivals`, `service`) and the percentage uses the total. If your allowance is per product, the percentage overstates your usage.
+- **Daily limit:** the server sends Darwin at most `DARWIN_DAILY_LIMIT` requests in one UK day (170,000 by default; the allowance works out at about 178,000 a day). Past that the live tools answer with booked times, and say why, until midnight. The count for the day is resumed after a restart. `0` turns the limit off.
 - **Warnings:** the log gets a warning when usage passes 70% of the allowance and another at 90%. Each is given once, and again only if usage falls below the mark and returns, or the server restarts above it.
 - **Storage:** one small table, `darwin_requests`, in its own schema (`USAGE_SCHEMA`), so the count survives restarts and timetable refreshes. Counts gather in memory and are written when 50 are waiting or a minute has passed, and at shutdown; a server that is killed loses at most that many. A failed write is logged and retried, and never fails a tool call. Rows older than 60 days are deleted.
 
@@ -169,6 +172,8 @@ The SCHEDULE feed is large (all trains, freight included). On import, traintrack
 - Stops with a public time only; junctions and passing points are dropped.
 - Schedules that ended more than two days ago are dropped.
 
+The timetable therefore covers two days before it was built up to the last date any schedule runs, and a tool asked about a date outside that says so.
+
 For each date it applies Network Rail's precedence rules per train: cancellation (C) beats new (N), which beats overlay (O), which beats permanent (P), and it honours each schedule's running days and date range. Bank-holiday running flags are not applied yet, so on bank holidays check the live board.
 
 ### Journey planning
@@ -179,6 +184,7 @@ For each date it applies Network Rail's precedence rules per train: cancellation
 - **Cross-London:** the Tube isn't in the rail timetable, so transfers between London terminals (Kings Cross, Liverpool Street, Waterloo, etc.) are approximated: walks under 0.8 km at walking pace plus 5 minutes, otherwise Tube at ~12 minutes plus 3.5 minutes per km. They're labelled `tube (approx.)`.
 - **Live overlay:** for today's legs departing within two hours, Darwin's expected times and platforms are added, and `connection_at_risk` is set if a delay or cancellation eats into a change, including one made via a walk/Tube link. If Darwin is down, the plan is still returned without live times.
 - The search covers the service day (trains running into the early hours are included); it doesn't carry over to the next morning. Station boards do include trains just after midnight.
+- **Load:** a plan scans the day's trains several times, and the network for a date takes seconds to build and over a hundred megabytes to hold. Two dates are kept in memory. Timetable reads and plans run in threads, two at a time; a call that waits more than 10 seconds for its turn is told the server is busy.
 
 ## Install
 
@@ -232,6 +238,7 @@ All configuration is by environment variable, read from `.env` in the project fo
 | `DATABASE_URL` | — | Postgres database for the timetable (required) |
 | `TIMETABLE_SCHEMA` | `timetable` | Schema the timetable lives in (demo mode appends `_demo`) |
 | `USAGE_SCHEMA` | `traintracker_usage` | Schema for the count of requests sent to Darwin (see [Darwin allowance](#darwin-allowance)) |
+| `DARWIN_DAILY_LIMIT` | `170000` | Most requests sent to Darwin in one UK day; past it the live tools answer with booked times. `0` turns the limit off |
 | `TIMETABLE_AUTO_REFRESH` | `1` | `0` stops the server downloading the timetable itself (use a cron job instead) |
 | `TIMETABLE_MAX_AGE_HOURS` | `26` | Re-download when older than this |
 | `TRAINTRACKER_DATA_DIR` | `$XDG_DATA_HOME/traintracker` if set, else `~/.traintracker` | Where the feed is downloaded to before import |
@@ -241,9 +248,11 @@ All configuration is by environment variable, read from `.env` in the project fo
 | `MAIL_FROM` | — | Sender of the sign-in code, e.g. `Traintrackr <login@mail.traintrackr.live>`; the domain (here the subdomain `mail.traintrackr.live`) must be verified with Resend |
 | `MCP_ACCOUNT_SECRET` | — | Key that turns an email address into an account ID. Long and random; changing it gives every address a new account |
 | `MAIL_BACKEND` | `resend` | `console` writes the sign-in code to the log instead of sending it. For local development only |
-| `MAIL_MAX_PER_HOUR` | `200` | Most sign-in codes sent in an hour, over all addresses |
+| `MAIL_MAX_PER_HOUR` | `100` | Most sign-in codes sent in an hour, over all addresses |
 | `RATE_LIMIT_PER_MINUTE` | `30` | Tool calls per account per minute over HTTP; `0` turns the limit off |
 | `RATE_LIMIT_BURST` | `10` | Tool calls an account can make at once before the per-minute rate applies |
+| `MCP_REDIRECT_HOSTS` | `claude.ai,claude.com,chatgpt.com,platform.openai.com` | Hosts a client may return the browser to after sign-in, over https. Loopback addresses are always allowed. `*` allows any address |
+| `CLIENT_IP_HEADER` | — | Header the hosting platform's proxy puts the caller's address in (`CF-Connecting-IP` on Render), used for the limits before sign-in. Leave unset where clients can reach the server without passing that proxy: the connection's own address is used |
 | `MCP_PUBLIC_URL` | `https://` + first public host | Base URL clients use; the OAuth issuer and resource (`<url>/mcp`) derive from it |
 | `MCP_AUTH_SCHEMA` | `mcp_auth` | Schema for OAuth clients, codes, tokens and accounts (tokens stored as SHA-256 hashes, accounts as keyed hashes of the address) |
 | `HOST` / `PORT` | `0.0.0.0` / `8000` | Where `serve-http` listens (bind address) |
@@ -273,15 +282,15 @@ Logs go to stderr; stdout carries the MCP protocol.
 
 | Service | Type | Does | Environment |
 |---|---|---|---|
-| `traintracker` | Web service, 512 MB, [traintrackr.live](https://traintrackr.live) | `serve-http`; health check `/healthz` | `DATABASE_URL`, `DARWIN_API_KEY`, `MCP_OAUTH_PASSPHRASE`, `MCP_PUBLIC_HOSTS`, `TIMETABLE_AUTO_REFRESH=0` |
+| `traintracker` | Web service, 512 MB, [traintrackr.live](https://traintrackr.live) | `serve-http`; health check `/healthz` | `DATABASE_URL`, `DARWIN_API_KEY`, `MCP_OAUTH_PASSPHRASE`, `RESEND_API_KEY`, `MAIL_FROM`, `MCP_ACCOUNT_SECRET`, `MCP_PUBLIC_HOSTS`, `CLIENT_IP_HEADER`, `TIMETABLE_AUTO_REFRESH=0` |
 | `traintracker-refresh` | Cron job, 06:30 UTC daily | `traintracker refresh` | `DATABASE_URL`, `NR_USERNAME`, `NR_PASSWORD` |
 
 The web service holds one day's journey network in memory for `plan_journey` (about 200 MB), so it needs at least 512 MB.
 
 1. Create the `traintracker` database and role on your Postgres instance (see [Postgres](#3-postgres)).
-2. In the Render dashboard: **New → Blueprint**, pick this repository, and enter the values Render prompts for. Use the Postgres instance's *internal* URL, with `/traintracker` as the database name.
+2. In the Render dashboard: **New → Blueprint**, pick this repository, and enter the values Render prompts for. The three email sign-in values go together: give all of them, or leave all three empty and sign in with the passphrase. Use the Postgres instance's *internal* URL, with the `traintracker` role and its password in place of the instance's own user, and `/traintracker` as the database name.
 3. Run the cron job once by hand (**Trigger Run**) to load the first timetable.
-4. Add the server as a claude.ai connector (below). Use your own service's host: its `onrender.com` name, or a custom domain you have added to the service and listed in `MCP_PUBLIC_HOSTS` (the `render.yaml` value is this repository's deployment, `traintrackr.live`).
+4. Add the server as a claude.ai connector (below). Use your own service's host: its `onrender.com` name, or a custom domain you have added to the service and listed in `MCP_PUBLIC_HOSTS` (the `render.yaml` value is this repository's deployment, `traintrackr.live`). `render.yaml` turns the `onrender.com` name off (`renderSubdomainPolicy: disabled`), which Render allows only for a service with a custom domain: remove that line to use the `onrender.com` name.
 
 For a client that can't do OAuth, set `MCP_AUTH_TOKEN` on the service to a long random value; it is accepted as a bearer token alongside OAuth, and never expires. For example, in a terminal (so the token stays out of any transcript), with the token on the clipboard:
 
@@ -296,7 +305,7 @@ The server is its own OAuth authorization server, so it can be added once in cla
 1. In claude.ai: **Settings → Connectors → Add custom connector**, name `traintracker`, URL `https://<your-service-host>/mcp`. Leave the OAuth client fields empty: Claude registers itself.
 2. Claude opens the server's sign-in page. Sign in (see [Sign-in](#sign-in)).
 
-Sign-in hands Claude a one-hour access token and a 90-day refresh token, rotated on each refresh. The authorization server metadata lists the `offline_access` scope and public clients (`none`), which the MCP SDK's own metadata leaves out: ChatGPT may drop a connection when its access token expires unless `offline_access` is listed. Every client may ask for that scope; a refresh token is issued either way. Clients, codes, tokens and accounts are stored in the `mcp_auth` schema, tokens as SHA-256 hashes. To sign every client out, run `TRUNCATE mcp_auth.tokens` against the database. Changing the passphrase doesn't sign anyone out; truncate the tokens as well.
+Sign-in hands Claude a one-hour access token and a 90-day refresh token, rotated on each refresh. A refresh token that turns up again more than a minute after it was replaced means two parties hold it, and that connection is signed out. The authorization server metadata lists the `offline_access` scope and public clients (`none`), which the MCP SDK's own metadata leaves out: ChatGPT may drop a connection when its access token expires unless `offline_access` is listed. Every client may ask for that scope; a refresh token is issued either way. Clients, codes, tokens and accounts are stored in the `mcp_auth` schema, tokens as SHA-256 hashes. The server keeps up to four database connections open for sign-in and token checks. To sign every client out, run `TRUNCATE mcp_auth.tokens` against the database. Changing the passphrase doesn't sign anyone out; truncate the tokens as well.
 
 ### Sign-in
 
@@ -309,13 +318,17 @@ Sign-in hands Claude a one-hour access token and a 90-day refresh token, rotated
 
 With only the passphrase set, the page is the passphrase form and nothing else. With both, the passphrase sits behind a *Have a passphrase?* link.
 
-**Email codes.** The person enters an address and receives a code that lasts 10 minutes and works once, for that sign-in only. Five wrong codes discard the sign-in, as five wrong passphrases do. To limit what the page can be made to send, a sign-in can ask for three codes, an address is sent five an hour, and the server sends `MAIL_MAX_PER_HOUR` an hour in all.
+**Email codes.** The person enters an address and receives a code that lasts 10 minutes and works once, for that sign-in only. Five wrong codes discard the sign-in, as five wrong passphrases do. To limit what the page can be made to send, a sign-in can ask for three codes, an address is sent five an hour, one client address can ask for five at once and ten an hour, and the server sends `MAIL_MAX_PER_HOUR` an hour in all. When that last limit is reached nobody can be sent a code, and the log gets a warning.
 
-**Accounts.** The address is passed to Resend to deliver the code and is not stored. The account is an HMAC-SHA256 of the lower-cased address under `MCP_ACCOUNT_SECRET`, so the stored ID can't be turned back into the address, or tested against a guess, without the secret. An account holds its ID, when it was created, when it was last used (a sign-in or a token refresh) and whether it is blocked. Accounts not used for 180 days are deleted, with their tokens. `traintracker forget EMAIL` deletes one on request; `traintracker block EMAIL` shuts one out, and `UPDATE mcp_auth.accounts SET blocked = false` lets them all back in.
+**Accounts.** The address is passed to Resend to deliver the code and is not stored. The account is an HMAC-SHA256 of the lower-cased address, without any `+tag`, under `MCP_ACCOUNT_SECRET`, so the stored ID can't be turned back into the address, or tested against a guess, without the secret. An account holds its ID, when it was created, when it was last used (a sign-in or a token refresh) and whether it is blocked. Accounts not used for 180 days are deleted, with their tokens. `traintracker forget EMAIL` deletes one on request; `traintracker block EMAIL` shuts one out, and `UPDATE mcp_auth.accounts SET blocked = false` lets them all back in.
 
-Everyone who signs in with the passphrase shares one account, `passphrase`.
+Everyone who signs in with the passphrase shares one account, `passphrase`. Use a long random passphrase: `serve-http` warns at start-up about one shorter than 20 characters. One client address can try ten passphrases at once and ten an hour, and after 30 wrong passphrases in an hour, over all sign-ins, the passphrase is refused for the rest of that hour (email sign-in is not affected).
 
-**Rate limit.** Tool calls over HTTP are limited per account: `RATE_LIMIT_BURST` calls at once, refilled at `RATE_LIMIT_PER_MINUTE`. One Darwin key serves every user, and the limit stops one account spending the whole allowance. A call over the limit comes back as a tool error, *Too many requests. Try again in N seconds.*, which the model can read and relay. The counts are held in memory, so a restart clears them. The static token counts as one account. The stdio server is not limited.
+**Rate limit.** Tool calls over HTTP are limited per account: `RATE_LIMIT_BURST` calls at once, refilled at `RATE_LIMIT_PER_MINUTE`. One Darwin key serves every user, and the limit stops one account spending the whole allowance. A call pays for one request to Darwin; a call that makes more (a long board read page by page, a journey with several legs) is charged one for each further request, so the account's next calls wait longer. A journey plan counts as three calls. A call over the limit comes back as a tool error, *Too many requests. Try again in N seconds.*, which the model can read and relay. The counts are held in memory, so a restart clears them. The static token counts as one account. The stdio server is not limited.
+
+**Where a client can return to.** A client registers the callback the browser goes back to after sign-in. Only callbacks on `MCP_REDIRECT_HOSTS` (Claude and ChatGPT by default), over https, and loopback addresses (desktop clients such as Claude Code) are accepted. OAuth answers some errors by redirecting to the callback before anyone has signed in, so with any callback allowed a link to the server could be made to send people to any site. To let another app connect, add its callback host.
+
+**Before sign-in.** Registration and the start of a sign-in need no account, so they are limited another way. A client address can register 30 clients at once and 20 a minute, and start 20 sign-ins at once and 10 a minute; over that the answer is 429 with `Retry-After`. The address comes from `CLIENT_IP_HEADER` where that is set, and from the connection otherwise. These endpoints take bodies up to 16 KiB, a registration up to 4 KiB and a sign-in request up to 8 KiB. The server holds 10,000 registered clients at most, and a registration deletes clients that are a week old with no tokens and no sign-in under way (an assistant registers afresh each time it connects).
 
 **Running it locally.** `MAIL_BACKEND=console` with `MCP_ACCOUNT_SECRET` set writes the code to the log in place of sending it. Don't use it on a host whose logs other people can read.
 
@@ -357,6 +370,8 @@ uvx --with tox-uv tox              # all environments: format, lint, type, tests
 uvx --with tox-uv tox -e tests     # one environment
 uvx --with tox-uv tox -e tests -- -k platform   # arguments after -- go to the tool
 ```
+
+CI runs the same environments with the versions of uv, tox and tox-uv written into [`.github/workflows/tox.yml`](.github/workflows/tox.yml), and its Actions pinned to a commit. Dependabot ([`.github/dependabot.yml`](.github/dependabot.yml)) proposes updates to `uv.lock` and to the Actions each week; the uv and tox versions are raised by hand, uv in `render.yaml` as well.
 
 | Environment | Runs |
 |---|---|

@@ -24,6 +24,18 @@ NR_SCHEDULE_URL = (
 )
 
 
+# Requests sent to Darwin in one day before the live tools fall back to booked
+# times. The free allowance is 5 million per four weeks, about 178,000 a day.
+DARWIN_DAILY_LIMIT = 170_000
+
+# Sign-in codes sent in an hour, over all addresses. The sign-in page will mail
+# any address typed into it, so this is the most it can be made to send.
+MAIL_MAX_PER_HOUR = 100
+
+# Hosts a client may send the browser back to after sign-in: the callbacks of
+# Claude and ChatGPT. Loopback addresses are always allowed (desktop clients).
+REDIRECT_HOSTS = ("claude.ai", "claude.com", "chatgpt.com", "platform.openai.com")
+
 TRUE = {"1", "true", "yes", "on"}
 
 
@@ -33,6 +45,13 @@ def _public_hosts() -> tuple[str, ...]:
     so every deployment answers on its onrender.com name."""
     names = [*(_env("MCP_PUBLIC_HOSTS") or "").split(","), _env("RENDER_EXTERNAL_HOSTNAME") or ""]
     return tuple(dict.fromkeys(h.strip() for h in names if h.strip()))
+
+
+def _redirect_hosts() -> tuple[str, ...]:
+    names = _env("MCP_REDIRECT_HOSTS")
+    if names is None:
+        return REDIRECT_HOSTS
+    return tuple(h.strip().lower() for h in names.split(",") if h.strip())
 
 
 def default_data_dir() -> Path:
@@ -114,17 +133,26 @@ class Settings:
     mail_from: str | None = None
     account_secret: str | None = field(default=None, repr=False)
     mail_backend: str = "resend"
-    mail_max_per_hour: int = 200
+    mail_max_per_hour: int = MAIL_MAX_PER_HOUR
     rate_limit_per_minute: int = 30
     rate_limit_burst: int = 10
     usage_schema: str = "traintracker_usage"
     openai_apps_challenge: str | None = None
+    darwin_daily_limit: int = DARWIN_DAILY_LIMIT
+    client_ip_header: str | None = None
+    redirect_hosts: tuple[str, ...] = REDIRECT_HOSTS
 
     @property
     def timetable_db(self) -> TimetableDB:
         # A separate schema, so demo data never mixes with the real timetable.
         schema = f"{self.timetable_schema}_demo" if self.demo else self.timetable_schema
         return TimetableDB(self.database_url or "", schema)
+
+    @property
+    def public(self) -> bool:
+        """Whether the server has a public address: it is hosted for other
+        people, where the stdio server answers only to whoever runs it."""
+        return not self.public_url.startswith("http://localhost")
 
     @property
     def has_nr(self) -> bool:
@@ -206,11 +234,16 @@ class Settings:
             mail_from=_env("MAIL_FROM"),
             account_secret=_env("MCP_ACCOUNT_SECRET"),
             mail_backend=(_env("MAIL_BACKEND") or "resend").lower(),
-            mail_max_per_hour=int(_env("MAIL_MAX_PER_HOUR") or 200),
+            mail_max_per_hour=int(_env("MAIL_MAX_PER_HOUR") or MAIL_MAX_PER_HOUR),
             rate_limit_per_minute=int(_env("RATE_LIMIT_PER_MINUTE") or 30),
             rate_limit_burst=int(_env("RATE_LIMIT_BURST") or 10),
             usage_schema=_env("USAGE_SCHEMA") or "traintracker_usage",
             openai_apps_challenge=_env("OPENAI_APPS_CHALLENGE"),
+            darwin_daily_limit=int(_env("DARWIN_DAILY_LIMIT") or DARWIN_DAILY_LIMIT),
+            # The header the platform's proxy puts the caller's address in. Only
+            # set it where clients can't reach the server except through that proxy.
+            client_ip_header=_env("CLIENT_IP_HEADER"),
+            redirect_hosts=_redirect_hosts(),
         )
         if (_env("TRAINTRACKER_DEMO") or "").lower() not in TRUE:
             return settings

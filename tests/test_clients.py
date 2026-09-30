@@ -91,6 +91,11 @@ async def test_darwin_errors(settings: Settings) -> None:
         respx.get(url).mock(return_value=httpx.Response(429, headers={"Retry-After": "30"}))
         with pytest.raises(RateLimited, match="30s"):
             await client.board("LST", "departures", rows=5)
+        # The upstream's error page is not passed on to the caller.
+        respx.get(url).mock(return_value=httpx.Response(500, text="gateway 10.2.3.4 failed"))
+        with pytest.raises(UpstreamError) as raised:
+            await client.board("LST", "departures", rows=6)
+        assert str(raised.value) == "Darwin error (HTTP 500)."
 
 
 async def test_darwin_arrivals_need_config(settings: Settings) -> None:

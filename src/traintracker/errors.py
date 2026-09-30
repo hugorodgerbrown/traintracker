@@ -36,5 +36,15 @@ class RateLimited(UpstreamError):
         super().__init__(f"{source} rate limit reached.{wait}")
 
 
+class AllowanceSpent(UpstreamError):
+    """The server has sent Darwin as many requests as it allows itself in a day."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "This server has used today's allowance of National Rail live data (Darwin); "
+            "it resets at midnight, UK time."
+        )
+
+
 class ServiceNotFound(TrainTrackerError):
     pass

@@ -12,7 +12,7 @@ from urllib.parse import quote
 import httpx
 
 from traintracker.config import UK_TZ, Settings
-from traintracker.errors import NotConfigured, ServiceNotFound, UpstreamError
+from traintracker.errors import AllowanceSpent, NotConfigured, ServiceNotFound, UpstreamError
 from traintracker.http import TTLCache, json_body, raise_for_status
 from traintracker.models import (
     Board,
@@ -22,9 +22,10 @@ from traintracker.models import (
     StationRef,
     Status,
 )
+from traintracker.ratelimit import charge_upstream
 
 if TYPE_CHECKING:
-    from traintracker.usage import DarwinUsage
+    from traintracker.usage import DailyBudget, DarwinUsage
 
 SOURCE = "Darwin"
 LIVE_TTL = 20.0
@@ -149,12 +150,17 @@ class _Page:
 
 class DarwinClient:
     def __init__(
-        self, settings: Settings, http: httpx.AsyncClient, usage: DarwinUsage | None = None
+        self,
+        settings: Settings,
+        http: httpx.AsyncClient,
+        usage: DarwinUsage | None = None,
+        budget: DailyBudget | None = None,
     ) -> None:
         self.s = settings
         self.http = http
         self.cache = TTLCache()
         self.usage = usage
+        self.budget = budget
 
     async def _get(
         self, product: str, url: str, key: str, params: dict[str, Any]
@@ -162,6 +168,9 @@ class DarwinClient:
         cache_key = (url, tuple(sorted(params.items())))
         if (hit := self.cache.get(cache_key)) is not None:
             return hit  # type: ignore[no-any-return]
+        if self.budget and not self.budget.take():
+            raise AllowanceSpent
+        charge_upstream()  # against the account whose tool call this is
         if self.usage:
             # Every request sent counts against the allowance, failed ones too.
             self.usage.count(product)

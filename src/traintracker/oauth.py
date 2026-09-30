@@ -20,6 +20,7 @@ static MCP_AUTH_TOKEN keeps working as a bearer token alongside OAuth.
 from __future__ import annotations
 
 import asyncio
+import collections
 import dataclasses
 import hashlib
 import hmac
@@ -29,7 +30,7 @@ import logging
 import re
 import secrets
 import time
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import urlparse
 
 import psycopg
@@ -40,16 +41,18 @@ from mcp.server.auth.provider import (
     AuthorizeError,
     OAuthAuthorizationServerProvider,
     RefreshToken,
+    RegistrationError,
     TokenError,
     construct_redirect_uri,
 )
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+from psycopg_pool import ConnectionPool
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Route
 
 from traintracker import site
-from traintracker.config import SCHEMA_NAME
+from traintracker.config import MAIL_MAX_PER_HOUR, REDIRECT_HOSTS, SCHEMA_NAME
 from traintracker.mail import CODE_MINUTES, Mailer, MailError
 
 log = logging.getLogger(__name__)
@@ -61,15 +64,38 @@ SIGN_IN_TTL = 10 * 60  # seconds to complete the sign-in page
 CODE_TTL = 5 * 60
 ACCESS_TTL = 60 * 60
 REFRESH_TTL = 90 * 24 * 60 * 60
+# A refresh token used again within this many seconds of being replaced is a
+# client repeating a request whose answer it lost. Later than that, two parties
+# hold the token, and the connection is signed out.
+REUSE_GRACE = 60
 MAX_ATTEMPTS = 5  # wrong passphrases (or wrong codes) before a sign-in is discarded
+# A sign-in costs nothing to start, so the limit on each one doesn't limit
+# guessing. After this many wrong passphrases in an hour, over all sign-ins, the
+# passphrase is not accepted until the hour has passed.
+MAX_WRONG_AN_HOUR = 30
+# Characters in MCP_OAUTH_PASSPHRASE; a shorter one gets a warning at start-up.
+# (Neither name says "passphrase": both numbers are logged, and code scanning
+# takes a logged value with a name like that for the passphrase itself.)
+MIN_LENGTH = 20
+PAUSED = "Passphrase sign-in is paused after too many wrong passphrases. Try again in an hour."
 LOGIN_CODE_TTL = CODE_MINUTES * 60
 MAX_SENDS = 3  # codes one sign-in may ask for
 MAX_CODES_PER_ADDRESS = 5  # codes one address may be sent in an hour
 MAIL_LOG_TTL = 24 * 60 * 60
 ACCOUNT_IDLE_DAYS = 180  # an account not used for this long is deleted
+# Anyone can register a client and start a sign-in, so what they can store is
+# bounded: a registration is a name and a callback, a sign-in a few short values.
+MAX_CLIENT_BYTES = 4096
+MAX_SIGN_IN_BYTES = 8192
+MAX_CLIENTS = 10_000
+CLIENT_IDLE_DAYS = 7  # a client this old with no tokens and no sign-in under way is deleted
+LOOPBACK = frozenset({"localhost", "127.0.0.1", "::1"})
 OFFLINE_ACCESS = "offline_access"  # the scope that asks for a refresh token
 PASSPHRASE_SUBJECT = "passphrase"  # the account everyone using the passphrase shares
 BLOCKED = "This address can't sign in to this server."
+POOL_SIZE = 4  # database connections kept for sign-in and token checks
+# What this server issues as a token: secrets.token_urlsafe(32).
+_TOKEN = re.compile(r"[A-Za-z0-9_-]{43}")
 _EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 
 DDL = """
@@ -99,6 +125,7 @@ CREATE TABLE IF NOT EXISTS {schema}.tokens (
     expires_at DOUBLE PRECISION NOT NULL
 );
 CREATE INDEX IF NOT EXISTS tokens_family ON {schema}.tokens (family);
+CREATE INDEX IF NOT EXISTS tokens_client ON {schema}.tokens ((data->>'client_id'));
 ALTER TABLE {schema}.sign_ins ADD COLUMN IF NOT EXISTS account TEXT;
 ALTER TABLE {schema}.sign_ins ADD COLUMN IF NOT EXISTS login_code_hash TEXT;
 ALTER TABLE {schema}.sign_ins ADD COLUMN IF NOT EXISTS login_code_expires_at DOUBLE PRECISION;
@@ -138,6 +165,11 @@ class TraintrackerOAuthProvider(
     Subclassing the protocol inherits its default for the enterprise
     identity-assertion grant, which rejects it; this server doesn't offer it."""
 
+    # Open pools, held until they are closed. A pool dropped while open is
+    # closed by its finaliser, from whichever thread the collector ran in, and
+    # that can be one of the pool's own, which it then can't wait for.
+    _pools: ClassVar[set[ConnectionPool]] = set()
+
     def __init__(
         self,
         dsn: str,
@@ -147,7 +179,8 @@ class TraintrackerOAuthProvider(
         schema: str = "mcp_auth",
         account_secret: str | None = None,
         mailer: Mailer | None = None,
-        mail_max_per_hour: int = 200,
+        mail_max_per_hour: int = MAIL_MAX_PER_HOUR,
+        redirect_hosts: tuple[str, ...] = REDIRECT_HOSTS,
     ) -> None:
         if not SCHEMA_NAME.fullmatch(schema):
             raise ValueError(f"Invalid auth schema name {schema!r}.")
@@ -163,6 +196,23 @@ class TraintrackerOAuthProvider(
         # that turns the address into an account.
         self.mailer = mailer if account_secret else None
         self.mail_max_per_hour = mail_max_per_hour
+        self._mail_cap_logged = 0.0
+        self.redirect_hosts = redirect_hosts
+        self._passphrase_failures: collections.deque[float] = collections.deque()
+        # Every request to /mcp checks its token here, so connections are kept
+        # and reused: opening one per check cost more than the check. The pool
+        # opens on first use, and tests a connection before lending it, so a
+        # database restart costs a reconnect and not a failed request.
+        self._pool = ConnectionPool(
+            dsn,
+            min_size=1,
+            max_size=POOL_SIZE,
+            max_idle=600,
+            timeout=10,
+            kwargs={"connect_timeout": 10},
+            check=ConnectionPool.check_connection,
+            open=False,
+        )
 
     # -- storage -------------------------------------------------------------
 
@@ -173,7 +223,10 @@ class TraintrackerOAuthProvider(
         transaction rolls back and _Missing is raised (e.g. a code already spent).
         """
         rows: list[tuple[Any, ...]] = []
-        with psycopg.connect(self.dsn, connect_timeout=10) as con, con.transaction():
+        if self._pool.closed:
+            self._pool.open()
+            self._pools.add(self._pool)
+        with self._pool.connection() as con:
             for query, params, *required in statements:
                 cur = con.execute(query, params)
                 rows = cur.fetchall() if cur.description else []
@@ -183,6 +236,18 @@ class TraintrackerOAuthProvider(
 
     async def _db(self, *statements: Statement, fetch: bool = False) -> list[tuple[Any, ...]]:
         return await asyncio.to_thread(self._run, *statements, fetch=fetch)
+
+    def close(self) -> None:
+        """Close this provider's connections; it can't be used afterwards."""
+        self._pool.close()
+        self._pools.discard(self._pool)
+
+    @classmethod
+    def close_all(cls) -> None:
+        """Close every provider's connections (tests build many providers)."""
+        for pool in list(cls._pools):
+            pool.close()
+        cls._pools.clear()
 
     def create_tables(self) -> None:
         with psycopg.connect(self.dsn, autocommit=True, connect_timeout=10) as con:
@@ -198,6 +263,10 @@ class TraintrackerOAuthProvider(
         if not rows:
             return None
         client = OAuthClientInformationFull.model_validate(rows[0][0])
+        # A client registered before callbacks were checked, or under a looser
+        # MCP_REDIRECT_HOSTS, is unknown rather than redirected to.
+        if not self._may_return_to(client):
+            return None
         # The metadata lists offline_access, so clients ask for it at /authorize.
         # The SDK only lets a client ask for scopes it registered with, and most
         # register with none (every client registered before the scope was
@@ -207,13 +276,62 @@ class TraintrackerOAuthProvider(
             client.scope = " ".join([*scopes, OFFLINE_ACCESS])
         return client
 
+    def _may_return_to(self, client: OAuthClientInformationFull) -> bool:
+        """Whether every callback the client registered is one this server sends
+        a browser to.
+
+        /authorize answers some errors by redirecting to the callback with no
+        one having signed in. If any address could be registered, a link to
+        this server would be a way to send people anywhere.
+        """
+        if "*" in self.redirect_hosts:
+            return True
+        for uri in client.redirect_uris or []:
+            target = urlparse(str(uri))
+            host = (target.hostname or "").lower()
+            if host in LOOPBACK and target.scheme in ("http", "https"):
+                continue
+            if target.scheme != "https" or host not in self.redirect_hosts:
+                return False
+        return True
+
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
-        await self._db(
-            (
-                f"INSERT INTO {self.schema}.clients (client_id, info) VALUES (%s, %s)",
-                (client_info.client_id, json.dumps(client_info.model_dump(mode="json"))),
+        if not self._may_return_to(client_info):
+            raise RegistrationError(
+                "invalid_redirect_uri",
+                "This server only returns to the apps it is set up for, and to loopback addresses.",
             )
-        )
+        info = json.dumps(client_info.model_dump(mode="json"))
+        if len(info) > MAX_CLIENT_BYTES:
+            raise RegistrationError("invalid_client_metadata", "The registration is too large.")
+        s = self.schema
+        try:
+            await self._db(
+                # Clients nobody signed in with, or whose tokens have all lapsed.
+                # An assistant registers afresh each time it connects.
+                (
+                    f"DELETE FROM {s}.clients c "
+                    "WHERE c.created_at < now() - make_interval(days => %s) AND NOT EXISTS ("
+                    f"SELECT 1 FROM {s}.tokens t WHERE t.data->>'client_id' = c.client_id) "
+                    "AND NOT EXISTS ("
+                    f"SELECT 1 FROM {s}.sign_ins i WHERE i.client_id = c.client_id) "
+                    "AND NOT EXISTS ("
+                    f"SELECT 1 FROM {s}.codes k WHERE k.data->>'client_id' = c.client_id)",
+                    (CLIENT_IDLE_DAYS,),
+                ),
+                (
+                    f"INSERT INTO {s}.clients (client_id, info) SELECT %s, %s "
+                    f"WHERE (SELECT count(*) FROM {s}.clients) < %s RETURNING client_id",
+                    (client_info.client_id, info, MAX_CLIENTS),
+                    True,
+                ),
+            )
+        except _Missing:
+            log.warning("Client registration refused: %d clients are registered.", MAX_CLIENTS)
+            raise RegistrationError(
+                "invalid_client_metadata",
+                "This server is not taking new registrations at the moment. Try again later.",
+            ) from None
 
     # -- authorization -------------------------------------------------------
 
@@ -224,6 +342,9 @@ class TraintrackerOAuthProvider(
             raise AuthorizeError(
                 "invalid_target", f"This server only issues tokens for {self.resource}."
             )
+        stored = params.model_dump_json()
+        if len(stored) > MAX_SIGN_IN_BYTES:
+            raise AuthorizeError("invalid_request", "The authorization request is too large.")
         sign_in_id = secrets.token_urlsafe(32)
         now = time.time()
         await self._db(
@@ -231,7 +352,7 @@ class TraintrackerOAuthProvider(
             (
                 f"INSERT INTO {self.schema}.sign_ins (id, client_id, params, expires_at) "
                 "VALUES (%s, %s, %s, %s)",
-                (sign_in_id, client.client_id, params.model_dump_json(), now + SIGN_IN_TTL),
+                (sign_in_id, client.client_id, stored, now + SIGN_IN_TTL),
             ),
         )
         return f"{self.public_url}{SIGN_IN_PATH}?request={sign_in_id}"
@@ -275,16 +396,21 @@ class TraintrackerOAuthProvider(
     # -- tokens --------------------------------------------------------------
 
     def _issue(
-        self, client_id: str, scopes: list[str], subject: str | None = None
+        self,
+        client_id: str,
+        scopes: list[str],
+        subject: str | None = None,
+        family: str | None = None,
     ) -> tuple[list[Statement], OAuthToken]:
         """Statements that store a new access/refresh pair, and the token to return.
 
         The caller runs them in the same transaction as whatever the pair replaces.
         `subject` is the account that signed in; it stays with the pair through
-        every refresh, so requests can be counted per account.
+        every refresh, so requests can be counted per account. So does `family`:
+        one sign-in is one family, whose tokens are revoked together.
         """
         now = time.time()
-        family = secrets.token_hex(16)
+        family = family or secrets.token_hex(16)
         access, refresh = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
         access_data = AccessToken(
             token="",  # the stored copy never holds the token itself
@@ -337,6 +463,8 @@ class TraintrackerOAuthProvider(
         await self._db((f"DELETE FROM {self.schema}.tokens WHERE expires_at < %s", (time.time(),)))
 
     async def _load(self, token: str, kind: str) -> tuple[dict[str, Any], str] | None:
+        if not _TOKEN.fullmatch(token):
+            return None  # not one of ours: no need to ask the database
         # A blocked account's tokens stop working at once, not when they expire.
         rows = await self._db(
             (
@@ -362,9 +490,33 @@ class TraintrackerOAuthProvider(
         self, client: OAuthClientInformationFull, refresh_token: str
     ) -> RefreshToken | None:
         found = await self._load(refresh_token, "refresh")
-        if not found or found[0]["client_id"] != client.client_id:
+        if not found:
+            await self._revoke_if_reused(refresh_token)
+            return None
+        if found[0]["client_id"] != client.client_id:
             return None
         return RefreshToken.model_validate({**found[0], "token": refresh_token})
+
+    async def _revoke_if_reused(self, refresh_token: str) -> None:
+        """Sign a connection out when a refresh token it has replaced turns up again.
+
+        The client was given the replacement and has no reason to send the old
+        one, so somebody else holds a copy of one of them. Which of the two is
+        the client can't be told, so neither keeps access.
+        """
+        if not _TOKEN.fullmatch(refresh_token):
+            return
+        rows = await self._db(
+            (
+                f"SELECT family, (data->>'rotated_at')::float FROM {self.schema}.tokens "
+                "WHERE token_hash = %s AND kind = 'rotated'",
+                (_hash(refresh_token),),
+            ),
+            fetch=True,
+        )
+        if rows and time.time() - rows[0][1] > REUSE_GRACE:
+            await self._db((f"DELETE FROM {self.schema}.tokens WHERE family = %s", (rows[0][0],)))
+            log.warning("A replaced refresh token was used again; its connection is signed out.")
 
     async def exchange_refresh_token(
         self,
@@ -375,16 +527,52 @@ class TraintrackerOAuthProvider(
         # Rotate: the old refresh token and its access token stop working. Retiring
         # the old pair and storing the new one is one transaction, so a failure
         # leaves the client's current tokens in place.
-        issue, token = self._issue(
-            client.client_id, scopes or refresh_token.scopes, refresh_token.subject
+        old_hash = _hash(refresh_token.token)
+        found = await self._db(
+            (
+                f"SELECT family FROM {self.schema}.tokens "
+                "WHERE token_hash = %s AND kind = 'refresh'",
+                (old_hash,),
+            ),
+            fetch=True,
         )
+        if not found:
+            raise TokenError("invalid_grant", "Refresh token already used.")
+        family = found[0][0]
+        issue, token = self._issue(
+            client.client_id, scopes or refresh_token.scopes, refresh_token.subject, family
+        )
+        now = time.time()
+        # Only while it is still the refresh token. If another request spent it
+        # after the SELECT above, the row with this hash is now the record of
+        # that (kind 'rotated'), and deleting it would let this request through.
         retire: Statement = (
-            f"DELETE FROM {self.schema}.tokens WHERE family = ("
-            f"SELECT family FROM {self.schema}.tokens "
-            "WHERE token_hash = %s AND kind = 'refresh'"
-            ") RETURNING family",
-            (_hash(refresh_token.token),),
+            f"DELETE FROM {self.schema}.tokens "
+            "WHERE family = %s AND token_hash = %s AND kind = 'refresh' RETURNING family",
+            (family, old_hash),
             True,
+        )
+        retire_access: Statement = (
+            f"DELETE FROM {self.schema}.tokens WHERE family = %s AND kind = 'access'",
+            (family,),
+        )
+        # What is kept of the old refresh token: enough to know it if it comes
+        # back (see _revoke_if_reused), for as long as it would have lasted.
+        remember: Statement = (
+            f"INSERT INTO {self.schema}.tokens (token_hash, kind, family, data, expires_at) "
+            "VALUES (%s, 'rotated', %s, %s, %s)",
+            (
+                old_hash,
+                family,
+                json.dumps(
+                    {
+                        "client_id": client.client_id,
+                        "subject": refresh_token.subject,
+                        "rotated_at": now,
+                    }
+                ),
+                refresh_token.expires_at or now + REFRESH_TTL,
+            ),
         )
         # A refresh counts as use, so an account in use is never deleted as idle.
         seen: Statement = (
@@ -393,7 +581,7 @@ class TraintrackerOAuthProvider(
         )
         await self._purge_expired_tokens()
         try:
-            await self._db(retire, *issue, seen)
+            await self._db(retire, retire_access, remember, *issue, seen)
         except _Missing:
             raise TokenError("invalid_grant", "Refresh token already used.") from None
         return token
@@ -453,6 +641,8 @@ class TraintrackerOAuthProvider(
         given = str(form.get("passphrase", ""))
         if not self.passphrase:
             return _page("Sign-in is turned off on this server (MCP_OAUTH_PASSPHRASE is not set).")
+        if self._passphrase_paused():
+            return _page(PAUSED, status=429)
         # Take an attempt before checking the passphrase. The conditional UPDATE
         # locks the row, so parallel submissions can't share one attempt: at most
         # MAX_ATTEMPTS passphrases are ever checked per sign-in.
@@ -469,11 +659,25 @@ class TraintrackerOAuthProvider(
         if not pending:
             return _expired()
         if not hmac.compare_digest(given.encode(), self.passphrase.encode()):
+            self._passphrase_failures.append(time.time())
+            if self._passphrase_paused():
+                log.warning(
+                    "%d wrong passphrases in an hour: passphrase sign-in is paused.",
+                    MAX_WRONG_AN_HOUR,
+                )
             await asyncio.sleep(1)  # slow down guessing
             if rows[0][0] >= MAX_ATTEMPTS:
                 return await self._discard(sign_in_id, "Too many wrong passphrases.", 403)
             return self._form(pending, error="Wrong passphrase.", status=401)
         return await self._grant(pending, PASSPHRASE_SUBJECT)
+
+    def _passphrase_paused(self) -> bool:
+        """Whether the hour's wrong passphrases, over every sign-in, have reached
+        the limit. Held in memory: one instance serves the sign-in page."""
+        failures = self._passphrase_failures
+        while failures and failures[0] < time.time() - 3600:
+            failures.popleft()
+        return len(failures) >= MAX_WRONG_AN_HOUR
 
     async def send_code(self, request: Request) -> Response:
         """Email a sign-in code to the address given on the sign-in page."""
@@ -538,6 +742,7 @@ class TraintrackerOAuthProvider(
                 ),
             )
         except _Missing:
+            await self._note_mail_cap(now)
             return self._form(
                 pending, error="Too many codes have been sent. Try again in an hour.", status=429
             )
@@ -549,6 +754,23 @@ class TraintrackerOAuthProvider(
                 pending, error="The code could not be sent. Try again shortly.", status=502
             )
         return _code_form(pending, address)
+
+    async def _note_mail_cap(self, now: float) -> None:
+        """Log, at most every ten minutes, that the server-wide mail limit is
+        what refused a code: while it holds, nobody can sign in by email."""
+        if now - self._mail_cap_logged < 600:
+            return
+        rows = await self._db(
+            (f"SELECT count(*) FROM {self.schema}.mail_log WHERE sent_at > %s", (now - 3600,)),
+            fetch=True,
+        )
+        if rows[0][0] >= self.mail_max_per_hour:
+            self._mail_cap_logged = now
+            log.warning(
+                "Sign-in mail is at its limit of %d an hour (MAIL_MAX_PER_HOUR); "
+                "codes are refused until it eases.",
+                self.mail_max_per_hour,
+            )
 
     async def check_code(self, request: Request) -> Response:
         """Finish an email sign-in: the code proves the address can be read."""
@@ -668,10 +890,15 @@ class TraintrackerOAuthProvider(
     def account_id(self, address: str) -> str:
         """The account for an email address: a keyed hash, so the stored ID can't
         be turned back into the address, or tested against a guess, without
-        MCP_ACCOUNT_SECRET."""
+        MCP_ACCOUNT_SECRET.
+
+        A +tag is dropped first. Mail to pat+a@ and pat+b@ reaches one mailbox,
+        so they are one account, with one rate limit and one allowance of codes.
+        """
         if not self.account_secret:
             raise ValueError("MCP_ACCOUNT_SECRET is not set.")
-        normal = address.strip().lower().encode()
+        local, at, domain = address.strip().lower().rpartition("@")
+        normal = f"{local.partition('+')[0]}{at}{domain}".encode()
         return hmac.new(self.account_secret.encode(), normal, hashlib.sha256).hexdigest()
 
     def forget(self, address: str) -> bool:
@@ -742,6 +969,8 @@ _HEADERS = {
     # and that redirect goes to the client's callback (claude.ai), not 'self'.
     "Content-Security-Policy": "default-src 'none'; style-src 'self'; img-src 'self'",
     "Referrer-Policy": "same-origin",
+    "Strict-Transport-Security": site.HSTS,
+    "X-Content-Type-Options": "nosniff",
 }
 
 

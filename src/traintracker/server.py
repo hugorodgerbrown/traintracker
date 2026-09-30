@@ -722,8 +722,25 @@ async def platform_departures(
     """The next trains leaving from one platform of a GB railway station in the next two
     hours. A train whose live platform isn't announced yet is matched on its booked
     platform (platform_source 'booked'), which can still change."""
-    a = app()
-    st = _station(station)
+    b, seen = await _platform_board(app(), _station(station), platform, count)
+    if not b.services:
+        b.messages.append(
+            f"No departures from platform {platform} in the next two hours."
+            + (f" Platforms in use: {', '.join(seen)}." if seen else "")
+        )
+    elif any(s.platform_source == "booked" for s in b.services):
+        b.messages.append(
+            "Trains marked platform_source 'booked' use the timetabled platform; "
+            "the live platform may differ once announced."
+        )
+    return b
+
+
+async def _platform_board(
+    a: App, st: stations.Station, platform: str, count: int
+) -> tuple[Board, list[str]]:
+    """The next `count` departures from one platform, and every platform the
+    station's board showed on the way, in order."""
     want = _norm_platform(platform)
 
     def matches(s: BoardService) -> bool:
@@ -737,17 +754,27 @@ async def platform_departures(
     _fill_booked_platforms(a, st.crs, b.services)
     seen = sorted({s.platform for s in b.services if s.platform}, key=_platform_sort)
     b.services = [s for s in b.services if matches(s)][:count]
-    if not b.services:
-        b.messages.append(
-            f"No departures from platform {platform} in the next two hours."
-            + (f" Platforms in use: {', '.join(seen)}." if seen else "")
-        )
-    elif any(s.platform_source == "booked" for s in b.services):
-        b.messages.append(
-            "Trains marked platform_source 'booked' use the timetabled platform; "
-            "the live platform may differ once announced."
-        )
-    return b
+    return b, seen
+
+
+PUBLIC_ROWS = 10  # trains on a shared board (see site/boards.py)
+
+
+@_tool_errors
+async def public_board(crs: str, platform: str | None) -> tuple[Board, list[str]]:
+    """The board a shared /board page shows: the next departures from a station,
+    or from one of its platforms, and the platforms in use there.
+
+    It is not a tool, but it is answered the same way as one: the errors come
+    out as ToolError with a message that is safe to show.
+    """
+    a = app()
+    st = _station(crs)
+    if platform:
+        return await _platform_board(a, st, platform, PUBLIC_ROWS)
+    b = await _live_board(a, st, "departures", None, PUBLIC_ROWS, 0, False)
+    _fill_booked_platforms(a, st.crs, b.services)
+    return b, sorted({s.platform for s in b.services if s.platform}, key=_platform_sort)
 
 
 def _fill_booked_platforms(a: App, crs: str, services: list[BoardService]) -> None:

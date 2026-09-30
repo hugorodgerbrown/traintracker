@@ -107,12 +107,16 @@ def asset_url(path: str) -> str:
     return f"{path}?v={digest[:10]}"
 
 
+# Header links to pages that are not in PAGES: path -> link text. They come
+# after the pages' own links.
+EXTRA_NAV = {"/board": "Boards"}
+
+
 def _nav(current: str) -> str:
     """The header links. Home is the icon and name at the left, not an item here."""
+    links = {path: text for path, (_, text, _, _) in PAGES.items() if path != "/"}
     items = []
-    for path, (_, text, _, _) in PAGES.items():
-        if path == "/":
-            continue
+    for path, text in {**links, **EXTRA_NAV}.items():
         here = ' aria-current="page"' if path == current else ""
         items.append(f'<li><a href="{path}"{here}>{text}</a></li>')
     return "\n".join(items)
@@ -135,12 +139,28 @@ def render(path: str, fields: dict[str, str]) -> str:
     """One page as HTML. `fields` fill the {{ name }} places in the page text
     with this server's own values, so a copy deployed elsewhere describes itself."""
     name, _, title, description = PAGES[path]
-    page = _read("layout.html")
+    return render_page(path, _read(name), title, description, fields)
+
+
+def render_page(
+    path: str,
+    content: str,
+    title: str,
+    description: str,
+    fields: dict[str, str],
+    *,
+    nav: str | None = None,
+    layout: str = "layout.html",
+) -> str:
+    """`content`, which is markup, as a page at `path` inside `layout`. `nav` is
+    the header link shown as the current page; by default, `path`'s own."""
+    page = _read(layout)
+    current = path if nav is None else nav
     # The page goes in first, so that fields are filled in inside it too.
     markup_fields = {
-        "content": _read(name),
-        "nav": _nav(path),
-        "home_current": ' aria-current="page"' if path == "/" else "",
+        "content": content,
+        "nav": _nav(current),
+        "home_current": ' aria-current="page"' if current == "/" else "",
     }
     for key, markup in markup_fields.items():
         page = page.replace("{{ " + key + " }}", markup)

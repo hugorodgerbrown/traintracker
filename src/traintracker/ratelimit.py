@@ -157,5 +157,16 @@ class RateLimitMiddleware:
             _call.reset(current)
 
 
+def client_address(scope: Any, ip_header: bytes | None) -> str:
+    """The address an HTTP request came from: the first entry of `ip_header`,
+    where the hosting platform puts the caller's address, else the connection's."""
+    if ip_header:
+        for name, value in scope["headers"]:
+            if name == ip_header:
+                return str(value.decode("latin-1").split(",")[0].strip())
+    client = scope.get("client")
+    return str(client[0]) if client else "unknown"
+
+
 def limited(wait: int) -> str:
     return f"Too many requests. Try again in {wait} second{'' if wait == 1 else 's'}."

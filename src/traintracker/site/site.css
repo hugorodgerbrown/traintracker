@@ -69,7 +69,7 @@ footer {
 header {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 0.5rem 1.5rem;
   padding-top: 1.5rem;
@@ -78,11 +78,18 @@ header {
 }
 
 .name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
   font-weight: 700;
   font-size: 1.125rem;
   letter-spacing: 0.01em;
   color: var(--text);
   text-decoration: none;
+}
+
+.name img {
+  display: block;
 }
 
 nav ul {

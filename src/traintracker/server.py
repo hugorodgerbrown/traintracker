@@ -320,7 +320,8 @@ def _tool_errors(
         except httpx.TimeoutException as exc:
             raise ToolError("The upstream service timed out; try again.") from exc
         except httpx.HTTPError as exc:
-            raise ToolError(f"Network error reaching the data source: {exc}") from exc
+            log.warning("Network error reaching the data source: %s", type(exc).__name__)
+            raise ToolError("Network error reaching the data source; try again.") from exc
         except Exception as exc:
             # The message may repeat what the caller asked, which the privacy
             # policy keeps out of the logs. Log the kind of error and where it
@@ -550,6 +551,8 @@ def _darwin_offline(exc: Exception) -> str:
 def _why(exc: Exception) -> str:
     if isinstance(exc, httpx.TimeoutException):
         return "timed out"
+    if isinstance(exc, httpx.HTTPError):
+        return "network error"
     return str(exc) or type(exc).__name__
 
 
@@ -1017,9 +1020,9 @@ def _at_risk(j: Journey, mct: int) -> bool:
 
 @_tool("Data status", LOCAL)
 async def data_status() -> dict[str, Any]:
-    """Which data sources this server has configured, how fresh its timetable is, how
-    much of the Darwin request allowance has been used, and what is missing. Takes no
-    arguments."""
+    """Which data sources this server has configured, how fresh its timetable is, and
+    what is missing. A server you run yourself also reports how much of the Darwin
+    request allowance has been used. Takes no arguments."""
     a = app()
     s = a.settings
     age = a.timetable_age()
@@ -1043,7 +1046,14 @@ async def data_status() -> dict[str, Any]:
         },
         "min_interchange_minutes": s.min_interchange_minutes,
     }
-    if a.usage:
+    if s.public:
+        # A hosted server answers anyone who signs in. How it is set up inside,
+        # and how much of the allowance is left, are for whoever runs it:
+        # `traintracker status` and the log have them.
+        timetable = status["network_rail_timetable"]
+        for internal in ("schema", "last_refresh_error"):
+            del timetable[internal]
+    elif a.usage:
         status["darwin_usage"] = await _usage_status(a.usage)
     if s.demo:
         # Replace the account details: none are used in demo mode.
@@ -1064,9 +1074,9 @@ async def privacy_policy() -> dict[str, Any]:
     held. Takes no arguments."""
     # The text comes from the /privacy page itself, so the two can't disagree.
     policy: dict[str, Any] = {"policy": site.page_text("/privacy")}
-    url = app().settings.public_url
-    if not url.startswith("http://localhost"):  # a stdio server has no public page
-        policy["url"] = f"{url}/privacy"
+    settings = app().settings
+    if settings.public:  # a stdio server has no public page
+        policy["url"] = f"{settings.public_url}/privacy"
     return policy
 
 
@@ -1074,7 +1084,8 @@ async def _usage_status(usage: DarwinUsage) -> dict[str, Any]:
     try:
         return (await asyncio.to_thread(usage.read)).as_dict()
     except psycopg.Error as exc:
-        return {"error": f"The usage count couldn't be read: {exc}"}
+        log.warning("The Darwin usage count couldn't be read: %s", exc)
+        return {"error": "The usage count couldn't be read."}
 
 
 # ----------------------------------------------------------------------- CLI

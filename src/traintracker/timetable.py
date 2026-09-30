@@ -341,9 +341,9 @@ def _connect(
     try:
         return psycopg.connect(dsn, autocommit=autocommit, connect_timeout=10, options=options)
     except psycopg.OperationalError as exc:
-        raise TimetableMissing(
-            f"The timetable database can't be reached ({_first_line(exc)})."
-        ) from exc
+        # The reason names the database's host and user: for the log, not the caller.
+        log.warning("The timetable database can't be reached: %s", _first_line(exc))
+        raise TimetableMissing("The timetable database can't be reached.") from exc
 
 
 def _first_line(exc: Exception) -> str:

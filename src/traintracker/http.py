@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Hashable
 from typing import Any
@@ -9,6 +10,8 @@ from typing import Any
 import httpx
 
 from traintracker.errors import RateLimited, UpstreamError
+
+log = logging.getLogger(__name__)
 
 
 class TTLCache:
@@ -49,8 +52,9 @@ def raise_for_status(source: str, response: httpx.Response) -> None:
         )
     if code == 404:
         raise UpstreamError(f"{source} returned 404 for {response.request.url.path}.")
-    body = response.text[:200].strip()
-    raise UpstreamError(f"{source} error HTTP {code}: {body or 'no body'}")
+    # The body is the upstream's own error page: for the log, not the caller.
+    log.warning("%s error HTTP %d: %s", source, code, response.text[:200].strip() or "no body")
+    raise UpstreamError(f"{source} error (HTTP {code}).")
 
 
 def json_body(source: str, response: httpx.Response) -> dict[str, Any]:

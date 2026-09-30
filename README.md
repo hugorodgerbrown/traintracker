@@ -44,7 +44,7 @@ flowchart LR
 | `timetable` | Booked departures/arrivals at a station on any date | Local timetable |
 | `service_details` | Every stop for one train | Whichever source issued the ID |
 | `plan_journey` | A to B with changes (up to `max_changes`, default 4), incl. cross-London links | Local timetable + Darwin live overlay |
-| `data_status` | What's configured, timetable freshness, Darwin allowance used, what's missing | — |
+| `data_status` | What's configured, timetable freshness, what's missing; on a server you run yourself, Darwin allowance used | — |
 | `privacy_policy` | "What do you keep about me?" The privacy policy as text, with the page's address | The `/privacy` page |
 
 Every tool accepts station names or CRS codes. Ambiguous names ("Sudbury", "Harrow") return the candidates so Claude can ask which one you meant.
@@ -144,7 +144,7 @@ flowchart TD
 
 ### Darwin allowance
 
-Free Darwin access covers 5 million requests per four-week railway period, and one server key serves every user. The server counts the requests it sends to Darwin and reports the total in `data_status` and `traintracker status`:
+Free Darwin access covers 5 million requests per four-week railway period, and one server key serves every user. The server counts the requests it sends to Darwin and reports the total in `traintracker status`, and in `data_status` on a server you run over stdio (a hosted server doesn't tell everyone who signs in how much is left):
 
 ```
 Darwin usage: 412,906 requests in the last 28 days, 8.26% of 5,000,000

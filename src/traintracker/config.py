@@ -149,6 +149,12 @@ class Settings:
         return TimetableDB(self.database_url or "", schema)
 
     @property
+    def public(self) -> bool:
+        """Whether the server has a public address: it is hosted for other
+        people, where the stdio server answers only to whoever runs it."""
+        return not self.public_url.startswith("http://localhost")
+
+    @property
     def has_nr(self) -> bool:
         return self.nr_username is not None and self.nr_password is not None
 

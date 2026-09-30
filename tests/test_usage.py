@@ -227,6 +227,22 @@ async def test_arrivals_alone_are_counted_and_reported(
     assert out["darwin_usage"]["by_product"] == {"arrivals": 1}
 
 
+async def test_a_hosted_server_keeps_its_usage_and_its_setup_to_itself(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with connect(tmp_path, monkeypatch) as client:
+        own = await call(client, "data_status")
+    monkeypatch.setenv("MCP_PUBLIC_URL", "https://tt.test")
+    async with connect(tmp_path, monkeypatch) as client:
+        hosted = await call(client, "data_status")
+    assert "darwin_usage" in own and "schema" in own["network_rail_timetable"]
+    # Anyone can sign in to a hosted server: how much of the allowance is left,
+    # and how the server is set up inside, are for whoever runs it.
+    assert "darwin_usage" not in hosted
+    assert not {"schema", "last_refresh_error"} & set(hosted["network_rail_timetable"])
+    assert hosted["network_rail_timetable"]["public_schedules"] != "0"
+
+
 @respx.mock
 async def test_only_requests_sent_to_darwin_are_counted(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DARWIN_API_KEY", "darwin-key")

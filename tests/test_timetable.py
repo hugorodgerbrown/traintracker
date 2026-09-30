@@ -283,5 +283,7 @@ def test_missing_database_url_is_explained() -> None:
 
 def test_unreachable_database_is_explained() -> None:
     db = TimetableDB("postgresql://nobody@127.0.0.1:1/none", "timetable")
-    with pytest.raises(TimetableMissing, match="can't be reached"):
+    with pytest.raises(TimetableMissing, match="can't be reached") as raised:
         Timetable.open(db)
+    # Where the database is, and as whom, is not for whoever made the call.
+    assert "127.0.0.1" not in str(raised.value) and "nobody" not in str(raised.value)

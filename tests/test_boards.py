@@ -1,4 +1,4 @@
-"""The shareable departure boards: /board/LST, /board/LST/9 and ?embed=1."""
+"""The shareable departure boards: /board/LST, /board/LST/9, /board/LST/COL and ?embed=1."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 from starlette.applications import Starlette
 
-from traintracker import server
+from traintracker import server, stations
 from traintracker.config import Settings
 from traintracker.http_app import build_app
 from traintracker.models import Board, BoardService, StationRef
@@ -52,17 +52,23 @@ def _board(crs: str = "LST", name: str = "London Liverpool Street") -> Board:
 
 class FakeFetch:
     def __init__(self, error: str | None = None) -> None:
-        self.calls: list[tuple[str, str | None]] = []
+        self.calls: list[tuple[str, str | None, str | None]] = []
         self.error = error
 
-    async def __call__(self, crs: str, platform: str | None) -> tuple[Board, list[str]]:
-        self.calls.append((crs, platform))
+    async def __call__(
+        self, crs: str, to: str | None, platform: str | None
+    ) -> tuple[Board, list[str]]:
+        self.calls.append((crs, to, platform))
         await asyncio.sleep(0.01)  # long enough for other requests to arrive meanwhile
         if self.error:
             raise ToolError(self.error)
         board = _board()
         if platform:
             board.services = [s for s in board.services if s.platform == platform]
+        if to:
+            # Near enough for these trains: those that end there call there.
+            name = stations.by_crs(to).name  # type: ignore[union-attr]
+            board.services = [s for s in board.services if s.destination[0].name == name]
         return board, ["9", "14"]
 
 
@@ -95,6 +101,10 @@ def _flat(text: str) -> str:
         ("/board/cambridge/1?embed=1", "/board/CBG/1?embed=1"),
         ("/board/london-liverpool-street", "/board/LST"),
         ("/board/kings%20cross/10a", "/board/KGX/10A"),
+        ("/board/lst/col", "/board/LST/COL"),
+        ("/board/LST/colchester?embed=1", "/board/LST/COL?embed=1"),
+        ("/board/cambridge/Kings-Cross", "/board/CBG/KGX"),
+        ("/board/LST/LST", "/board/LST"),
     ],
 )
 async def test_each_board_has_one_address(
@@ -113,7 +123,9 @@ async def test_each_board_has_one_address(
     [
         ("/board/sudbury", "station=sudbury"),
         ("/board/nowhere-at-all-xyz", "station=nowhere+at+all+xyz"),
-        ("/board/LST/nine!", "station=LST&platform=nine%21"),
+        ("/board/LST/nine!", "station=LST&to=nine%21"),
+        ("/board/LST/12!", "station=LST&platform=12%21"),
+        ("/board/LST/nowhere-at-all-xyz", "station=LST&to=nowhere+at+all+xyz"),
     ],
 )
 async def test_an_address_that_is_not_a_board_goes_to_the_picker(
@@ -134,7 +146,7 @@ async def test_the_picker_is_a_form_that_works_without_javascript(
     assert r.status_code == 200
     text = _flat(r.text)
     assert '<form class="picker" method="get" action="/board">' in text
-    assert 'name="station"' in text and 'name="platform"' in text
+    assert 'name="station"' in text and 'name="platform"' in text and 'name="to"' in text
     assert 'data-suggest="/api/stations"' in text
     assert '<a href="/board/LST">London Liverpool Street departures</a>' in text
     assert '<a href="/board" aria-current="page">Boards</a>' in text
@@ -148,6 +160,8 @@ async def test_the_picker_is_a_form_that_works_without_javascript(
         ({"station": "Cambridge", "platform": "1"}, "/board/CBG/1"),
         ({"station": "London Liverpool Street (LST)", "platform": ""}, "/board/LST"),
         ({"station": "kgx", "platform": "Platform 10a"}, "/board/KGX/10A"),
+        ({"station": "LST", "to": "Colchester", "platform": ""}, "/board/LST/COL"),
+        ({"station": "LST", "to": "LST"}, "/board/LST"),
     ],
 )
 async def test_the_picker_goes_to_the_board(
@@ -164,7 +178,7 @@ async def test_the_picker_asks_which_station(client: httpx.AsyncClient) -> None:
     text = _flat(r.text)
     assert "Which station?" in text
     for crs in ("SUY", "SDH", "SUD"):
-        assert f'href="/board/{crs}/2"' in text
+        assert f'href="/board?station={crs}&amp;platform=2"' in text
     assert 'value="sudbury"' in text and 'value="2"' in text
 
 
@@ -176,6 +190,24 @@ async def test_the_picker_says_what_is_wrong(client: httpx.AsyncClient) -> None:
     assert r.status_code == 400
     assert "&#x27;&lt;b&gt;&#x27; isn&#x27;t a platform" in r.text
     assert "<b>" not in r.text.split("<main", 1)[1]
+
+
+async def test_a_board_is_for_a_destination_or_a_platform_not_both(
+    client: httpx.AsyncClient,
+) -> None:
+    r = await client.get("/board", params={"station": "LST", "to": "COL", "platform": "9"})
+    assert r.status_code == 400
+    assert "A board is for a destination or a platform, not both." in r.text
+    assert (await client.get("/api/board/LST/COL/9")).status_code == 404
+
+
+async def test_the_picker_asks_which_destination(client: httpx.AsyncClient) -> None:
+    r = await client.get("/board", params={"station": "Cambridge", "to": "sudbury"})
+    assert r.status_code == 200
+    text = _flat(r.text)
+    assert "Going to which station?" in text
+    # Each choice goes back to the picker with that station filled in, and the rest kept.
+    assert 'href="/board?station=Cambridge&amp;to=SUY"' in text
 
 
 async def test_station_suggestions(client: httpx.AsyncClient) -> None:
@@ -211,7 +243,28 @@ async def test_a_board_is_a_page_with_the_trains_in_it(
     # The platforms in use, each a board of its own.
     assert '<a href="/board/LST" aria-current="page">All</a>' in text
     assert '<a href="/board/LST/9">9</a>' in text
-    assert fetch.calls == [("LST", None)]
+    assert fetch.calls == [("LST", None, None)]
+
+
+async def test_a_board_for_one_destination(client: httpx.AsyncClient, fetch: FakeFetch) -> None:
+    r = await client.get("/board/LST/NRW")
+    assert r.status_code == 200
+    text = _flat(r.text)
+    assert '<figure class="departures live" data-feed="/api/board/LST/NRW"' in text
+    assert "<span>Departures calling at Norwich</span>" in text
+    assert "<title>London Liverpool Street departures to Norwich · Traintrackr</title>" in text
+    assert f'<code id="board-link">{BASE}/board/LST/NRW</code>' in text
+    assert '<a href="/board/LST">Every train from London Liverpool Street</a>' in text
+    # A board is for a destination or a platform: no platform boards from here.
+    assert "One platform" not in text
+    assert fetch.calls == [("LST", "NRW", None)]
+    data = (await client.get("/api/board/LST/NRW")).json()
+    assert data["to"] == {"name": "Norwich", "crs": "NRW"} and data["platform"] is None
+    assert [t["place"] for t in data["trains"]] == ["Norwich & Clacton-on-Sea"]
+    empty = _flat((await client.get("/board/LST/COL")).text)
+    assert (
+        '<p class="empty">No departures calling at Colchester in the next two hours.</p>' in empty
+    )
 
 
 async def test_a_board_can_be_shared_and_embedded(client: httpx.AsyncClient) -> None:
@@ -248,9 +301,8 @@ async def test_an_embedded_board_is_the_board_alone_and_may_be_framed(
 async def test_a_platform_with_no_trains_says_so(client: httpx.AsyncClient) -> None:
     r = await client.get("/api/board/LST/4")
     assert r.json()["trains"] == []
-    assert "No departures from platform 4 in the next two hours." in r.json()["messages"]
     page = _flat((await client.get("/board/LST/4")).text)
-    assert '<p class="empty">No departures in the next two hours.</p>' in page
+    assert '<p class="empty">No departures from platform 4 in the next two hours.</p>' in page
 
 
 async def test_the_feed_is_the_board_as_data(client: httpx.AsyncClient) -> None:
@@ -281,16 +333,16 @@ async def test_every_viewer_shares_one_fetch(client: httpx.AsyncClient, fetch: F
         *(client.get("/board/LST") for _ in range(4)),
     )
     assert {r.status_code for r in answers} == {200}
-    assert fetch.calls == [("LST", None)]
+    assert fetch.calls == [("LST", None, None)]
     await client.get("/api/board/LST/9")
-    assert fetch.calls == [("LST", None), ("LST", "9")]
+    assert fetch.calls == [("LST", None, None), ("LST", None, "9")]
 
 
 async def test_a_board_is_fetched_again_once_it_is_old() -> None:
     fetch = FakeFetch()
     shared = boards.SharedBoards(fetch, ttl=0.0)
-    await shared.get("LST", None)
-    await shared.get("LST", None)
+    await shared.get(boards.BoardKey("LST"))
+    await shared.get(boards.BoardKey("LST"))
     assert len(fetch.calls) == 2
 
 

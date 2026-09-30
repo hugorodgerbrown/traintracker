@@ -360,16 +360,17 @@ The stylesheet and script are linked by an address that carries a hash of the fi
 
 ### Shareable boards
 
-`/board/LST` is a station's live departures as a page of its own, and `/board/LST/9` one platform's: the homepage's split-flap board with live trains and a station clock, to keep open on a screen, share as a link or embed in another site. Nobody has to sign in. `/board` is a form to pick the station; the station field suggests names as you type.
+`/board/LST` is a station's live departures as a page of its own, `/board/LST/9` one platform's, and `/board/LST/COL` the trains calling at Colchester: the homepage's split-flap board with live trains and a station clock, to keep open on a screen, share as a link or embed in another site. Nobody has to sign in. `/board` is a form to pick the station, and a destination or a platform; the station fields suggest names as you type.
 
 | Address | What it is |
 |---|---|
 | `/board/LST` | Every departure from London Liverpool Street in the next two hours, up to 10 |
 | `/board/LST/9` | Departures from platform 9 only; a train whose live platform isn't announced yet is matched on its booked one |
+| `/board/LST/COL` | Departures calling at Colchester, wherever they end: the Norwich trains too |
 | `/board/LST/9?embed=1` | The same board alone, with no site header or footer, for an `<iframe>`. It is the only page another site may frame |
 | `/api/board/LST/9` | The board as JSON, which the page fetches every minute while it is visible |
 
-Each board has one address: a lower-case code, a name (`/board/cambridge`) or a platform written `p9` or `platform-9` redirects to it, so every share of a board is the same link. A name that fits several stations goes to the picker, which asks which. The board page has the link and the `<iframe>` code, each with a copy button, and a link to each platform's board.
+After the station, a station's three-letter code is a destination and anything else a platform. A board is for a destination or a platform, never both. Each board has one address: a lower-case code, a name (`/board/cambridge`, `/board/LST/colchester`) or a platform written `p9` or `platform-9` redirects to it, so every share of a board is the same link. A name that fits several stations goes to the picker, which asks which. The board page has the link and the `<iframe>` code, each with a copy button, and a link to each platform's board.
 
 The page is rendered with the trains in it, as a table, so it works without JavaScript; `site.js` draws the flaps, which turn from the old letters to the new at each update. Because anyone can open a board, and a board embedded in a busy page is opened by all its visitors, what reaches Darwin is one fetch per board a minute, not one per viewer: an answer (or a failure) is kept for 60 seconds and shared by every request for that board, and requests that arrive while it is being fetched wait for the same answer. Each client address may open 30 boards at once and 60 a minute (`BOARD_LIMIT` in [`site/boards.py`](src/traintracker/site/boards.py)); over that the answer is 429 with `Retry-After`. The boards count toward `DARWIN_DAILY_LIMIT` like any other request.
 

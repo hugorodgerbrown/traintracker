@@ -92,6 +92,8 @@ function board(figure) {
       "--cols",
       layout[0].reduce((n, part) => n + (Array.isArray(part) ? part[1] : part), 0),
     );
+    // An empty board is only its message, without headings over nothing.
+    flaps.hidden = !trains.length;
     if (layout === WIDE) {
       flaps.append(
         line(layout[0], "line heads", (heads, key, width, column) => {

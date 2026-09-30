@@ -761,9 +761,10 @@ PUBLIC_ROWS = 10  # trains on a shared board (see site/boards.py)
 
 
 @_tool_errors
-async def public_board(crs: str, platform: str | None) -> tuple[Board, list[str]]:
+async def public_board(crs: str, to: str | None, platform: str | None) -> tuple[Board, list[str]]:
     """The board a shared /board page shows: the next departures from a station,
-    or from one of its platforms, and the platforms in use there.
+    those calling at `to`, or those from one of its platforms (never both), and
+    the platforms in use there.
 
     It is not a tool, but it is answered the same way as one: the errors come
     out as ToolError with a message that is safe to show.
@@ -772,7 +773,8 @@ async def public_board(crs: str, platform: str | None) -> tuple[Board, list[str]
     st = _station(crs)
     if platform:
         return await _platform_board(a, st, platform, PUBLIC_ROWS)
-    b = await _live_board(a, st, "departures", None, PUBLIC_ROWS, 0, False)
+    other = _station(to) if to else None
+    b = await _live_board(a, st, "departures", other, PUBLIC_ROWS, 0, False)
     _fill_booked_platforms(a, st.crs, b.services)
     return b, sorted({s.platform for s in b.services if s.platform}, key=_platform_sort)
 

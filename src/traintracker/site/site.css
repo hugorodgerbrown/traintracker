@@ -522,6 +522,15 @@ blockquote p {
   margin-top: 1rem;
 }
 
+.picker .or {
+  margin: 1rem 0 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
 .optional {
   color: var(--muted);
   font-weight: 400;

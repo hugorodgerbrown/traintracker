@@ -1,5 +1,8 @@
 """Shareable departure boards: a station's live departures at /board/LST, or
-one platform's at /board/LST/9, as a page to open, share or embed.
+one platform's at /board/LST/9, as a page to open, share or embed. Instead of a
+platform, a board can be narrowed to the trains calling at another station:
+/board/LST/COL. After the station, a station's code is a destination and
+anything else a platform; a board is for one or the other, never both.
 
 The page is the homepage's split-flap board with live trains. It is rendered
 with the trains in it, as a table, so it reads without JavaScript; site.js
@@ -17,9 +20,9 @@ server fetch by asking for many different boards.
 `?embed=1` gives the board alone, without the site's header and footer, and it
 is the one page another site may put in a frame.
 
-/board is the picker: choose a station, and a platform if you like. The form
-works without JavaScript; with it, the station field suggests names from
-/api/stations as you type.
+/board is the picker: choose a station, and a destination or a platform if
+you like. The form works without JavaScript; with it, the station fields
+suggest names from /api/stations as you type.
 """
 
 from __future__ import annotations
@@ -66,9 +69,8 @@ EMBED_HEIGHT = 560
 # The score (0-100) a station needs to be offered as "did you mean". Every
 # query matches something a little.
 CLOSE_ENOUGH = 70
-EXAMPLES = (("LST", None), ("CBG", "1"), ("MAN", None), ("EDB", None))
 
-Fetch = Callable[[str, str | None], Awaitable[tuple[Board, list[str]]]]
+Fetch = Callable[[str, str | None, str | None], Awaitable[tuple[Board, list[str]]]]
 
 _POLICY = (
     "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; "
@@ -97,12 +99,79 @@ class BoardUnavailable(Exception):
 # ------------------------------------------------------------------ the data
 
 
-def board_path(crs: str, platform: str | None = None) -> str:
-    return f"{PICKER_PATH}/{crs}" + (f"/{quote(platform)}" if platform else "")
+@dataclass(frozen=True)
+class BoardKey:
+    """Which board: a station's departures, those calling at `to`, or those
+    from one platform. Each has one address."""
+
+    crs: str
+    to: str | None = None
+    platform: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.to and self.platform:
+            raise ValueError("A board is for a destination or a platform, not both.")
+
+    @property
+    def tail(self) -> str:
+        """The address after the station: the destination or the platform."""
+        if self.to:
+            return f"/{self.to}"
+        return f"/{quote(self.platform)}" if self.platform else ""
+
+    @property
+    def path(self) -> str:
+        return f"{PICKER_PATH}/{self.crs}{self.tail}"
+
+    @property
+    def feed(self) -> str:
+        return f"{FEED_PREFIX}/{self.crs}{self.tail}"
+
+    def title(self) -> str:
+        """ "London Liverpool Street platform 9 departures to Colchester"."""
+        text = _name(self.crs) + (f" platform {self.platform}" if self.platform else "")
+        return text + " departures" + (f" to {_name(self.to)}" if self.to else "")
+
+    def empty(self) -> str:
+        """What the board says when it has no trains."""
+        where = f" from platform {self.platform}" if self.platform else ""
+        where += f" calling at {_name(self.to)}" if self.to else ""
+        return f"No departures{where} in the next two hours."
+
+    def kind(self) -> str:
+        """What the board shows, under the station's name: "Platform 9
+        departures calling at Colchester"."""
+        text = f"Platform {self.platform} departures" if self.platform else "Departures"
+        return text + (f" calling at {_name(self.to)}" if self.to else "")
 
 
-def feed_path(crs: str, platform: str | None = None) -> str:
-    return f"{FEED_PREFIX}/{crs}" + (f"/{quote(platform)}" if platform else "")
+EXAMPLES = (
+    BoardKey("LST"),
+    BoardKey("LST", "COL"),
+    BoardKey("CBG", platform="1"),
+    BoardKey("MAN"),
+    BoardKey("EDB"),
+)
+
+
+def _name(crs: str | None) -> str:
+    station = stations.by_crs(crs or "")
+    return station.name if station else crs or ""
+
+
+def parse(station: str, then: str | None = None) -> BoardKey | None:
+    """The board an address names: a station's code, then optionally a
+    destination's code or a platform. None if it isn't exactly one; it may
+    still name a board loosely (see `_loose`)."""
+    st = stations.by_crs(station) if len(station) == 3 else None
+    if st is None:
+        return None
+    if then is None:
+        return BoardKey(st.crs)
+    if len(then) == 3 and (to := stations.by_crs(then)):
+        return BoardKey(st.crs, None if to.crs == st.crs else to.crs)
+    platform = _platform(then)
+    return BoardKey(st.crs, platform=platform) if platform else None
 
 
 def _train(service: BoardService) -> dict[str, str]:
@@ -117,18 +186,16 @@ def _train(service: BoardService) -> dict[str, str]:
     }
 
 
-def payload(board: Board, platforms: list[str], platform: str | None) -> dict[str, Any]:
+def payload(board: Board, platforms: list[str], key: BoardKey) -> dict[str, Any]:
     """A board as the page draws it, and as /api/board answers."""
-    messages = list(board.messages[:3])
-    if platform and not board.services:
-        messages.append(f"No departures from platform {platform} in the next two hours.")
     return {
         "station": {"name": board.station.name, "crs": board.station.crs},
-        "platform": platform,
+        "to": {"name": _name(key.to), "crs": key.to} if key.to else None,
+        "platform": key.platform,
         "platforms": platforms,
         "source": board.source,
         "updated": datetime.now(UK_TZ).strftime("%H:%M"),
-        "messages": messages,
+        "messages": board.messages[:3],
         "trains": [_train(s) for s in board.services],
     }
 
@@ -149,14 +216,13 @@ class SharedBoards:
         self.fetch = fetch
         self.ttl = ttl
         self._kept = TTLCache(MAX_BOARDS)
-        self._pending: dict[tuple[str, str | None], asyncio.Future[dict[str, Any] | _Failed]] = {}
+        self._pending: dict[BoardKey, asyncio.Future[dict[str, Any] | _Failed]] = {}
 
-    async def get(self, crs: str, platform: str | None) -> dict[str, Any]:
-        key = (crs, platform)
+    async def get(self, key: BoardKey) -> dict[str, Any]:
         found = self._kept.get(key)
         if found is None:
             if key not in self._pending:
-                self._pending[key] = asyncio.ensure_future(self._fetch(crs, platform))
+                self._pending[key] = asyncio.ensure_future(self._fetch(key))
                 self._pending[key].add_done_callback(lambda _: self._pending.pop(key, None))
             # Shielded: one caller going away doesn't cancel the others' answer.
             found = await asyncio.shield(self._pending[key])
@@ -164,14 +230,14 @@ class SharedBoards:
             raise BoardUnavailable(found.message)
         return cast(dict[str, Any], found)
 
-    async def _fetch(self, crs: str, platform: str | None) -> dict[str, Any] | _Failed:
+    async def _fetch(self, key: BoardKey) -> dict[str, Any] | _Failed:
         result: dict[str, Any] | _Failed
         try:
-            board, platforms = await self.fetch(crs, platform)
-            result = payload(board, platforms, platform)
+            board, platforms = await self.fetch(key.crs, key.to, key.platform)
+            result = payload(board, platforms, key)
         except ToolError as exc:
             result = _Failed(str(exc))
-        self._kept.set((crs, platform), result, self.ttl)
+        self._kept.set(key, result, self.ttl)
         return result
 
 
@@ -180,10 +246,6 @@ class SharedBoards:
 
 def _e(text: str) -> str:
     return html.escape(text, quote=True)
-
-
-def _title(station: str, platform: str | None) -> str:
-    return f"{station} platform {platform} departures" if platform else f"{station} departures"
 
 
 def _rows(trains: list[dict[str, str]]) -> str:
@@ -209,21 +271,19 @@ def _source(source: str) -> str:
     return "Booked times: Network Rail data feeds (OGL v3.0)"
 
 
-def _figure(data: dict[str, Any], site_url: str, embed: bool) -> str:
+def _figure(key: BoardKey, data: dict[str, Any], site_url: str, embed: bool) -> str:
     """The board: a table of the trains, which site.js draws as flaps."""
     station = data["station"]
-    platform = data["platform"]
-    kind = f"Platform {platform} departures" if platform else "Departures"
+    kind = key.kind()
     now = datetime.now(UK_TZ)
     notes = "".join(f"<li>{_e(m)}</li>" for m in data["messages"])
     # Framed in another page, a link opens a tab of its own.
     back = (
-        f' · <a href="{_e(site_url + board_path(station["crs"], platform))}" target="_blank" '
-        'rel="noopener">Traintrackr</a>'
+        f' · <a href="{_e(site_url + key.path)}" target="_blank" rel="noopener">Traintrackr</a>'
         if embed
         else ""
     )
-    feed = _e(feed_path(station["crs"], platform))
+    feed = _e(key.feed)
     empty = "" if not data["trains"] else " hidden"
     return f"""<figure class="departures live" data-feed="{feed}" data-refresh="{REFRESH}">
   <div class="panel">
@@ -241,7 +301,7 @@ def _figure(data: dict[str, Any], site_url: str, embed: bool) -> str:
         </tbody>
       </table>
     </div>
-    <p class="empty"{empty}>No departures in the next two hours.</p>
+    <p class="empty"{empty}>{_e(key.empty())}</p>
     <ul class="notes">{notes}</ul>
     <p class="source"><span class="credit">{_source(data["source"])}</span>{back}
       · <span class="updated">Updated {_e(data["updated"])}</span>
@@ -250,39 +310,44 @@ def _figure(data: dict[str, Any], site_url: str, embed: bool) -> str:
 </figure>"""
 
 
-def _platform_links(crs: str, platforms: list[str], current: str | None) -> str:
+def _platform_links(key: BoardKey, platforms: list[str]) -> str:
+    """One link for each platform's board, and one for all of them."""
     links = [
-        f'<li><a href="{board_path(crs)}"'
-        + (' aria-current="page"' if current is None else "")
+        f'<li><a href="{BoardKey(key.crs).path}"'
+        + (' aria-current="page"' if key.platform is None else "")
         + ">All</a></li>"
     ]
     for p in platforms:
         if not PLATFORM.fullmatch(p.upper()):
             continue
-        here = ' aria-current="page"' if p.upper() == current else ""
-        links.append(f'<li><a href="{board_path(crs, p.upper())}"{here}>{_e(p)}</a></li>')
+        here = ' aria-current="page"' if p.upper() == key.platform else ""
+        path = BoardKey(key.crs, platform=p.upper()).path
+        links.append(f'<li><a href="{path}"{here}>{_e(p)}</a></li>')
     return "\n".join(links)
 
 
-def _share(data: dict[str, Any], site_url: str) -> str:
+def _share(key: BoardKey, data: dict[str, Any], site_url: str) -> str:
     """The link to share, the code to embed, and the other platforms' boards."""
-    station = data["station"]
-    platform = data["platform"]
-    url = site_url + board_path(station["crs"], platform)
+    url = site_url + key.path
     frame = (
-        f'<iframe src="{url}?embed=1" title="{_e(_title(station["name"], platform))}" '
+        f'<iframe src="{url}?embed=1" title="{_e(key.title())}" '
         f'width="100%" height="{EMBED_HEIGHT}" style="border:0;max-width:760px" '
         'loading="lazy"></iframe>'
     )
     others = ""
-    if data["platforms"] or platform:
+    if (data["platforms"] or key.platform) and not key.to:
         others = f"""
 <h2 id="platforms">One platform</h2>
 <p>The board for one platform shows only the trains leaving from it.</p>
 <ul class="chips">
-{_platform_links(station["crs"], data["platforms"], platform)}
+{_platform_links(key, data["platforms"])}
 </ul>"""
-    return f"""<p class="hint">Live times, updated every minute.
+    everywhere = ""
+    if key.to:
+        everywhere = (
+            f' <a href="{BoardKey(key.crs).path}">Every train from {_e(_name(key.crs))}</a>.'
+        )
+    return f"""<p class="hint">Live times, updated every minute.{everywhere}
   <a href="{PICKER_PATH}">Choose another station</a>.</p>
 {others}
 <h2 id="share">Share this board</h2>
@@ -301,12 +366,10 @@ def _share(data: dict[str, Any], site_url: str) -> str:
 </div>"""
 
 
-def _picker(query: str = "", platform: str = "", problem: str = "", choices: str = "") -> str:
-    examples = "\n".join(
-        f'<li><a href="{board_path(crs, p)}">{_e(_title(stations.by_crs(crs).name, p))}</a></li>'  # type: ignore[union-attr]
-        for crs, p in EXAMPLES
-        if stations.by_crs(crs)
-    )
+def _picker(
+    query: str = "", to: str = "", platform: str = "", problem: str = "", choices: str = ""
+) -> str:
+    examples = "\n".join(f'<li><a href="{k.path}">{_e(k.title())}</a></li>' for k in EXAMPLES)
     error = f'<p class="error" id="picker-error">{_e(problem)}</p>' if problem else ""
     described = ' aria-describedby="picker-error"' if problem else ""
     return f"""<h1>Departure boards</h1>
@@ -317,10 +380,17 @@ def _picker(query: str = "", platform: str = "", problem: str = "", choices: str
   <input id="station" name="station" value="{_e(query)}" required maxlength="{stations.MAX_QUERY}"
     autocomplete="off" list="station-list" data-suggest="{SUGGEST_PATH}"{described} />
   <datalist id="station-list"></datalist>
+  <label for="to">Going to <span class="optional">(optional)</span></label>
+  <input id="to" name="to" value="{_e(to)}" maxlength="{stations.MAX_QUERY}"
+    autocomplete="off" list="to-list" data-suggest="{SUGGEST_PATH}" />
+  <datalist id="to-list"></datalist>
+  <p class="hint">Only trains that call there, wherever they end up.</p>
+  <p class="or">or</p>
   <label for="platform">Platform <span class="optional">(optional)</span></label>
   <input id="platform" name="platform" value="{_e(platform)}" maxlength="4" autocomplete="off"
     inputmode="text" />
-  <p class="hint">Leave the platform empty for every train from the station.</p>
+  <p class="hint">Only the trains leaving from one platform. Leave both empty for
+    every train from the station.</p>
   {error}
   <button type="submit">Show the board</button>
 </form>
@@ -331,12 +401,16 @@ def _picker(query: str = "", platform: str = "", problem: str = "", choices: str
 </ul>"""
 
 
-def _choices(candidates: list[stations.Station], platform: str | None) -> str:
+def _choices(
+    heading: str, candidates: list[stations.Station], field: str, query: dict[str, str]
+) -> str:
+    """Links back to the picker with `field` set to each candidate's code."""
     items = "\n".join(
-        f'<li><a href="{board_path(s.crs, platform)}">{_e(s.name)}</a> ({s.crs})</li>'
+        f'<li><a href="{PICKER_PATH}?{_e(urlencode(query | {field: s.crs}))}">{_e(s.name)}</a>'
+        f" ({s.crs})</li>"
         for s in candidates
     )
-    return f'<h2 id="which">Which station?</h2>\n<ul class="choices">\n{items}\n</ul>'
+    return f'<h2 id="which">{_e(heading)}</h2>\n<ul class="choices">\n{items}\n</ul>'
 
 
 # ---------------------------------------------------------------- the routes
@@ -358,6 +432,27 @@ def _match(query: str) -> stations.Station | list[stations.Station]:
         return stations.resolve(query)
     except StationNotFound:
         return [s for s, score in stations.search(query, 5) if score >= CLOSE_ENOUGH]
+
+
+def _loose(station: str, then: str | None) -> BoardKey | None:
+    """The board an address names with a station's name in place of a code
+    (/board/cambridge, /board/LST/colchester), or a platform written "p9"."""
+    found = _match(station)
+    if not isinstance(found, stations.Station):
+        return None
+    if then is None:
+        return BoardKey(found.crs)
+    if key := parse(found.crs, then):
+        return key
+    to = _match(then)
+    if not isinstance(to, stations.Station):
+        return None
+    return BoardKey(found.crs, None if to.crs == found.crs else to.crs)
+
+
+def _field(then: str) -> str:
+    """Which picker field an unreadable second part of an address goes back to."""
+    return "platform" if len(then) <= 4 or any(c.isdigit() for c in then) else "to"
 
 
 def routes(fields: dict[str, str], fetch: Fetch, ip_header: str | None = None) -> list[Route]:
@@ -399,89 +494,111 @@ def routes(fields: dict[str, str], fetch: Fetch, ip_header: str | None = None) -
 
     def picker(
         request: Request,
-        query: str = "",
-        platform: str = "",
+        query: dict[str, str] | None = None,
         problem: str = "",
         choices: str = "",
         status: int = 200,
     ) -> Response:
+        typed = query or {}
         return page(
             request,
             PICKER_PATH,
-            _picker(query, platform, problem, choices),
+            _picker(
+                typed.get("station", ""),
+                typed.get("to", ""),
+                typed.get("platform", ""),
+                problem,
+                choices,
+            ),
             "Departure boards · Traintrackr",
             "A live departure board for any station in Great Britain, to share or embed.",
             status,
         )
 
     async def pick(request: Request) -> Response:
-        query = request.query_params.get("station", "").strip()[: stations.MAX_QUERY]
-        typed = request.query_params.get("platform", "").strip()[:12]
-        if not query:
-            return picker(request)
-        platform = _platform(typed) if typed else None
-        if typed and not platform:
-            problem = f"'{typed}' isn't a platform. Use its number or letter, like 9 or 10A."
-            return picker(request, query, typed, problem, status=400)
-        found = _match(query)
-        if isinstance(found, stations.Station):
-            return RedirectResponse(board_path(found.crs, platform), 303)
-        if not found:
+        typed = {
+            "station": request.query_params.get("station", "").strip()[: stations.MAX_QUERY],
+            "to": request.query_params.get("to", "").strip()[: stations.MAX_QUERY],
+            "platform": request.query_params.get("platform", "").strip()[:12],
+        }
+        typed = {k: v for k, v in typed.items() if v}
+        if not typed.get("station"):
+            return picker(request, typed)
+        platform = _platform(typed["platform"]) if "platform" in typed else None
+        if "platform" in typed and not platform:
             problem = (
-                f"No station matches '{query}'. Check the spelling, or use its three-letter code."
+                f"'{typed['platform']}' isn't a platform. Use its number or letter, like 9 or 10A."
             )
-            return picker(request, query, typed, problem, status=404)
-        return picker(request, query, typed, choices=_choices(found, platform))
+            return picker(request, typed, problem, status=400)
+        if platform and "to" in typed:
+            problem = "A board is for a destination or a platform, not both. Clear one of them."
+            return picker(request, typed, problem, status=400)
+        found: dict[str, stations.Station] = {}
+        for field, heading in (("station", "Which station?"), ("to", "Going to which station?")):
+            if field not in typed:
+                continue
+            match = _match(typed[field])
+            if isinstance(match, stations.Station):
+                found[field] = match
+                continue
+            if not match:
+                problem = (
+                    f"No station matches '{typed[field]}'. Check the spelling, "
+                    "or use its three-letter code."
+                )
+                return picker(request, typed, problem, status=404)
+            return picker(request, typed, choices=_choices(heading, match, field, typed))
+        crs = found["station"].crs
+        to = found["to"].crs if "to" in found and found["to"].crs != crs else None
+        return RedirectResponse(BoardKey(crs, to, platform).path, 303)
 
     async def show(request: Request) -> Response:
         given = request.path_params["station"][: stations.MAX_QUERY]
-        typed = request.path_params.get("platform")
-        platform = _platform(typed) if typed is not None else None
-        found = stations.by_crs(given) if len(given) == 3 else None
-        if found is None and (match := _match(given)) and isinstance(match, stations.Station):
-            found = match
-        if found is None or (typed is not None and platform is None):
+        then = request.path_params.get("then")
+        then = then[: stations.MAX_QUERY] if then is not None else None
+        key = parse(given, then) or _loose(given, then)
+        if key is None:
             # Not a board: the picker says why, or asks which station.
-            query = {"station": given} | ({"platform": typed[:12]} if typed else {})
+            query = {"station": given}
+            if then:
+                query[_field(then)] = then
             return RedirectResponse(f"{PICKER_PATH}?{urlencode(query)}", 303)
         # One address for each board, so every share and embed of it is the same.
-        if given != found.crs or typed != platform:
-            target = board_path(found.crs, platform)
+        if request.url.path != key.path:
+            target = key.path
             if request.url.query:
                 target += "?" + request.url.query
             return RedirectResponse(target, 308)
         if limit := refused(request):
             return limit
         try:
-            data = await boards.get(found.crs, platform)
+            data = await boards.get(key)
         except BoardUnavailable as exc:
-            return picker(request, found.name, platform or "", str(exc), status=503)
+            typed_back = {"station": key.crs, "to": key.to or "", "platform": key.platform or ""}
+            return picker(request, typed_back, str(exc), status=503)
         embed = request.query_params.get("embed") == "1"
-        content = _figure(data, site_url, embed)
+        content = _figure(key, data, site_url, embed)
         if not embed:
-            content += "\n" + _share(data, site_url)
-        name = data["station"]["name"]
-        where = f"platform {platform} at {name}" if platform else name
+            content += "\n" + _share(key, data, site_url)
         return page(
             request,
-            board_path(found.crs, platform),
+            key.path,
             content,
-            f"{_title(name, platform)} · Traintrackr",
-            f"Live departures from {where}, updated every minute.",
+            f"{key.title()} · Traintrackr",
+            f"Live {key.title()}, updated every minute.",
         )
 
     async def feed(request: Request) -> Response:
-        crs = request.path_params["station"].upper()
-        typed = request.path_params.get("platform")
-        platform = _platform(typed) if typed is not None else None
-        if stations.by_crs(crs) is None or (typed is not None and platform is None):
+        key = parse(request.path_params["station"], request.path_params.get("then"))
+        if key is None:
             return JSONResponse({"error": "No such board."}, 404, headers=FEED_HEADERS)
         if wait := limiter.take(client_address(request.scope, header)):
             return JSONResponse(
                 {"error": limited(wait)}, 429, headers={**FEED_HEADERS, **_refused(wait)}
             )
         try:
-            return JSONResponse(await boards.get(crs, platform), headers=FEED_HEADERS)
+            board = await boards.get(key)
+            return JSONResponse(board, headers=FEED_HEADERS)
         except BoardUnavailable as exc:
             return JSONResponse({"error": str(exc)}, 503, headers=FEED_HEADERS)
 
@@ -498,8 +615,8 @@ def routes(fields: dict[str, str], fetch: Fetch, ip_header: str | None = None) -
     return [
         Route(PICKER_PATH, pick, methods=["GET", "HEAD"]),
         Route(PICKER_PATH + "/{station}", show, methods=["GET", "HEAD"]),
-        Route(PICKER_PATH + "/{station}/{platform}", show, methods=["GET", "HEAD"]),
+        Route(PICKER_PATH + "/{station}/{then}", show, methods=["GET", "HEAD"]),
         Route(FEED_PREFIX + "/{station}", feed, methods=["GET"]),
-        Route(FEED_PREFIX + "/{station}/{platform}", feed, methods=["GET"]),
+        Route(FEED_PREFIX + "/{station}/{then}", feed, methods=["GET"]),
         Route(SUGGEST_PATH, suggest, methods=["GET"]),
     ]

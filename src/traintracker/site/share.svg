@@ -1,26 +1,502 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
-  <title>Live Departures, above a departure board</title>
+  <title>The departure board for London Liverpool Street</title>
+  <!-- The link-preview card, drawn like the departure board app (ui/board.html):
+       one rect per flap and one text per letter, with the seam over the letters. -->
   <rect width="1200" height="630" fill="#0b5d3b"/>
-  <text x="600" y="122" text-anchor="middle" font-family="Menlo, monospace" font-size="76" fill="#ffffff">Live Departures</text>
-  <rect x="60" y="178" width="1080" height="392" rx="28" fill="#0a2a1c"/>
-  <g font-family="Menlo, monospace" font-size="44" fill="#ffb020">
-    <text x="108" y="262">15:36</text>
-    <text x="108" y="346">15:36</text>
-    <text x="108" y="430">15:38</text>
-    <text x="108" y="514">15:43</text>
-    <g opacity=".75">
-      <text x="284" y="262">Colchester Town</text>
-      <text x="284" y="346">Stansted Airport</text>
-      <text x="284" y="430">Hertford East</text>
-      <text x="284" y="514">Cheshunt</text>
-      <text x="836" y="262" text-anchor="end">14</text>
-      <text x="836" y="346" text-anchor="end">4</text>
-      <text x="836" y="430" text-anchor="end">3</text>
-      <text x="836" y="514" text-anchor="end">1</text>
-    </g>
-    <text x="900" y="262">On time</text>
-    <text x="900" y="346">On time</text>
-    <text x="900" y="430">On time</text>
-    <text x="900" y="514">On time</text>
+  <g font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
+    <text x="40" y="60" font-size="34" font-weight="600" fill="#ffffff">London Liverpool Street</text>
+    <text x="1160" y="58" text-anchor="end" font-size="21" letter-spacing="1.7" fill="#cfe3d6">DEPARTURES</text>
+    <text x="40" y="604" font-size="21" fill="#cfe3d6" text-decoration="underline">Powered by National Rail Enquiries</text>
+  </g>
+  <rect x="40" y="90" width="1120" height="476" rx="16" fill="#0a2a1c"/>
+  <g font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="18" letter-spacing="1.5" fill="#cfe3d6">
+    <text x="60" y="124">TIME</text>
+    <text x="231.2" y="124">DESTINATION</text>
+    <text x="773.2" y="124">PLAT</text>
+    <text x="887.3" y="124">EXPECTED</text>
+  </g>
+  <!-- 15:36 COLCHESTER TOWN 14 ON TIME -->
+  <g fill="#113a29">
+    <rect x="59.5" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="88" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="116.6" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="145.1" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="173.6" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="230.7" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="259.2" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="287.7" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="316.2" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="344.8" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="373.3" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="401.8" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="430.3" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="458.9" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="487.4" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="515.9" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="544.4" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="573" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="601.5" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="630" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="658.6" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="687.1" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="715.6" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="772.7" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="801.2" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="829.7" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="886.8" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="915.3" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="943.8" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="972.3" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="1000.9" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="1029.4" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="1057.9" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="1086.4" y="136" width="25.5" height="46" rx="4"/>
+    <rect x="1115" y="136" width="25.5" height="46" rx="4"/>
+  </g>
+  <g font-family="ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="30" font-weight="600" text-anchor="middle" fill="#ffb020">
+    <text x="72.3" y="169.8">1</text>
+    <text x="100.8" y="169.8">5</text>
+    <text x="129.3" y="169.8">:</text>
+    <text x="157.8" y="169.8">3</text>
+    <text x="186.4" y="169.8">6</text>
+    <text x="243.4" y="169.8">C</text>
+    <text x="271.9" y="169.8">O</text>
+    <text x="300.5" y="169.8">L</text>
+    <text x="329" y="169.8">C</text>
+    <text x="357.5" y="169.8">H</text>
+    <text x="386.1" y="169.8">E</text>
+    <text x="414.6" y="169.8">S</text>
+    <text x="443.1" y="169.8">T</text>
+    <text x="471.6" y="169.8">E</text>
+    <text x="500.2" y="169.8">R</text>
+    <text x="557.2" y="169.8">T</text>
+    <text x="585.7" y="169.8">O</text>
+    <text x="614.3" y="169.8">W</text>
+    <text x="642.8" y="169.8">N</text>
+    <text x="785.4" y="169.8">1</text>
+    <text x="813.9" y="169.8">4</text>
+    <text x="899.5" y="169.8">O</text>
+    <text x="928.1" y="169.8">N</text>
+    <text x="985.1" y="169.8">T</text>
+    <text x="1013.6" y="169.8">I</text>
+    <text x="1042.2" y="169.8">M</text>
+    <text x="1070.7" y="169.8">E</text>
+  </g>
+  <g fill="#000000" opacity=".45">
+    <rect x="59.5" y="158" width="139.6" height="2"/>
+    <rect x="230.7" y="158" width="510.5" height="2"/>
+    <rect x="772.7" y="158" width="82.6" height="2"/>
+    <rect x="886.8" y="158" width="253.7" height="2"/>
+  </g>
+  <!-- 15:36 STANSTED AIRPORT 4 15:41 -->
+  <g fill="#113a29">
+    <rect x="59.5" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="88" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="116.6" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="145.1" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="173.6" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="230.7" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="259.2" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="287.7" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="316.2" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="344.8" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="373.3" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="401.8" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="430.3" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="458.9" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="487.4" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="515.9" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="544.4" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="573" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="601.5" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="630" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="658.6" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="687.1" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="715.6" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="772.7" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="801.2" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="829.7" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="886.8" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="915.3" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="943.8" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="972.3" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="1000.9" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="1029.4" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="1057.9" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="1086.4" y="197" width="25.5" height="46" rx="4"/>
+    <rect x="1115" y="197" width="25.5" height="46" rx="4"/>
+  </g>
+  <g font-family="ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="30" font-weight="600" text-anchor="middle" fill="#ffb020">
+    <text x="72.3" y="230.8">1</text>
+    <text x="100.8" y="230.8">5</text>
+    <text x="129.3" y="230.8">:</text>
+    <text x="157.8" y="230.8">3</text>
+    <text x="186.4" y="230.8">6</text>
+    <text x="243.4" y="230.8">S</text>
+    <text x="271.9" y="230.8">T</text>
+    <text x="300.5" y="230.8">A</text>
+    <text x="329" y="230.8">N</text>
+    <text x="357.5" y="230.8">S</text>
+    <text x="386.1" y="230.8">T</text>
+    <text x="414.6" y="230.8">E</text>
+    <text x="443.1" y="230.8">D</text>
+    <text x="500.2" y="230.8">A</text>
+    <text x="528.7" y="230.8">I</text>
+    <text x="557.2" y="230.8">R</text>
+    <text x="585.7" y="230.8">P</text>
+    <text x="614.3" y="230.8">O</text>
+    <text x="642.8" y="230.8">R</text>
+    <text x="671.3" y="230.8">T</text>
+    <text x="785.4" y="230.8">4</text>
+    <text x="899.5" y="230.8">1</text>
+    <text x="928.1" y="230.8">5</text>
+    <text x="956.6" y="230.8">:</text>
+    <text x="985.1" y="230.8">4</text>
+    <text x="1013.6" y="230.8">1</text>
+  </g>
+  <g fill="#000000" opacity=".45">
+    <rect x="59.5" y="219" width="139.6" height="2"/>
+    <rect x="230.7" y="219" width="510.5" height="2"/>
+    <rect x="772.7" y="219" width="82.6" height="2"/>
+    <rect x="886.8" y="219" width="253.7" height="2"/>
+  </g>
+  <!-- 15:38 HERTFORD EAST 3 ON TIME -->
+  <g fill="#113a29">
+    <rect x="59.5" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="88" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="116.6" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="145.1" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="173.6" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="230.7" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="259.2" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="287.7" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="316.2" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="344.8" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="373.3" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="401.8" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="430.3" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="458.9" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="487.4" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="515.9" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="544.4" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="573" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="601.5" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="630" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="658.6" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="687.1" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="715.6" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="772.7" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="801.2" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="829.7" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="886.8" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="915.3" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="943.8" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="972.3" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="1000.9" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="1029.4" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="1057.9" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="1086.4" y="258" width="25.5" height="46" rx="4"/>
+    <rect x="1115" y="258" width="25.5" height="46" rx="4"/>
+  </g>
+  <g font-family="ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="30" font-weight="600" text-anchor="middle" fill="#ffb020">
+    <text x="72.3" y="291.8">1</text>
+    <text x="100.8" y="291.8">5</text>
+    <text x="129.3" y="291.8">:</text>
+    <text x="157.8" y="291.8">3</text>
+    <text x="186.4" y="291.8">8</text>
+    <text x="243.4" y="291.8">H</text>
+    <text x="271.9" y="291.8">E</text>
+    <text x="300.5" y="291.8">R</text>
+    <text x="329" y="291.8">T</text>
+    <text x="357.5" y="291.8">F</text>
+    <text x="386.1" y="291.8">O</text>
+    <text x="414.6" y="291.8">R</text>
+    <text x="443.1" y="291.8">D</text>
+    <text x="500.2" y="291.8">E</text>
+    <text x="528.7" y="291.8">A</text>
+    <text x="557.2" y="291.8">S</text>
+    <text x="585.7" y="291.8">T</text>
+    <text x="785.4" y="291.8">3</text>
+    <text x="899.5" y="291.8">O</text>
+    <text x="928.1" y="291.8">N</text>
+    <text x="985.1" y="291.8">T</text>
+    <text x="1013.6" y="291.8">I</text>
+    <text x="1042.2" y="291.8">M</text>
+    <text x="1070.7" y="291.8">E</text>
+  </g>
+  <g fill="#000000" opacity=".45">
+    <rect x="59.5" y="280" width="139.6" height="2"/>
+    <rect x="230.7" y="280" width="510.5" height="2"/>
+    <rect x="772.7" y="280" width="82.6" height="2"/>
+    <rect x="886.8" y="280" width="253.7" height="2"/>
+  </g>
+  <!-- 15:43 CHESHUNT 1 CANCELLED -->
+  <g fill="#113a29">
+    <rect x="59.5" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="88" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="116.6" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="145.1" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="173.6" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="230.7" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="259.2" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="287.7" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="316.2" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="344.8" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="373.3" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="401.8" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="430.3" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="458.9" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="487.4" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="515.9" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="544.4" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="573" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="601.5" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="630" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="658.6" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="687.1" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="715.6" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="772.7" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="801.2" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="829.7" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="886.8" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="915.3" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="943.8" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="972.3" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="1000.9" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="1029.4" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="1057.9" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="1086.4" y="319" width="25.5" height="46" rx="4"/>
+    <rect x="1115" y="319" width="25.5" height="46" rx="4"/>
+  </g>
+  <g font-family="ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="30" font-weight="600" text-anchor="middle" fill="#ffb020">
+    <text x="72.3" y="352.8">1</text>
+    <text x="100.8" y="352.8">5</text>
+    <text x="129.3" y="352.8">:</text>
+    <text x="157.8" y="352.8">4</text>
+    <text x="186.4" y="352.8">3</text>
+    <text x="243.4" y="352.8">C</text>
+    <text x="271.9" y="352.8">H</text>
+    <text x="300.5" y="352.8">E</text>
+    <text x="329" y="352.8">S</text>
+    <text x="357.5" y="352.8">H</text>
+    <text x="386.1" y="352.8">U</text>
+    <text x="414.6" y="352.8">N</text>
+    <text x="443.1" y="352.8">T</text>
+    <text x="785.4" y="352.8">1</text>
+    <text x="899.5" y="352.8">C</text>
+    <text x="928.1" y="352.8">A</text>
+    <text x="956.6" y="352.8">N</text>
+    <text x="985.1" y="352.8">C</text>
+    <text x="1013.6" y="352.8">E</text>
+    <text x="1042.2" y="352.8">L</text>
+    <text x="1070.7" y="352.8">L</text>
+    <text x="1099.2" y="352.8">E</text>
+    <text x="1127.7" y="352.8">D</text>
+  </g>
+  <g fill="#000000" opacity=".45">
+    <rect x="59.5" y="341" width="139.6" height="2"/>
+    <rect x="230.7" y="341" width="510.5" height="2"/>
+    <rect x="772.7" y="341" width="82.6" height="2"/>
+    <rect x="886.8" y="341" width="253.7" height="2"/>
+  </g>
+  <!-- 15:46 CHINGFORD DELAYED -->
+  <g fill="#113a29">
+    <rect x="59.5" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="88" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="116.6" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="145.1" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="173.6" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="230.7" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="259.2" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="287.7" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="316.2" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="344.8" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="373.3" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="401.8" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="430.3" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="458.9" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="487.4" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="515.9" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="544.4" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="573" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="601.5" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="630" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="658.6" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="687.1" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="715.6" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="772.7" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="801.2" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="829.7" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="886.8" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="915.3" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="943.8" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="972.3" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="1000.9" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="1029.4" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="1057.9" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="1086.4" y="380" width="25.5" height="46" rx="4"/>
+    <rect x="1115" y="380" width="25.5" height="46" rx="4"/>
+  </g>
+  <g font-family="ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="30" font-weight="600" text-anchor="middle" fill="#ffb020">
+    <text x="72.3" y="413.8">1</text>
+    <text x="100.8" y="413.8">5</text>
+    <text x="129.3" y="413.8">:</text>
+    <text x="157.8" y="413.8">4</text>
+    <text x="186.4" y="413.8">6</text>
+    <text x="243.4" y="413.8">C</text>
+    <text x="271.9" y="413.8">H</text>
+    <text x="300.5" y="413.8">I</text>
+    <text x="329" y="413.8">N</text>
+    <text x="357.5" y="413.8">G</text>
+    <text x="386.1" y="413.8">F</text>
+    <text x="414.6" y="413.8">O</text>
+    <text x="443.1" y="413.8">R</text>
+    <text x="471.6" y="413.8">D</text>
+    <text x="899.5" y="413.8">D</text>
+    <text x="928.1" y="413.8">E</text>
+    <text x="956.6" y="413.8">L</text>
+    <text x="985.1" y="413.8">A</text>
+    <text x="1013.6" y="413.8">Y</text>
+    <text x="1042.2" y="413.8">E</text>
+    <text x="1070.7" y="413.8">D</text>
+  </g>
+  <g fill="#000000" opacity=".45">
+    <rect x="59.5" y="402" width="139.6" height="2"/>
+    <rect x="230.7" y="402" width="510.5" height="2"/>
+    <rect x="772.7" y="402" width="82.6" height="2"/>
+    <rect x="886.8" y="402" width="253.7" height="2"/>
+  </g>
+  <!-- 15:48 BRAINTREE 13 ON TIME -->
+  <g fill="#113a29">
+    <rect x="59.5" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="88" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="116.6" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="145.1" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="173.6" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="230.7" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="259.2" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="287.7" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="316.2" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="344.8" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="373.3" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="401.8" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="430.3" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="458.9" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="487.4" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="515.9" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="544.4" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="573" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="601.5" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="630" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="658.6" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="687.1" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="715.6" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="772.7" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="801.2" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="829.7" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="886.8" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="915.3" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="943.8" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="972.3" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="1000.9" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="1029.4" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="1057.9" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="1086.4" y="441" width="25.5" height="46" rx="4"/>
+    <rect x="1115" y="441" width="25.5" height="46" rx="4"/>
+  </g>
+  <g font-family="ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="30" font-weight="600" text-anchor="middle" fill="#ffb020">
+    <text x="72.3" y="474.8">1</text>
+    <text x="100.8" y="474.8">5</text>
+    <text x="129.3" y="474.8">:</text>
+    <text x="157.8" y="474.8">4</text>
+    <text x="186.4" y="474.8">8</text>
+    <text x="243.4" y="474.8">B</text>
+    <text x="271.9" y="474.8">R</text>
+    <text x="300.5" y="474.8">A</text>
+    <text x="329" y="474.8">I</text>
+    <text x="357.5" y="474.8">N</text>
+    <text x="386.1" y="474.8">T</text>
+    <text x="414.6" y="474.8">R</text>
+    <text x="443.1" y="474.8">E</text>
+    <text x="471.6" y="474.8">E</text>
+    <text x="785.4" y="474.8">1</text>
+    <text x="813.9" y="474.8">3</text>
+    <text x="899.5" y="474.8">O</text>
+    <text x="928.1" y="474.8">N</text>
+    <text x="985.1" y="474.8">T</text>
+    <text x="1013.6" y="474.8">I</text>
+    <text x="1042.2" y="474.8">M</text>
+    <text x="1070.7" y="474.8">E</text>
+  </g>
+  <g fill="#000000" opacity=".45">
+    <rect x="59.5" y="463" width="139.6" height="2"/>
+    <rect x="230.7" y="463" width="510.5" height="2"/>
+    <rect x="772.7" y="463" width="82.6" height="2"/>
+    <rect x="886.8" y="463" width="253.7" height="2"/>
+  </g>
+  <!-- 15:50 NORWICH 9 ON TIME -->
+  <g fill="#113a29">
+    <rect x="59.5" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="88" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="116.6" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="145.1" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="173.6" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="230.7" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="259.2" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="287.7" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="316.2" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="344.8" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="373.3" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="401.8" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="430.3" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="458.9" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="487.4" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="515.9" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="544.4" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="573" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="601.5" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="630" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="658.6" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="687.1" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="715.6" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="772.7" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="801.2" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="829.7" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="886.8" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="915.3" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="943.8" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="972.3" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="1000.9" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="1029.4" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="1057.9" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="1086.4" y="502" width="25.5" height="46" rx="4"/>
+    <rect x="1115" y="502" width="25.5" height="46" rx="4"/>
+  </g>
+  <g font-family="ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="30" font-weight="600" text-anchor="middle" fill="#ffb020">
+    <text x="72.3" y="535.8">1</text>
+    <text x="100.8" y="535.8">5</text>
+    <text x="129.3" y="535.8">:</text>
+    <text x="157.8" y="535.8">5</text>
+    <text x="186.4" y="535.8">0</text>
+    <text x="243.4" y="535.8">N</text>
+    <text x="271.9" y="535.8">O</text>
+    <text x="300.5" y="535.8">R</text>
+    <text x="329" y="535.8">W</text>
+    <text x="357.5" y="535.8">I</text>
+    <text x="386.1" y="535.8">C</text>
+    <text x="414.6" y="535.8">H</text>
+    <text x="785.4" y="535.8">9</text>
+    <text x="899.5" y="535.8">O</text>
+    <text x="928.1" y="535.8">N</text>
+    <text x="985.1" y="535.8">T</text>
+    <text x="1013.6" y="535.8">I</text>
+    <text x="1042.2" y="535.8">M</text>
+    <text x="1070.7" y="535.8">E</text>
+  </g>
+  <g fill="#000000" opacity=".45">
+    <rect x="59.5" y="524" width="139.6" height="2"/>
+    <rect x="230.7" y="524" width="510.5" height="2"/>
+    <rect x="772.7" y="524" width="82.6" height="2"/>
+    <rect x="886.8" y="524" width="253.7" height="2"/>
   </g>
 </svg>

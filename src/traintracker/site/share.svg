@@ -1,26 +1,270 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
-  <title>Live Departures, above a departure board</title>
+  <title>Live Departures, above a split-flap departure board</title>
+  <!-- One rect per flap and one text per letter, so the card renders the same in
+       ImageMagick as in a browser. The seam is drawn last, over the letters. -->
   <rect width="1200" height="630" fill="#0b5d3b"/>
   <text x="600" y="122" text-anchor="middle" font-family="Menlo, monospace" font-size="76" fill="#ffffff">Live Departures</text>
   <rect x="60" y="178" width="1080" height="392" rx="28" fill="#0a2a1c"/>
-  <g font-family="Menlo, monospace" font-size="44" fill="#ffb020">
-    <text x="108" y="262">15:36</text>
-    <text x="108" y="346">15:36</text>
-    <text x="108" y="430">15:38</text>
-    <text x="108" y="514">15:43</text>
-    <g opacity=".75">
-      <text x="284" y="262">Colchester Town</text>
-      <text x="284" y="346">Stansted Airport</text>
-      <text x="284" y="430">Hertford East</text>
-      <text x="284" y="514">Cheshunt</text>
-      <text x="836" y="262" text-anchor="end">14</text>
-      <text x="836" y="346" text-anchor="end">4</text>
-      <text x="836" y="430" text-anchor="end">3</text>
-      <text x="836" y="514" text-anchor="end">1</text>
-    </g>
-    <text x="900" y="262">On time</text>
-    <text x="900" y="346">On time</text>
-    <text x="900" y="430">On time</text>
-    <text x="900" y="514">On time</text>
+  <!-- 15:36 COLCHESTER TOWN 14 ON TIME -->
+  <g fill="#113a29">
+    <rect x="85.5" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="116.8" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="148" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="179.3" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="210.6" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="273.1" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="304.4" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="335.7" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="367" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="398.2" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="429.5" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="460.8" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="492" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="523.3" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="554.6" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="585.9" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="617.1" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="648.4" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="679.7" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="711" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="742.2" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="804.8" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="836" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="898.6" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="929.9" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="961.1" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="992.4" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="1023.7" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="1055" y="220" width="28.3" height="56" rx="3"/>
+    <rect x="1086.2" y="220" width="28.3" height="56" rx="3"/>
+  </g>
+  <g font-family="Menlo, monospace" font-size="38" text-anchor="middle" fill="#ffb020">
+    <text x="99.6" y="261.9">1</text>
+    <text x="130.9" y="261.9">5</text>
+    <text x="162.2" y="261.9">:</text>
+    <text x="193.5" y="261.9">3</text>
+    <text x="224.7" y="261.9">6</text>
+    <text x="287.3" y="261.9">C</text>
+    <text x="318.5" y="261.9">O</text>
+    <text x="349.8" y="261.9">L</text>
+    <text x="381.1" y="261.9">C</text>
+    <text x="412.4" y="261.9">H</text>
+    <text x="443.6" y="261.9">E</text>
+    <text x="474.9" y="261.9">S</text>
+    <text x="506.2" y="261.9">T</text>
+    <text x="537.5" y="261.9">E</text>
+    <text x="568.7" y="261.9">R</text>
+    <text x="631.3" y="261.9">T</text>
+    <text x="662.5" y="261.9">O</text>
+    <text x="693.8" y="261.9">W</text>
+    <text x="725.1" y="261.9">N</text>
+    <text x="818.9" y="261.9">1</text>
+    <text x="850.2" y="261.9">4</text>
+    <text x="912.7" y="261.9">O</text>
+    <text x="944" y="261.9">N</text>
+    <text x="1006.5" y="261.9">T</text>
+    <text x="1037.8" y="261.9">I</text>
+    <text x="1069.1" y="261.9">M</text>
+    <text x="1100.4" y="261.9">E</text>
+  </g>
+  <g fill="#000000" opacity=".45">
+    <rect x="85.5" y="247" width="153.4" height="2"/>
+    <rect x="273.1" y="247" width="497.4" height="2"/>
+    <rect x="804.8" y="247" width="59.5" height="2"/>
+    <rect x="898.6" y="247" width="215.9" height="2"/>
+  </g>
+  <!-- 15:36 STANSTED AIRPORT 4 ON TIME -->
+  <g fill="#113a29">
+    <rect x="85.5" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="116.8" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="148" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="179.3" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="210.6" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="273.1" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="304.4" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="335.7" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="367" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="398.2" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="429.5" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="460.8" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="492" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="523.3" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="554.6" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="585.9" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="617.1" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="648.4" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="679.7" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="711" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="742.2" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="804.8" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="836" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="898.6" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="929.9" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="961.1" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="992.4" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="1023.7" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="1055" y="304" width="28.3" height="56" rx="3"/>
+    <rect x="1086.2" y="304" width="28.3" height="56" rx="3"/>
+  </g>
+  <g font-family="Menlo, monospace" font-size="38" text-anchor="middle" fill="#ffb020">
+    <text x="99.6" y="345.9">1</text>
+    <text x="130.9" y="345.9">5</text>
+    <text x="162.2" y="345.9">:</text>
+    <text x="193.5" y="345.9">3</text>
+    <text x="224.7" y="345.9">6</text>
+    <text x="287.3" y="345.9">S</text>
+    <text x="318.5" y="345.9">T</text>
+    <text x="349.8" y="345.9">A</text>
+    <text x="381.1" y="345.9">N</text>
+    <text x="412.4" y="345.9">S</text>
+    <text x="443.6" y="345.9">T</text>
+    <text x="474.9" y="345.9">E</text>
+    <text x="506.2" y="345.9">D</text>
+    <text x="568.7" y="345.9">A</text>
+    <text x="600" y="345.9">I</text>
+    <text x="631.3" y="345.9">R</text>
+    <text x="662.5" y="345.9">P</text>
+    <text x="693.8" y="345.9">O</text>
+    <text x="725.1" y="345.9">R</text>
+    <text x="756.4" y="345.9">T</text>
+    <text x="818.9" y="345.9">4</text>
+    <text x="912.7" y="345.9">O</text>
+    <text x="944" y="345.9">N</text>
+    <text x="1006.5" y="345.9">T</text>
+    <text x="1037.8" y="345.9">I</text>
+    <text x="1069.1" y="345.9">M</text>
+    <text x="1100.4" y="345.9">E</text>
+  </g>
+  <g fill="#000000" opacity=".45">
+    <rect x="85.5" y="331" width="153.4" height="2"/>
+    <rect x="273.1" y="331" width="497.4" height="2"/>
+    <rect x="804.8" y="331" width="59.5" height="2"/>
+    <rect x="898.6" y="331" width="215.9" height="2"/>
+  </g>
+  <!-- 15:38 HERTFORD EAST 3 ON TIME -->
+  <g fill="#113a29">
+    <rect x="85.5" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="116.8" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="148" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="179.3" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="210.6" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="273.1" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="304.4" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="335.7" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="367" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="398.2" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="429.5" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="460.8" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="492" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="523.3" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="554.6" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="585.9" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="617.1" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="648.4" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="679.7" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="711" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="742.2" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="804.8" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="836" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="898.6" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="929.9" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="961.1" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="992.4" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="1023.7" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="1055" y="388" width="28.3" height="56" rx="3"/>
+    <rect x="1086.2" y="388" width="28.3" height="56" rx="3"/>
+  </g>
+  <g font-family="Menlo, monospace" font-size="38" text-anchor="middle" fill="#ffb020">
+    <text x="99.6" y="429.9">1</text>
+    <text x="130.9" y="429.9">5</text>
+    <text x="162.2" y="429.9">:</text>
+    <text x="193.5" y="429.9">3</text>
+    <text x="224.7" y="429.9">8</text>
+    <text x="287.3" y="429.9">H</text>
+    <text x="318.5" y="429.9">E</text>
+    <text x="349.8" y="429.9">R</text>
+    <text x="381.1" y="429.9">T</text>
+    <text x="412.4" y="429.9">F</text>
+    <text x="443.6" y="429.9">O</text>
+    <text x="474.9" y="429.9">R</text>
+    <text x="506.2" y="429.9">D</text>
+    <text x="568.7" y="429.9">E</text>
+    <text x="600" y="429.9">A</text>
+    <text x="631.3" y="429.9">S</text>
+    <text x="662.5" y="429.9">T</text>
+    <text x="818.9" y="429.9">3</text>
+    <text x="912.7" y="429.9">O</text>
+    <text x="944" y="429.9">N</text>
+    <text x="1006.5" y="429.9">T</text>
+    <text x="1037.8" y="429.9">I</text>
+    <text x="1069.1" y="429.9">M</text>
+    <text x="1100.4" y="429.9">E</text>
+  </g>
+  <g fill="#000000" opacity=".45">
+    <rect x="85.5" y="415" width="153.4" height="2"/>
+    <rect x="273.1" y="415" width="497.4" height="2"/>
+    <rect x="804.8" y="415" width="59.5" height="2"/>
+    <rect x="898.6" y="415" width="215.9" height="2"/>
+  </g>
+  <!-- 15:43 CHESHUNT 1 ON TIME -->
+  <g fill="#113a29">
+    <rect x="85.5" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="116.8" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="148" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="179.3" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="210.6" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="273.1" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="304.4" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="335.7" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="367" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="398.2" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="429.5" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="460.8" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="492" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="523.3" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="554.6" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="585.9" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="617.1" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="648.4" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="679.7" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="711" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="742.2" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="804.8" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="836" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="898.6" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="929.9" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="961.1" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="992.4" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="1023.7" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="1055" y="472" width="28.3" height="56" rx="3"/>
+    <rect x="1086.2" y="472" width="28.3" height="56" rx="3"/>
+  </g>
+  <g font-family="Menlo, monospace" font-size="38" text-anchor="middle" fill="#ffb020">
+    <text x="99.6" y="513.9">1</text>
+    <text x="130.9" y="513.9">5</text>
+    <text x="162.2" y="513.9">:</text>
+    <text x="193.5" y="513.9">4</text>
+    <text x="224.7" y="513.9">3</text>
+    <text x="287.3" y="513.9">C</text>
+    <text x="318.5" y="513.9">H</text>
+    <text x="349.8" y="513.9">E</text>
+    <text x="381.1" y="513.9">S</text>
+    <text x="412.4" y="513.9">H</text>
+    <text x="443.6" y="513.9">U</text>
+    <text x="474.9" y="513.9">N</text>
+    <text x="506.2" y="513.9">T</text>
+    <text x="818.9" y="513.9">1</text>
+    <text x="912.7" y="513.9">O</text>
+    <text x="944" y="513.9">N</text>
+    <text x="1006.5" y="513.9">T</text>
+    <text x="1037.8" y="513.9">I</text>
+    <text x="1069.1" y="513.9">M</text>
+    <text x="1100.4" y="513.9">E</text>
+  </g>
+  <g fill="#000000" opacity=".45">
+    <rect x="85.5" y="499" width="153.4" height="2"/>
+    <rect x="273.1" y="499" width="497.4" height="2"/>
+    <rect x="804.8" y="499" width="59.5" height="2"/>
+    <rect x="898.6" y="499" width="215.9" height="2"/>
   </g>
 </svg>

@@ -110,6 +110,23 @@ async def test_discovery_and_unauthenticated_mcp(client: httpx.AsyncClient) -> N
     assert (await client.get("/healthz")).text == "ok"
 
 
+@pytest.mark.usefixtures("settings")
+async def test_openai_domain_challenge(monkeypatch: pytest.MonkeyPatch) -> None:
+    # OpenAI's directory proves the domain by fetching this path: the token
+    # alone, as plain text, with nothing around it.
+    monkeypatch.setenv("OPENAI_APPS_CHALLENGE", " token-from-the-portal ")
+    transport = httpx.ASGITransport(app=build_app(server.mcp, Settings.from_env()))
+    async with httpx.AsyncClient(transport=transport, base_url=BASE) as c:
+        r = await c.get("/.well-known/openai-apps-challenge")
+    assert r.status_code == 200
+    assert r.text == "token-from-the-portal"
+    assert r.headers["content-type"].startswith("text/plain")
+
+
+async def test_no_openai_challenge_unless_configured(client: httpx.AsyncClient) -> None:
+    assert (await client.get("/.well-known/openai-apps-challenge")).status_code == 404
+
+
 async def test_metadata_advertises_refresh_tokens_and_public_clients(
     client: httpx.AsyncClient,
 ) -> None:

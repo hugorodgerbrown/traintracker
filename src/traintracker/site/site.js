@@ -21,7 +21,7 @@ for (const button of document.querySelectorAll("button[data-copy]")) {
 // becomes a flap that turns to it. A board with data-feed (the shareable
 // boards, site/boards.py) fetches its trains again on each minute while the
 // page is visible, and the flaps turn from the old letters to the new.
-const FLAPS = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:.-&'/()"; // the order the flaps turn in
+const FLAPS = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:.-&'/()+"; // the order the flaps turn in
 const MAX_TURNS = 8;
 const TICK_MS = 45;
 const CLOCK_TURN_MS = 180; // a clock's flap falls more slowly than a board's riffle
@@ -44,6 +44,30 @@ const NARROW = [
 /** How many columns one line of a layout takes. */
 function columns(parts) {
   return parts.reduce((n, part) => n + (Array.isArray(part) ? part[1] : part), 0);
+}
+
+/** How a train is running, from its booked time and what Expected says:
+ * "cancelled", "late", or "" (on time, early, or no report). A late train
+ * with an expected time shows how late too, as far as the column allows:
+ * "15:41 +5". */
+function running(time, expected, width = 9) {
+  if (/^cancelled$/i.test(expected)) return { state: "cancelled", shows: expected };
+  if (/^delayed$/i.test(expected)) return { state: "late", shows: expected };
+  const minutes = (hhmm) => {
+    const match = /^(\d\d):(\d\d)$/.exec(hhmm);
+    return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+  };
+  const booked = minutes(time);
+  const due = minutes(expected);
+  if (booked === null || due === null) return { state: "", shows: expected };
+  // Past midnight 23:58 is due at 00:03, five minutes late. Half a day or more
+  // the other way is early, and an early train is shown as it is.
+  const late = (due - booked + 1440) % 1440;
+  if (late === 0 || late >= 720) return { state: "", shows: expected };
+  const shows = [`${expected} +${late}`, `${expected}+${late}`, expected].find(
+    (text) => text.length <= width,
+  );
+  return { state: "late", shows };
 }
 
 /** The column where Expected starts in `layout`, on whichever line it is. */
@@ -187,7 +211,13 @@ function board(figure) {
     layClock();
     let i = 0;
     trains.forEach((train, row) => {
-      const text = { ...train, plat: train.platform && `Plat ${train.platform}` };
+      // A late train's Expected is white, a cancelled one's on red flaps.
+      const run = running(train.time, train.expected);
+      const text = {
+        ...train,
+        plat: train.platform && `Plat ${train.platform}`,
+        expected: run.shows,
+      };
       for (const parts of layout) {
         let column = 0;
         for (const part of parts) {
@@ -197,7 +227,10 @@ function board(figure) {
           }
           const [key, width] = part;
           for (const character of text[key].toUpperCase().slice(0, width).padEnd(width)) {
-            turn(cells[i++], character, row * 2 + (column++ >> 2));
+            const cell = cells[i++];
+            cell.classList.toggle("late", key === "expected" && run.state === "late");
+            cell.classList.toggle("cancelled", key === "expected" && run.state === "cancelled");
+            turn(cell, character, row * 2 + (column++ >> 2));
           }
         }
       }

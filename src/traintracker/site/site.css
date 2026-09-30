@@ -290,6 +290,7 @@ blockquote p {
   --pale: #cfe3d6;
   --well: #0a2a1c;
   --amber: #ffb020;
+  --cancelled: #c62828;
   padding: 0.875rem;
   border-radius: 0.75rem;
   background: #0b5d3b;
@@ -393,6 +394,17 @@ blockquote p {
   color: var(--amber);
   font: 600 calc(var(--pitch) * 1.05) / 1 ui-monospace, "SF Mono", Menlo, Consolas,
     "Liberation Mono", monospace;
+}
+
+/* A late train's Expected is white, and a cancelled one's is on red flaps
+   (white on red, 5.6:1). The words say it too: colour is never all of it. */
+.departures .cell.late {
+  color: #ffffff;
+}
+
+.departures .cell.cancelled {
+  background: var(--cancelled);
+  color: #ffffff;
 }
 
 /* The seam where a flap folds. */

@@ -15,6 +15,7 @@
         --board: #0a2a1c;
         --flap: #113a29;
         --amber: #ffb020;
+        --cancelled: #c62828;
         --text: #ffffff;
         --muted: #cfe3d6;
       }
@@ -119,6 +120,17 @@
         color: var(--amber);
         font: 600 calc(var(--pitch) * 1.05) / 1 ui-monospace, "SF Mono", Menlo, Consolas,
           "Liberation Mono", monospace;
+      }
+
+      /* A late train's Expected is white, and a cancelled one's is on red
+         flaps (white on red, 5.6:1). The words say it too. */
+      .cell.late {
+        color: var(--text);
+      }
+
+      .cell.cancelled {
+        background: var(--cancelled);
+        color: var(--text);
       }
 
       /* The seam where a flap folds. */
@@ -226,7 +238,7 @@
       const TOOL = "show_board"; // the tool this page is shown with; Refresh calls it again
       const MAX_SERVICES = 12;
       // The order the flaps turn in. A character outside it is shown without turning.
-      const FLAPS = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:.-&'/()";
+      const FLAPS = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:.-&'/()+";
       const MAX_TURNS = 8;
       const TICK_MS = 45;
       const NARROW_BELOW = 480; // px of panel width
@@ -342,6 +354,30 @@
         };
       }
 
+      /** How a train is running, from its booked time and what Expected says:
+       * "cancelled", "late", or "" (on time, early, or no report). A late train
+       * with an expected time shows how late too, as far as the column allows:
+       * "15:41 +5". */
+      function running(time, expected, width = 9) {
+        if (/^cancelled$/i.test(expected)) return { state: "cancelled", shows: expected };
+        if (/^delayed$/i.test(expected)) return { state: "late", shows: expected };
+        const minutes = (hhmm) => {
+          const match = /^(\d\d):(\d\d)$/.exec(hhmm);
+          return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+        };
+        const booked = minutes(time);
+        const due = minutes(expected);
+        if (booked === null || due === null) return { state: "", shows: expected };
+        // Past midnight 23:58 is due at 00:03, five minutes late. Half a day or more
+        // the other way is early, and an early train is shown as it is.
+        const late = (due - booked + 1440) % 1440;
+        if (late === 0 || late >= 720) return { state: "", shows: expected };
+        const shows = [`${expected} +${late}`, `${expected}+${late}`, expected].find(
+          (text) => text.length <= width,
+        );
+        return { state: "late", shows };
+      }
+
       function columns(line) {
         return line.reduce((n, part) => n + (Array.isArray(part) ? part[1] : part), 0);
       }
@@ -364,6 +400,9 @@
         let i = 0;
         services.forEach((service, row) => {
           const text = fields(service, arrivals);
+          // A late train's Expected is white, a cancelled one's on red flaps.
+          const run = running(text.time, text.expected);
+          text.expected = run.shows;
           for (const line of layout) {
             let column = 0;
             for (const part of line) {
@@ -373,7 +412,12 @@
               }
               const [name, width] = part;
               const value = text[name].toUpperCase().slice(0, width).padEnd(width);
-              for (const character of value) turn(cells[i++], character, row * 2 + (column++ >> 2));
+              for (const character of value) {
+                const cell = cells[i++];
+                cell.classList.toggle("late", name === "expected" && run.state === "late");
+                cell.classList.toggle("cancelled", name === "expected" && run.state === "cancelled");
+                turn(cell, character, row * 2 + (column++ >> 2));
+              }
             }
           }
         });

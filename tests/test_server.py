@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 import tomllib
 from collections.abc import AsyncIterator
@@ -236,6 +237,28 @@ async def test_timetable_work_waits_its_turn_and_gives_up_when_the_server_is_bus
     assert sorted(r.is_error for r in results) == [False, True]
     busy = next(r for r in results if r.is_error)
     assert "busy" in " ".join(getattr(c, "text", "") for c in busy.content)
+
+
+async def test_what_was_asked_stays_out_of_the_logs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    # The privacy policy says so. A failed call is the risk: its error names the
+    # station that was asked for.
+    server.configure_logging()
+
+    def broken(_tt: Any, station: Any, *_: Any) -> Any:
+        raise RuntimeError(f"no board for {station.name}")
+
+    async with connect(tmp_path, monkeypatch) as client:
+        with caplog.at_level(logging.INFO):
+            ambiguous = await error(client, "timetable", station="sudbury", date="2026-10-02")
+            monkeypatch.setattr(server, "_timetable_board", broken)
+            failed = await error(client, "timetable", station="Marks Tey", date="2026-10-02")
+    assert "sudbury" in ambiguous  # the caller is told
+    assert "Something went wrong on the server" in failed and "Marks Tey" not in failed
+    assert "sudbury" not in caplog.text.lower() and "marks tey" not in caplog.text.lower()
+    # The fault itself is still recorded: what kind, and where.
+    assert "RuntimeError in timetable" in caplog.text and "in broken" in caplog.text
 
 
 async def test_service_details_timetable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -12,6 +12,7 @@ import functools
 import logging
 import re
 import sys
+import traceback
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -57,6 +58,7 @@ log = logging.getLogger("traintracker")
 P = ParamSpec("P")
 R = TypeVar("R")
 
+SDK_TOOL_LOGGER = "mcp.server.mcpserver.server"
 HEAVY_AT_ONCE = 2  # timetable reads and journey plans running at one time
 BUSY_AFTER = 10.0  # seconds a call waits for its turn before it is told to retry
 
@@ -319,6 +321,17 @@ def _tool_errors(
             raise ToolError("The upstream service timed out; try again.") from exc
         except httpx.HTTPError as exc:
             raise ToolError(f"Network error reaching the data source: {exc}") from exc
+        except Exception as exc:
+            # The message may repeat what the caller asked, which the privacy
+            # policy keeps out of the logs. Log the kind of error and where it
+            # was raised, and leave the message out.
+            log.error(
+                "%s in %s\n%s",
+                type(exc).__name__,
+                fn.__name__,
+                "".join(traceback.format_tb(exc.__traceback__)),
+            )
+            raise ToolError("Something went wrong on the server. Try again.") from None
 
     return wrapper
 
@@ -900,7 +913,7 @@ async def _overlay_live(a: App, journeys: list[Journey], mct: int, notes: list[s
                 boards[key] = await a.darwin.board(frm, "departures", filter_crs=to, rows=20)
             except (TrainTrackerError, httpx.HTTPError) as exc:
                 # Live times are a bonus; the plan stands without them.
-                log.info("Live overlay skipped for %s->%s: %s", frm, to, exc)
+                log.info("Live overlay skipped for a leg: %s", type(exc).__name__)
                 boards[key] = None
                 failure = failure or exc
         return boards[key]
@@ -1074,6 +1087,10 @@ def configure_logging() -> None:
     # presigned S3 URL whose query string holds temporary AWS credentials.
     for name in ("httpx", "httpcore"):
         logging.getLogger(name).setLevel(logging.WARNING)
+    # The SDK logs each failed tool call at INFO with the error text, and the
+    # text names what was asked for ("'Yeovil' is ambiguous"). The privacy policy
+    # says questions are not written to logs.
+    logging.getLogger(SDK_TOOL_LOGGER).setLevel(logging.WARNING)
 
 
 def main(argv: list[str] | None = None) -> None:

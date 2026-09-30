@@ -49,9 +49,10 @@ async def test_pages_are_served(client: httpx.AsyncClient, path: str) -> None:
     assert "{{" not in r.text, "an unfilled field"
     assert len(re.findall(r"<h1[ >]", r.text)) == 1
     assert r.text.count('aria-current="page"') == 1 and 'href="#main"' in r.text
-    # Every page credits the data and gives the support address.
+    # Every page credits the live data, links to the other credits and gives
+    # the support address.
     assert "Powered by National Rail Enquiries" in r.text
-    assert "Open Government Licence v3.0" in r.text and "Open Database License" in r.text
+    assert '<a href="/docs#data">Data sources</a>' in r.text
     assert "mailto:support@traintrackr.live" in r.text
     assert (await client.head(path)).status_code == 200
 
@@ -119,6 +120,9 @@ async def test_the_docs_cover_every_tool_and_the_limits(client: httpx.AsyncClien
     for limit in ("next two hours", "No past running times", "No fares"):
         assert limit in text
     assert "4 requests at once and 12 a minute" in text  # the limits as configured
+    # The footer's "Data sources" link lands here, so the full credits must be here.
+    assert '<h2 id="data">' in text
+    assert "Open Government Licence v3.0" in text and "Open Database License" in text
 
 
 async def test_the_privacy_policy_says_what_the_code_does(client: httpx.AsyncClient) -> None:

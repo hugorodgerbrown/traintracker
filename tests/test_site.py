@@ -139,6 +139,7 @@ async def test_the_docs_cover_every_tool_and_the_limits(client: httpx.AsyncClien
     for limit in ("next two hours", "No past running times", "No fares"):
         assert limit in text
     assert "4 requests at once and 12 a minute" in text  # the limits as configured
+    assert "a journey plan counts as 3" in text
     # The footer's "Data sources" link lands here, so the full credits must be here.
     assert '<h2 id="data">' in text
     assert "Open Government Licence v3.0" in text and "Open Database License" in text

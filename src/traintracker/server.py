@@ -57,6 +57,9 @@ log = logging.getLogger("traintracker")
 P = ParamSpec("P")
 R = TypeVar("R")
 
+HEAVY_AT_ONCE = 2  # timetable reads and journey plans running at one time
+BUSY_AFTER = 10.0  # seconds a call waits for its turn before it is told to retry
+
 INSTRUCTIONS = """\
 GB (National Rail) train times.
 - Resolve places with find_station when unsure; every tool also accepts names or CRS codes.
@@ -89,6 +92,24 @@ class App:
     refresh_error: str | None = None
     refresh_started: datetime | None = None
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    _heavy: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(HEAVY_AT_ONCE))
+
+    async def off_loop(self, fn: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+        """Run timetable work in a thread, HEAVY_AT_ONCE at a time.
+
+        Reading a day's schedules or planning a journey takes seconds of CPU.
+        On the event loop it would hold up every other request, the health
+        check included; in threads without a limit, a run of calls would take
+        every worker, and the sign-in endpoints use the same ones.
+        """
+        try:
+            await asyncio.wait_for(self._heavy.acquire(), BUSY_AFTER)
+        except TimeoutError:
+            raise ToolError("The server is busy. Try again in a few seconds.") from None
+        try:
+            return await asyncio.to_thread(fn, *args, **kwargs)
+        finally:
+            self._heavy.release()
 
     def timetable(self) -> Timetable:
         try:
@@ -260,6 +281,19 @@ def _when(day: str | None, time: str | None) -> datetime:
         raise ToolError(f"Time '{time}' should be HH:MM (24-hour).") from exc
 
 
+def _covered(tt: Timetable, day: date) -> None:
+    """Refuse a date outside the timetable.
+
+    Nothing runs on such a date, so there is no answer to give, and each new
+    date costs a read of every schedule to find that out.
+    """
+    first, last = tt.meta.get("valid_from"), tt.meta.get("valid_to")
+    iso = day.isoformat()
+    if (first and iso < first) or (last and iso > last):
+        span = f"{first} to {last}" if first and last else f"up to {last}" if last else first
+        raise ToolError(f"{iso} is outside the timetable, which covers {span}.")
+
+
 def _tool_errors(
     fn: Callable[P, Awaitable[R]],
 ) -> Callable[P, Awaitable[R]]:
@@ -350,11 +384,7 @@ def _timetable_board(
             (minutes_on(day, trip, t) or 0, _trip_board_service(trip, idx, day, board, points))
         )
     services.sort(key=lambda x: x[0])
-    notes = []
-    valid_to = tt.meta.get("valid_to")
-    if valid_to and day.isoformat() > valid_to:
-        notes.append(f"The timetable only runs to {valid_to}; later dates may be incomplete.")
-    notes.append("Booked (timetabled) times; engineering-work changes appear once published.")
+    notes = ["Booked (timetabled) times; engineering-work changes appear once published."]
     return Board(
         station=StationRef(name=st.name, crs=st.crs),
         board=board,
@@ -471,15 +501,18 @@ async def _live_board(
         except (UpstreamError, httpx.HTTPError) as exc:
             notes.append(_darwin_offline(exc))
     if b is None:
+
+        def booked() -> Board:
+            return _timetable_board(a.timetable(), st, start, 120, board, other, rows, points)
+
         try:
-            tt = a.timetable()
+            b = await a.off_loop(booked)
         except TimetableMissing as exc:
             if notes:
                 raise UpstreamError(
                     f"{notes[0]} Booked times aren't available either: {exc}"
                 ) from exc
             raise
-        b = _timetable_board(tt, st, start, 120, board, other, rows, points)
         notes.append(
             "Showing booked times instead."
             if notes
@@ -718,9 +751,15 @@ async def timetable(
     when = _when(date, time)
     if not time and when.date() != datetime.now(UK_TZ).date():
         window_minutes = 1440  # "what runs on Saturday?" means the whole day
-    b = _timetable_board(
-        a.timetable(), st, when, window_minutes, board, other, rows, include_calling_points
-    )
+
+    def booked() -> Board:
+        tt = a.timetable()
+        _covered(tt, when.date())
+        return _timetable_board(
+            tt, st, when, window_minutes, board, other, rows, include_calling_points
+        )
+
+    b = await a.off_loop(booked)
     if a.settings.demo:
         b.messages.insert(0, demo.DEMO_NOTE)
     return b
@@ -745,7 +784,13 @@ async def service_details(
             run_date = date.fromisoformat(run)
         except ValueError as exc:
             raise ToolError(f"'{service_id}' is not a valid timetable service ID.") from exc
-        trip = a.timetable().trip(uid, run_date)
+
+        def find() -> Trip | None:
+            tt = a.timetable()
+            _covered(tt, run_date)
+            return tt.trip(uid, run_date)
+
+        trip = await a.off_loop(find)
         if trip is None:
             raise ToolError(f"No timetabled service {uid} runs on {run}.")
         return ServiceDetail(
@@ -802,19 +847,23 @@ async def plan_journey(
     if v and v.crs in (o.crs, d.crs):
         v = None  # "via" an end point is no constraint
     when = _when(date, time)
-    tt = a.timetable()
     mct = a.settings.min_interchange_minutes
-    journeys = await asyncio.to_thread(
-        planner.plan,
-        tt,
-        o.crs,
-        d.crs,
-        when,
-        via=v.crs if v else None,
-        count=count,
-        max_changes=max_changes,
-        mct=mct,
-    )
+
+    def plan() -> list[Journey]:
+        tt = a.timetable()
+        _covered(tt, when.date())
+        return planner.plan(
+            tt,
+            o.crs,
+            d.crs,
+            when,
+            via=v.crs if v else None,
+            count=count,
+            max_changes=max_changes,
+            mct=mct,
+        )
+
+    journeys = await a.off_loop(plan)
     notes = ["Times are booked (timetable) times unless a leg shows expected times."]
     if a.settings.demo:
         notes.insert(0, demo.DEMO_NOTE)
@@ -825,9 +874,6 @@ async def plan_journey(
             "No journey found before the end of the service day. Try an earlier time, "
             "tomorrow, or a via station."
         )
-    valid_to = tt.meta.get("valid_to")
-    if valid_to and when.date().isoformat() > valid_to:
-        notes.append(f"The timetable only runs to {valid_to}.")
     if live and a.settings.has_darwin and when.date() == datetime.now(UK_TZ).date():
         await _overlay_live(a, journeys, mct, notes)
     return JourneyPlan(

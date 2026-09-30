@@ -163,6 +163,8 @@ The SCHEDULE feed is large (all trains, freight included). On import, traintrack
 - Stops with a public time only; junctions and passing points are dropped.
 - Schedules that ended more than two days ago are dropped.
 
+The timetable therefore covers two days before it was built up to the last date any schedule runs, and a tool asked about a date outside that says so.
+
 For each date it applies Network Rail's precedence rules per train: cancellation (C) beats new (N), which beats overlay (O), which beats permanent (P), and it honours each schedule's running days and date range. Bank-holiday running flags are not applied yet, so on bank holidays check the live board.
 
 ### Journey planning
@@ -173,6 +175,7 @@ For each date it applies Network Rail's precedence rules per train: cancellation
 - **Cross-London:** the Tube isn't in the rail timetable, so transfers between London terminals (Kings Cross, Liverpool Street, Waterloo, etc.) are approximated: walks under 0.8 km at walking pace plus 5 minutes, otherwise Tube at ~12 minutes plus 3.5 minutes per km. They're labelled `tube (approx.)`.
 - **Live overlay:** for today's legs departing within two hours, Darwin's expected times and platforms are added, and `connection_at_risk` is set if a delay or cancellation eats into a change, including one made via a walk/Tube link. If Darwin is down, the plan is still returned without live times.
 - The search covers the service day (trains running into the early hours are included); it doesn't carry over to the next morning. Station boards do include trains just after midnight.
+- **Load:** a plan scans the day's trains several times, and the network for a date takes seconds to build and over a hundred megabytes to hold. Two dates are kept in memory. Timetable reads and plans run in threads, two at a time; a call that waits more than 10 seconds for its turn is told the server is busy.
 
 ## Install
 
@@ -311,7 +314,7 @@ With only the passphrase set, the page is the passphrase form and nothing else. 
 
 Everyone who signs in with the passphrase shares one account, `passphrase`.
 
-**Rate limit.** Tool calls over HTTP are limited per account: `RATE_LIMIT_BURST` calls at once, refilled at `RATE_LIMIT_PER_MINUTE`. One Darwin key serves every user, and the limit stops one account spending the whole allowance. A call pays for one request to Darwin; a call that makes more (a long board read page by page, a journey with several legs) is charged one for each further request, so the account's next calls wait longer. A call over the limit comes back as a tool error, *Too many requests. Try again in N seconds.*, which the model can read and relay. The counts are held in memory, so a restart clears them. The static token counts as one account. The stdio server is not limited.
+**Rate limit.** Tool calls over HTTP are limited per account: `RATE_LIMIT_BURST` calls at once, refilled at `RATE_LIMIT_PER_MINUTE`. One Darwin key serves every user, and the limit stops one account spending the whole allowance. A call pays for one request to Darwin; a call that makes more (a long board read page by page, a journey with several legs) is charged one for each further request, so the account's next calls wait longer. A journey plan counts as three calls. A call over the limit comes back as a tool error, *Too many requests. Try again in N seconds.*, which the model can read and relay. The counts are held in memory, so a restart clears them. The static token counts as one account. The stdio server is not limited.
 
 **Before sign-in.** Registration and the start of a sign-in need no account, so they are limited another way. A client address can register 30 clients at once and 20 a minute, and start 20 sign-ins at once and 10 a minute; over that the answer is 429 with `Retry-After`. The address comes from `CLIENT_IP_HEADER` where that is set, and from the connection otherwise. These endpoints take bodies up to 16 KiB, a registration up to 4 KiB and a sign-in request up to 8 KiB. The server holds 10,000 registered clients at most, and a registration deletes clients that are a week old with no tokens and no sign-in under way (an assistant registers afresh each time it connects).
 

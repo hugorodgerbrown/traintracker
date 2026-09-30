@@ -43,7 +43,7 @@ from traintracker.oauth import (
     TraintrackerOAuthProvider,
     health,
 )
-from traintracker.ratelimit import RateLimiter, RateLimitMiddleware, limited
+from traintracker.ratelimit import PLAN_COST, RateLimiter, RateLimitMiddleware, limited
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
@@ -178,8 +178,8 @@ def site_fields(settings: Settings) -> dict[str, str]:
     if settings.rate_limit_per_minute > 0:
         fair_use = (
             f"Each account can make {max(1, settings.rate_limit_burst)} requests at once and "
-            f"{settings.rate_limit_per_minute} a minute. Over that, the assistant is told how "
-            "long to wait."
+            f"{settings.rate_limit_per_minute} a minute; a journey plan counts as {PLAN_COST}. "
+            "Over that, the assistant is told how long to wait."
         )
     else:
         fair_use = "There is no set limit on requests; please don't automate them."

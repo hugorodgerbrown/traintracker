@@ -76,6 +76,17 @@ def test_idle_buckets_are_forgotten() -> None:
     assert set(limiter._buckets) == {"c", "d"}
 
 
+def test_a_call_can_count_as_several() -> None:
+    clock = Clock()
+    limiter = RateLimiter(per_minute=60, burst=4, clock=clock)  # one a second
+    assert limiter.take("a", 3) == 0
+    assert limiter.take("a", 3) == 2
+    assert limiter.take("a") == 0
+    # A cost above the bucket's size is the whole bucket, not a call that can never be made.
+    clock.now += 60
+    assert limiter.take("a", 10) == 0
+
+
 def test_a_charge_puts_the_bucket_in_debt_but_no_deeper_than_a_full_one() -> None:
     clock = Clock()
     limiter = RateLimiter(per_minute=60, burst=2, clock=clock)  # one a second
@@ -152,6 +163,24 @@ async def test_a_limited_call_is_a_tool_error_the_model_can_read(settings: Setti
     assert [r.is_error for r in results] == [False, False, True]
     text = " ".join(getattr(c, "text", "") for c in results[2].content)
     assert text.startswith("Too many requests. Try again in ") and text.endswith(" seconds.")
+
+
+async def test_a_journey_plan_counts_as_several_calls(settings: Settings) -> None:
+    app = build_app(server.mcp, settings)
+    http = httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=app),
+        base_url=BASE,
+        headers={"Authorization": "Bearer static-token"},
+    )
+    async with (
+        app.router.lifespan_context(app),
+        http,
+        Client(streamable_http_client(f"{BASE}/mcp", http_client=http)) as client,
+    ):
+        # There is no timetable here, so the plan fails; it is counted all the same.
+        await client.call_tool("plan_journey", {"origin": "LST", "destination": "SUY"})
+        after = await client.call_tool("find_station", {"query": "sudbury"})
+    assert after.is_error  # a bucket of two, emptied by the one plan
 
 
 @respx.mock

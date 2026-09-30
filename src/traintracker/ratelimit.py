@@ -30,6 +30,10 @@ from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
 from mcp.types import CallToolResult, TextContent
 
 MAX_KEYS = 10_000
+# What a call counts as, where that is more than one. A journey plan scans every
+# train of the day several times over, and the server has half a CPU.
+PLAN_COST = 3
+COSTS = {"plan_journey": PLAN_COST}
 
 
 @dataclass
@@ -52,13 +56,15 @@ class RateLimiter:
         self.max_keys = max_keys
         self._buckets: dict[str, _Bucket] = {}
 
-    def take(self, key: str) -> int:
-        """Spend one call for `key`. Returns 0 if allowed, else the seconds to wait."""
+    def take(self, key: str, cost: int = 1) -> int:
+        """Spend a call for `key`, which counts as `cost` calls (no more than a
+        full bucket). Returns 0 if allowed, else the seconds to wait."""
+        cost = min(cost, self.burst)
         bucket = self._bucket(key)
-        if bucket.tokens >= 1:
-            bucket.tokens -= 1
+        if bucket.tokens >= cost:
+            bucket.tokens -= cost
             return 0
-        return max(1, math.ceil((1 - bucket.tokens) / self.rate))
+        return max(1, math.ceil((cost - bucket.tokens) / self.rate))
 
     def charge(self, key: str) -> None:
         """Spend one more for a call already allowed. Never refuses: the bucket
@@ -139,7 +145,7 @@ class RateLimitMiddleware:
     ) -> HandlerResult:
         if ctx.method != "tools/call" or (key := account_key(ctx.request)) is None:
             return await call_next(ctx)
-        wait = self.limiter.take(key)
+        wait = self.limiter.take(key, COSTS.get(str((ctx.params or {}).get("name")), 1))
         if wait:
             return CallToolResult(
                 content=[TextContent(type="text", text=limited(wait))], is_error=True

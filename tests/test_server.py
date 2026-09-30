@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 import tomllib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -191,6 +193,49 @@ async def test_timetable_board(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         assert [s["scheduled"] for s in out["services"]] == ["13:58", "14:58"]
         assert out["services"][0]["destination"][0]["crs"] == "SUY"
         assert out["services"][0]["operator"] == "Greater Anglia"
+
+
+async def test_a_date_outside_the_timetable_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The test timetable was built on 26 September and its schedules end on
+    # 31 December. Each new date costs a read of every schedule, so dates it
+    # can't answer for are turned away before that.
+    async with connect(tmp_path, monkeypatch) as client:
+        late = await error(client, "timetable", station="Marks Tey", date="2027-06-01")
+        early = await error(
+            client, "plan_journey", origin="LST", destination="SUY", date="2026-09-01"
+        )
+        never = await error(client, "service_details", service_id="tt:B00013:2031-01-01")
+    assert late.endswith(
+        "2027-06-01 is outside the timetable, which covers 2026-09-24 to 2026-12-31."
+    )
+    assert "2026-09-01 is outside the timetable" in early
+    assert "2031-01-01 is outside the timetable" in never
+
+
+async def test_timetable_work_waits_its_turn_and_gives_up_when_the_server_is_busy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(server, "HEAVY_AT_ONCE", 1)
+    monkeypatch.setattr(server, "BUSY_AFTER", 0.05)
+    board = server._timetable_board
+
+    def slow(*args: Any) -> Any:
+        time.sleep(0.3)
+        return board(*args)
+
+    monkeypatch.setattr(server, "_timetable_board", slow)
+    async with connect(tmp_path, monkeypatch) as client:
+        results = await asyncio.gather(
+            *(
+                client.call_tool("timetable", {"station": "Marks Tey", "date": "2026-10-02"})
+                for _ in range(2)
+            )
+        )
+    assert sorted(r.is_error for r in results) == [False, True]
+    busy = next(r for r in results if r.is_error)
+    assert "busy" in " ".join(getattr(c, "text", "") for c in busy.content)
 
 
 async def test_service_details_timetable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

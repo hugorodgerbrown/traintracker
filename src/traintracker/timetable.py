@@ -262,6 +262,7 @@ def build(
                 "schedules": str(n_schedules),
                 "public_schedules": str(n_public),
                 "stops": str(_scalar(con, "SELECT count(*) FROM stops")),
+                "valid_from": keep_from,
                 "valid_to": str(_scalar(con, "SELECT max(end_date) FROM schedules WHERE public=1")),
             }
             with con.cursor() as cur:
@@ -579,7 +580,8 @@ _active_cache: dict[tuple[Any, ...], dict[int, str]] = {}
 _cache_lock = threading.Lock()
 
 
-@lru_cache(maxsize=3)
+# Two days, as in planner._network: a day's trips are tens of megabytes.
+@lru_cache(maxsize=2)
 def _day_trips(tt: Timetable, _built_at: str | None, day: date) -> list[Trip]:
     trips = tt._load_trips(tt.active_ids(day).keys(), day)
     prev = day - timedelta(days=1)

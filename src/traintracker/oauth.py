@@ -533,9 +533,12 @@ class TraintrackerOAuthProvider(
             client.client_id, scopes or refresh_token.scopes, refresh_token.subject, family
         )
         now = time.time()
+        # Only while it is still the refresh token. If another request spent it
+        # after the SELECT above, the row with this hash is now the record of
+        # that (kind 'rotated'), and deleting it would let this request through.
         retire: Statement = (
-            f"DELETE FROM {self.schema}.tokens WHERE family = %s AND token_hash = %s "
-            "RETURNING family",
+            f"DELETE FROM {self.schema}.tokens "
+            "WHERE family = %s AND token_hash = %s AND kind = 'refresh' RETURNING family",
             (family, old_hash),
             True,
         )

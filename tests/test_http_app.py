@@ -11,12 +11,15 @@ import os
 import secrets
 import time
 from collections.abc import AsyncIterator
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import httpx
 import psycopg
 import pytest
+from mcp.server.auth.provider import TokenError
 from mcp.server.transport_security import TransportSecurityMiddleware
+from mcp.shared.auth import OAuthToken
 from starlette.requests import Request
 
 from traintracker import http_app, oauth, server
@@ -489,6 +492,52 @@ async def test_a_replaced_refresh_token_used_again_signs_the_connection_out(
     assert (await refresh(third["refresh_token"])).status_code == 400
     with psycopg.connect(settings.database_url or "") as con:
         assert con.execute(f"SELECT count(*) FROM {settings.auth_schema}.tokens").fetchone() == (0,)
+
+
+async def test_two_refreshes_of_one_token_at_once_issue_one_pair(
+    client: httpx.AsyncClient, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider = _provider(settings)
+    client_id = await _register(client)
+    sign_in, verifier = await _start_sign_in(client, client_id)
+    ok = await client.post("/sign-in", data={"request": sign_in, "passphrase": PASSPHRASE})
+    tokens = (
+        await _token(
+            client,
+            grant_type="authorization_code",
+            code=parse_qs(urlparse(ok.headers["location"]).query)["code"][0],
+            redirect_uri=CALLBACK,
+            client_id=client_id,
+            code_verifier=verifier,
+        )
+    ).json()
+    registered = await provider.get_client(client_id)
+    assert registered is not None
+    refresh = await provider.load_refresh_token(registered, tokens["refresh_token"])
+    assert refresh is not None
+
+    # The second request finds the token still current, and then the first
+    # request completes before the second goes on to spend it.
+    real_db = provider._db
+    winner: list[OAuthToken] = []
+
+    async def overtaken(*statements: Any, fetch: bool = False) -> list[tuple[Any, ...]]:
+        rows = await real_db(*statements, fetch=fetch)
+        if statements[0][0].startswith("SELECT family") and not winner:
+            monkeypatch.setattr(provider, "_db", real_db)
+            winner.append(await provider.exchange_refresh_token(registered, refresh, []))
+        return rows
+
+    monkeypatch.setattr(provider, "_db", overtaken)
+    with pytest.raises(TokenError, match="already used"):
+        await provider.exchange_refresh_token(registered, refresh, [])
+    # The first request's tokens stand, and the old token is still on record.
+    assert await provider.load_access_token(winner[0].access_token) is not None
+    with psycopg.connect(settings.database_url or "") as con:
+        kinds = con.execute(
+            f"SELECT kind FROM {settings.auth_schema}.tokens ORDER BY kind"
+        ).fetchall()
+    assert [k for (k,) in kinds] == ["access", "refresh", "rotated"]
 
 
 async def test_wrong_passphrases_end_the_sign_in(

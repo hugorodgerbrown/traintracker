@@ -11,9 +11,11 @@ draws the flaps, ticks the clock and fetches the board again from
 
 Anyone can open a board without signing in, and a board embedded in a busy
 page is opened by everyone who visits it. So what reaches Darwin is one fetch
-per board a minute, not one per viewer: each answer is kept for TTL seconds
-and shared by every page showing that board, and while it is being fetched
-other requests for it wait for the same answer. Each client address may open
+per board a minute, not one per viewer: each answer is kept until the minute
+is up (TTL at most) and shared by every page showing that board, and while it
+is being fetched other requests for it wait for the same answer. The pages
+fetch on the minute, as their clocks turn to :00, so the board they get was
+fetched then too, and says so ("Updated 23:23:00"). Each client address may open
 boards at a limited rate as well, which bounds what one address can make the
 server fetch by asking for many different boards.
 
@@ -32,6 +34,7 @@ from __future__ import annotations
 import asyncio
 import html
 import re
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -55,7 +58,8 @@ PICKER_PATH = "/board"
 FEED_PREFIX = "/api/board"
 SUGGEST_PATH = "/api/stations"
 
-TTL = 60.0  # seconds one fetched board is shared for
+TTL = 60.0  # seconds one fetched board is shared for at most: until the minute is up
+EARLY = 2.0  # seconds before the minute a page's clock may turn to it
 REFRESH = 60  # seconds between a page's fetches while it is visible
 MAX_BOARDS = 2048  # boards kept at once; about one per station
 MAX_SUGGESTIONS = 8
@@ -188,15 +192,21 @@ def _train(service: BoardService) -> dict[str, str]:
     }
 
 
-def payload(board: Board, platforms: list[str], key: BoardKey) -> dict[str, Any]:
-    """A board as the page draws it, and as /api/board answers."""
+def until_next_minute() -> float:
+    """Seconds until the clock next turns to :00. UK minutes start when UTC's do."""
+    return 60.0 - (time.time() + EARLY) % 60.0
+
+
+def payload(board: Board, platforms: list[str], key: BoardKey, updated: datetime) -> dict[str, Any]:
+    """A board as the page draws it, and as /api/board answers. `updated` is
+    when it was asked for."""
     return {
         "station": {"name": board.station.name, "crs": board.station.crs},
         "to": {"name": _name(key.to), "crs": key.to} if key.to else None,
         "platform": key.platform,
         "platforms": platforms,
         "source": board.source,
-        "updated": datetime.now(UK_TZ).strftime("%H:%M"),
+        "updated": updated.strftime("%H:%M:%S"),
         "messages": board.messages[:3],
         "trains": [_train(s) for s in board.services],
     }
@@ -208,7 +218,12 @@ class _Failed:
 
 
 class SharedBoards:
-    """Fetched boards, each shared by every request for it for `ttl` seconds.
+    """Fetched boards, each shared by every request for it in the same minute,
+    and for `ttl` seconds at most.
+
+    The pages fetch as their clocks turn to :00, and a clock can be a little
+    ahead of ours: a request up to EARLY seconds before the minute counts as
+    in it, and gets a board fetched for it and stamped with its first second.
 
     A failure is kept as long, so a board that can't be fetched isn't asked
     for again by every page showing it.
@@ -218,29 +233,40 @@ class SharedBoards:
         self.fetch = fetch
         self.ttl = ttl
         self._kept = TTLCache(MAX_BOARDS)
-        self._pending: dict[BoardKey, asyncio.Future[dict[str, Any] | _Failed]] = {}
+        self._pending: dict[
+            tuple[BoardKey, int], asyncio.Future[tuple[int, dict[str, Any] | _Failed]]
+        ] = {}
 
     async def get(self, key: BoardKey) -> dict[str, Any]:
-        found = self._kept.get(key)
-        if found is None:
-            if key not in self._pending:
-                self._pending[key] = asyncio.ensure_future(self._fetch(key))
-                self._pending[key].add_done_callback(lambda _: self._pending.pop(key, None))
+        now = time.time()
+        minute = int((now + EARLY) // 60)
+        kept = self._kept.get(key)
+        if kept is not None and kept[0] == minute:
+            found = kept[1]
+        else:
+            ask = (key, minute)
+            if ask not in self._pending:
+                self._pending[ask] = asyncio.ensure_future(self._fetch(key, minute, now))
+                self._pending[ask].add_done_callback(lambda _: self._pending.pop(ask, None))
             # Shielded: one caller going away doesn't cancel the others' answer.
-            found = await asyncio.shield(self._pending[key])
+            found = (await asyncio.shield(self._pending[ask]))[1]
         if isinstance(found, _Failed):
             raise BoardUnavailable(found.message)
         return cast(dict[str, Any], found)
 
-    async def _fetch(self, key: BoardKey) -> dict[str, Any] | _Failed:
+    async def _fetch(
+        self, key: BoardKey, minute: int, now: float
+    ) -> tuple[int, dict[str, Any] | _Failed]:
         result: dict[str, Any] | _Failed
+        asked = datetime.fromtimestamp(max(now, minute * 60), UK_TZ)
         try:
             board, platforms = await self.fetch(key.crs, key.to, key.platform)
-            result = payload(board, platforms, key)
+            result = payload(board, platforms, key, asked)
         except ToolError as exc:
             result = _Failed(str(exc))
-        self._kept.set(key, result, self.ttl)
-        return result
+        # Kept to the end of its minute, when the pages ask for the next one.
+        self._kept.set(key, (minute, result), min(self.ttl, (minute + 1) * 60 - now))
+        return minute, result
 
 
 # ----------------------------------------------------------------- the pages
@@ -648,7 +674,9 @@ def routes(fields: dict[str, str], fetch: Fetch, ip_header: str | None = None) -
             )
         try:
             board = await boards.get(key)
-            return JSONResponse(board, headers=FEED_HEADERS)
+            # No cache keeps it past the minute either.
+            fresh = f"public, max-age={int(until_next_minute())}"
+            return JSONResponse(board, headers={**FEED_HEADERS, "Cache-Control": fresh})
         except BoardUnavailable as exc:
             return JSONResponse({"error": str(exc)}, 503, headers=FEED_HEADERS)
 

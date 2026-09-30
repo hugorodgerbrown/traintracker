@@ -7,6 +7,7 @@ import html
 import os
 import re
 from collections.abc import AsyncIterator
+from datetime import datetime
 from pathlib import Path
 
 import httpx
@@ -15,7 +16,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from starlette.applications import Starlette
 
 from traintracker import server, stations
-from traintracker.config import Settings
+from traintracker.config import UK_TZ, Settings
 from traintracker.http_app import build_app
 from traintracker.models import Board, BoardService, StationRef
 from traintracker.site import boards
@@ -340,7 +341,7 @@ async def test_the_feed_is_the_board_as_data(client: httpx.AsyncClient) -> None:
     data = r.json()
     assert data["station"] == {"name": "London Liverpool Street", "crs": "LST"}
     assert data["platform"] == "9" and data["platforms"] == ["9", "14"]
-    assert data["source"] == "darwin" and re.fullmatch(r"\d\d:\d\d", data["updated"])
+    assert data["source"] == "darwin" and re.fullmatch(r"\d\d:\d\d:\d\d", data["updated"])
     assert data["trains"] == [
         {
             "time": "15:40",
@@ -349,7 +350,9 @@ async def test_the_feed_is_the_board_as_data(client: httpx.AsyncClient) -> None:
             "expected": "15:44",
         }
     ]
-    assert r.headers["cache-control"] == "public, max-age=30"
+    # Kept by no cache past the minute: the pages fetch again as it turns.
+    age = re.fullmatch(r"public, max-age=(\d+)", r.headers["cache-control"])
+    assert age and int(age[1]) < 60
     for path in ("/api/board/XYZ", "/api/board/LST/nine!"):
         assert (await client.get(path)).status_code == 404
 
@@ -373,6 +376,39 @@ async def test_a_board_is_fetched_again_once_it_is_old() -> None:
     await shared.get(boards.BoardKey("LST"))
     await shared.get(boards.BoardKey("LST"))
     assert len(fetch.calls) == 2
+
+
+@pytest.mark.parametrize(
+    ("asked", "updated", "ttl"),
+    [
+        # Asked for at 23:22:45, a board is kept for the 15 seconds left of that
+        # minute, not a whole minute: the pages ask again at 23:23:00.
+        (datetime(2026, 9, 30, 23, 22, 45), "23:22:45", 15.0),
+        # A page whose clock is a little ahead asks as it turns to 23:23:00: it
+        # gets that minute's board, stamped with its first second.
+        (datetime(2026, 9, 30, 23, 22, 59, 500000), "23:23:00", 60.5),
+    ],
+)
+async def test_a_board_is_kept_for_its_minute(
+    monkeypatch: pytest.MonkeyPatch, asked: datetime, updated: str, ttl: float
+) -> None:
+    kept: list[float] = []
+    fetch = FakeFetch()
+    shared = boards.SharedBoards(fetch, ttl=61.0)
+    real_set = shared._kept.set
+
+    def spy(key: object, value: object, seconds: float) -> None:
+        kept.append(seconds)
+        real_set(key, value, seconds)
+
+    monkeypatch.setattr(shared._kept, "set", spy)
+    monkeypatch.setattr(boards.time, "time", lambda: asked.replace(tzinfo=UK_TZ).timestamp())
+    data = await shared.get(boards.BoardKey("LST"))
+    assert data["updated"] == updated
+    assert kept == [pytest.approx(ttl)]
+    # The rest of that minute shares it.
+    await shared.get(boards.BoardKey("LST"))
+    assert len(fetch.calls) == 1
 
 
 async def test_a_failure_is_shared_too(client: httpx.AsyncClient, fetch: FakeFetch) -> None:

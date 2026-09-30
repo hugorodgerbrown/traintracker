@@ -8,8 +8,10 @@ Tool calls are rate limited per account (see ratelimit.py). The endpoints that
 come before sign-in have no account to count against, so they are limited per
 client address (OpenEndpointLimits).
 /healthz is open for the platform's health check, and so are the public pages
-(see site/): /, /docs, /privacy and /terms. With OPENAI_APPS_CHALLENGE set,
-/.well-known/openai-apps-challenge returns it, for OpenAI's domain check.
+(see site/): /, /docs, /privacy and /terms, and the shareable departure
+boards under /board with the data they fetch from /api (see site/boards.py).
+With OPENAI_APPS_CHALLENGE set, /.well-known/openai-apps-challenge returns it,
+for OpenAI's domain check.
 """
 
 from __future__ import annotations
@@ -43,7 +45,14 @@ from traintracker.oauth import (
     TraintrackerOAuthProvider,
     health,
 )
-from traintracker.ratelimit import PLAN_COST, RateLimiter, RateLimitMiddleware, limited
+from traintracker.ratelimit import (
+    PLAN_COST,
+    RateLimiter,
+    RateLimitMiddleware,
+    client_address,
+    limited,
+)
+from traintracker.site import boards
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
@@ -118,12 +127,7 @@ class OpenEndpointLimits:
         await self.small(scope, receive, send)
 
     def address(self, scope: Scope) -> str:
-        if self.ip_header:
-            for name, value in scope["headers"]:
-                if name == self.ip_header:
-                    return str(value.decode("latin-1").split(",")[0].strip())
-        client = scope.get("client")
-        return str(client[0]) if client else "unknown"
+        return client_address(scope, self.ip_header)
 
 
 def open_endpoint_limits() -> dict[tuple[str, str], RateLimiter]:
@@ -211,6 +215,9 @@ def openai_challenge(token: str | None) -> list[Route]:
 
 
 def build_app(server: MCPServer[Any], settings: Settings) -> Starlette:
+    # Imported here: the server module imports this one.
+    from traintracker.server import public_board
+
     provider = build_provider(settings)
     provider.create_tables()
     limit_tool_calls(server, settings)
@@ -234,6 +241,7 @@ def build_app(server: MCPServer[Any], settings: Settings) -> Starlette:
         custom_starlette_routes=[
             *provider.routes(),
             *site.routes(site_fields(settings)),
+            *boards.routes(site_fields(settings), public_board, settings.client_ip_header),
             Route(HEALTH_PATH, health),
             *openai_challenge(settings.openai_apps_challenge),
         ],

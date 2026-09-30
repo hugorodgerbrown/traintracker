@@ -64,6 +64,8 @@ async def test_the_landing_page_has_the_address_and_the_examples(
     assert 'data-copy="#mcp-url"' in text
     found = [text.index(prompt) for prompt in PROMPTS]
     assert found == sorted(found), "platforms first, then departures, then journeys"
+    # What it answers comes before how to set it up.
+    assert text.index('id="examples"') < text.index('id="url"') < text.index('id="claude"')
     assert "Claude" in text and "ChatGPT" in text
     # ChatGPT can't add a server outside its directory without developer mode.
     assert "Developer mode" in text and "isn't in the ChatGPT directory yet" in text

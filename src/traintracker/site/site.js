@@ -38,6 +38,25 @@ const NARROW = [
   [6, ["expected", 9], 1, ["plat", 8]],
 ];
 
+/** How many columns one line of a layout takes. */
+function columns(parts) {
+  return parts.reduce((n, part) => n + (Array.isArray(part) ? part[1] : part), 0);
+}
+
+/** `layout` with `extra` more columns for the destination. On a second line,
+ * they go in the gap before the platform, which stays at the end. */
+function widen(layout, extra) {
+  const [first, ...rest] = layout;
+  return [
+    first.map((part) => (Array.isArray(part) && part[0] === "place" ? [part[0], part[1] + extra] : part)),
+    ...rest.map((parts) => [
+      ...parts.slice(0, -2),
+      parts[parts.length - 2] + extra,
+      parts[parts.length - 1],
+    ]),
+  ];
+}
+
 const still = window.matchMedia("(prefers-reduced-motion: reduce)");
 // The boards' clocks show the time in the UK, as the station's own would.
 const UK_TIME = new Intl.DateTimeFormat("en-GB", {
@@ -93,13 +112,11 @@ function board(figure) {
     turning.clear();
     cells = [];
     flaps.replaceChildren();
-    flaps.style.setProperty(
-      "--cols",
-      layout[0].reduce((n, part) => n + (Array.isArray(part) ? part[1] : part), 0),
-    );
+    flaps.style.setProperty("--cols", columns(layout[0]));
     // An empty board is only its message, without headings over nothing.
     flaps.hidden = !trains.length;
-    if (layout === WIDE) {
+    // Headings over one line a train; two lines a train don't line up under them.
+    if (layout.length === 1) {
       flaps.append(
         line(layout[0], "line heads", (heads, key, width, column) => {
           const label = document.createElement("span");
@@ -133,7 +150,7 @@ function board(figure) {
   /** Turn every flap to the trains' letters, laying the board out first if needed. */
   function draw() {
     const layout = onTv() ? tvLayout() : panel.clientWidth < NARROW_BELOW ? NARROW : WIDE;
-    const key = `${layout === WIDE ? "wide" : "narrow"}:${trains.length}`;
+    const key = `${layout.length}:${columns(layout[0])}:${trains.length}`;
     if (key !== built) build(layout);
     built = key;
     laidOut = layout;
@@ -169,23 +186,35 @@ function board(figure) {
     flaps.style.setProperty("--pitch", `${Math.max(4, Math.floor(pitch * 10) / 10)}px`);
   }
 
-  /** The layout with the larger flaps on this screen: one line a train on a
-   * wide screen, two on a tall one. */
+  /** The layout with the larger flaps on this screen, one line a train on a
+   * wide screen and two on a tall one, with the destination widened to fill
+   * the columns the screen has to spare at that size. */
   function tvLayout() {
-    return pitchFor(NARROW) > pitchFor(WIDE) ? NARROW : WIDE;
+    const base = pitchFor(NARROW) > pitchFor(WIDE) ? NARROW : WIDE;
+    const pitch = pitchFor(base);
+    const fits = Math.floor(inner().across / (pitch + 2)); // flaps across, with their margins
+    const extra = fits - columns(base[0]);
+    return extra > 0 ? widen(base, extra) : base;
+  }
+
+  /** The room inside the flaps' box, in px. */
+  function inner() {
+    const style = getComputedStyle(flaps);
+    return {
+      across: flaps.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+      down: flaps.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
+    };
   }
 
   /** The largest pitch at which every train fits the flaps' box in `layout`. */
   function pitchFor(layout) {
-    const style = getComputedStyle(flaps);
-    const across = flaps.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-    const down = flaps.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
-    const cols = layout[0].reduce((n, part) => n + (Array.isArray(part) ? part[1] : part), 0);
+    const { across, down } = inner();
+    const cols = columns(layout[0]);
     // In units of the pitch (see site.css): a line of flaps is 1.6 high, with
     // 2px of margin; trains are 0.45 apart; the headings take 0.6 and 2px.
     const count = Math.max(1, trains.length);
     const lines = count * layout.length;
-    const heads = layout === WIDE ? 1 : 0;
+    const heads = layout.length === 1 ? 1 : 0;
     const units = lines * 1.6 + (count - 1) * 0.45 + heads * 0.6;
     const fixed = lines * 2 + heads * 2;
     // Each flap has 1px of margin on either side.
@@ -266,6 +295,7 @@ function follow(figure, seconds, show) {
   const updated = figure.querySelector(".updated");
   const status = figure.querySelector(".status");
   const stale = figure.querySelector(".stale-note");
+  const next = figure.querySelector(".next");
   let last = Date.now();
   let good = Date.now(); // when the board last updated
   let goodAt = updated.textContent.replace("Updated ", "");
@@ -311,10 +341,25 @@ function follow(figure, seconds, show) {
     }
   }
 
-  window.setInterval(update, seconds * 1000);
+  // Each second: count down to the next fetch beside "Updated", and make it
+  // when it is due.
+  let due = Date.now() + seconds * 1000;
+  async function countdown() {
+    const left = Math.ceil((due - Date.now()) / 1000);
+    if (left <= 0) {
+      due = Date.now() + seconds * 1000;
+      next.textContent = " · Updating…";
+      await update();
+    }
+    if (!busy) {
+      next.textContent = ` · Next update in ${Math.max(1, Math.ceil((due - Date.now()) / 1000))}s`;
+    }
+  }
+  countdown();
+  window.setInterval(countdown, 1000);
   // A page that comes back into view after a while catches up at once.
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && Date.now() - last >= seconds * 1000) update();
+    if (!document.hidden && Date.now() - last >= seconds * 1000) due = 0;
   });
 }
 

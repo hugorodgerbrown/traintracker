@@ -18,7 +18,9 @@ boards at a limited rate as well, which bounds what one address can make the
 server fetch by asking for many different boards.
 
 `?embed=1` gives the board alone, without the site's header and footer, and it
-is the one page another site may put in a frame.
+is the one page another site may put in a frame. `?tv=1` gives it alone too,
+filling the screen, for a TV (see site.js); the board page's "Show on TV"
+button switches to the same view in place and goes full screen.
 
 /board is the picker: choose a station, and a destination or a platform if
 you like. The form works without JavaScript; with it, the station fields
@@ -271,8 +273,33 @@ def _source(source: str) -> str:
     return "Booked times: Network Rail data feeds (OGL v3.0)"
 
 
-def _figure(key: BoardKey, data: dict[str, Any], site_url: str, embed: bool) -> str:
-    """The board: a table of the trains, which site.js draws as flaps."""
+def _unavailable(key: BoardKey) -> dict[str, Any]:
+    """A board with no trains, for when it couldn't be fetched."""
+    return {
+        "station": {"name": _name(key.crs), "crs": key.crs},
+        "to": {"name": _name(key.to), "crs": key.to} if key.to else None,
+        "platform": key.platform,
+        "platforms": [],
+        "source": "darwin",
+        "updated": "-",
+        "messages": [],
+        "trains": [],
+    }
+
+
+def _mode(request: Request) -> str:
+    """How the board is shown: "embed" in another site's frame, "tv" on a
+    screen of its own, or "page" on the site."""
+    if request.query_params.get("embed") == "1":
+        return "embed"
+    return "tv" if request.query_params.get("tv") == "1" else "page"
+
+
+def _figure(
+    key: BoardKey, data: dict[str, Any], site_url: str, embed: bool, problem: str = ""
+) -> str:
+    """The board: a table of the trains, which site.js draws as flaps.
+    `problem` says why there are no trains in place of the usual message."""
     station = data["station"]
     kind = key.kind()
     now = datetime.now(UK_TZ)
@@ -301,11 +328,13 @@ def _figure(key: BoardKey, data: dict[str, Any], site_url: str, embed: bool) -> 
         </tbody>
       </table>
     </div>
-    <p class="empty"{empty}>{_e(key.empty())}</p>
+    <p class="empty" data-empty="{_e(key.empty())}"{empty}>{_e(problem or key.empty())}</p>
+    <p class="stale-note" hidden></p>
     <ul class="notes">{notes}</ul>
     <p class="source"><span class="credit">{_source(data["source"])}</span>{back}
       · <span class="updated">Updated {_e(data["updated"])}</span>
       <span class="status" role="status"></span></p>
+    <button type="button" class="fullscreen quiet" hidden>Full screen</button>
   </div>
 </figure>"""
 
@@ -355,6 +384,16 @@ def _share(key: BoardKey, data: dict[str, Any], site_url: str) -> str:
 <div class="copy">
   <code id="board-link">{_e(url)}</code>
   <button type="button" data-copy="#board-link" hidden>Copy link</button>
+  <p role="status"></p>
+</div>
+<h2 id="tv">Show it on a TV</h2>
+<p>The board fills the screen, keeps it awake and hides the cursor. Drag this window onto a
+  TV you've extended your display to, or cast this tab, then choose Show on TV. Esc goes back.</p>
+<p><button type="button" data-tv hidden>Show on TV</button></p>
+<p>On a TV's own browser, or a streaming stick, open the TV link:</p>
+<div class="copy">
+  <code id="tv-link">{_e(url)}?tv=1</code>
+  <button type="button" data-copy="#tv-link" hidden>Copy TV link</button>
   <p role="status"></p>
 </div>
 <h2 id="embed">Put it on your own page</h2>
@@ -476,7 +515,7 @@ def routes(fields: dict[str, str], fetch: Fetch, ip_header: str | None = None) -
     def page(
         request: Request, path: str, content: str, title: str, description: str, status: int = 200
     ) -> Response:
-        embed = request.query_params.get("embed") == "1"
+        mode = _mode(request)
         text = render_page(
             path,
             content,
@@ -484,10 +523,10 @@ def routes(fields: dict[str, str], fetch: Fetch, ip_header: str | None = None) -
             description,
             fields,
             nav=PICKER_PATH,
-            layout="embed.html" if embed else "layout.html",
+            layout={"embed": "embed.html", "tv": "tv.html"}.get(mode, "layout.html"),
         )
         headers = {
-            **(EMBED_HEADERS if embed else PAGE_HEADERS),
+            **(EMBED_HEADERS if mode == "embed" else PAGE_HEADERS),
             "Cache-Control": "public, max-age=30",
         }
         return Response(text, status, headers=headers, media_type="text/html; charset=utf-8")
@@ -574,11 +613,22 @@ def routes(fields: dict[str, str], fetch: Fetch, ip_header: str | None = None) -
         try:
             data = await boards.get(key)
         except BoardUnavailable as exc:
-            typed_back = {"station": key.crs, "to": key.to or "", "platform": key.platform or ""}
-            return picker(request, typed_back, str(exc), status=503)
-        embed = request.query_params.get("embed") == "1"
-        content = _figure(key, data, site_url, embed)
-        if not embed:
+            mode = _mode(request)
+            if mode == "page":
+                typed_back = {
+                    "station": key.crs,
+                    "to": key.to or "",
+                    "platform": key.platform or "",
+                }
+                return picker(request, typed_back, str(exc), status=503)
+            # A TV or an embed has nobody to read a form: it shows the board
+            # with the reason in it, and recovers by itself when the next
+            # fetch works.
+            content = _figure(key, _unavailable(key), site_url, mode == "embed", str(exc))
+            return page(request, key.path, content, f"{key.title()} · Traintrackr", "", status=503)
+        mode = _mode(request)
+        content = _figure(key, data, site_url, mode == "embed")
+        if mode == "page":
             content += "\n" + _share(key, data, site_url)
         return page(
             request,

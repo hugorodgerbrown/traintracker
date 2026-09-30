@@ -551,6 +551,124 @@ blockquote p {
   margin: 0;
 }
 
+/* A board that has gone this long without an update dims, and says so. */
+.departures.stale .flaps {
+  opacity: 0.45;
+}
+
+.departures .stale-note {
+  margin: 0.5rem 0 0;
+  color: var(--amber);
+  font-weight: 600;
+}
+
+.departures .fullscreen {
+  margin-top: 0.625rem;
+  min-height: 2.25rem;
+  padding: 0.25rem 0.875rem;
+  color: #ffffff;
+  border-color: rgb(255 255 255 / 45%);
+}
+
+/* A board on a TV (?tv=1, or "Show on TV"): the panel is the whole screen,
+   and site.js sizes the flaps so that every train fits it. Everything else
+   on the page is put away, so the same page can switch in place. */
+.tv,
+.tv body {
+  height: 100%;
+  overflow: hidden;
+  background: #0b5d3b;
+}
+
+.tv body > header,
+.tv body > footer,
+.tv .skip,
+.tv main > :not(.departures) {
+  display: none;
+}
+
+.tv main {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tv .departures {
+  margin: 0;
+}
+
+.tv .departures .panel {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 2.5vh 2.5vw;
+  border-radius: 0;
+}
+
+.tv .departures.live .station h1 {
+  font-size: clamp(1.25rem, 3.4vw, 5rem);
+}
+
+.tv .departures.live .station span {
+  font-size: clamp(0.75rem, 1.3vw, 2rem);
+}
+
+.tv .departures .clock {
+  font-size: clamp(1.25rem, 3.4vw, 5rem);
+}
+
+/* The flaps take the space the rest leaves; their lines are as wide as the
+   flaps that fit, in the middle. */
+.tv .departures .flaps {
+  flex: 1 1 0;
+  min-height: 0;
+  margin-top: 1.5vh;
+  overflow: hidden;
+}
+
+/* Where the width limits the flaps (a tall screen), the trains sit in the
+   middle of the space rather than at the top of it. */
+.tv .departures .flaps:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.tv .departures .line {
+  width: calc(var(--cols) * (var(--pitch) + 2px));
+  margin-inline: auto;
+}
+
+.tv .departures .heads {
+  font-size: calc(var(--pitch) * 0.45);
+  line-height: 1.2;
+}
+
+.tv .departures .empty {
+  font-size: clamp(1rem, 2.5vw, 3rem);
+}
+
+.tv .departures .notes,
+.tv .departures .source,
+.tv .departures .stale-note {
+  font-size: clamp(0.75rem, 1.1vw, 1.5rem);
+}
+
+.tv .departures .fullscreen {
+  position: fixed;
+  right: 2.5vw;
+  bottom: 2.5vh;
+}
+
+.tv.idle,
+.tv.idle * {
+  cursor: none;
+}
+
+.tv.idle .departures .fullscreen {
+  display: none;
+}
+
 dt {
   margin-top: 1rem;
   font-weight: 600;

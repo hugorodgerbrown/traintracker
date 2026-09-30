@@ -263,8 +263,9 @@ async def test_a_board_for_one_destination(client: httpx.AsyncClient, fetch: Fak
     assert [t["place"] for t in data["trains"]] == ["Norwich & Clacton-on-Sea"]
     empty = _flat((await client.get("/board/LST/COL")).text)
     assert (
-        '<p class="empty">No departures calling at Colchester in the next two hours.</p>' in empty
-    )
+        '<p class="empty" data-empty="No departures calling at Colchester in the next two hours.">'
+        "No departures calling at Colchester in the next two hours.</p>"
+    ) in empty
 
 
 async def test_a_board_can_be_shared_and_embedded(client: httpx.AsyncClient) -> None:
@@ -298,11 +299,37 @@ async def test_an_embedded_board_is_the_board_alone_and_may_be_framed(
     assert f'<a href="{BASE}/board/LST/9" target="_blank" rel="noopener">Traintrackr</a>' in text
 
 
+async def test_a_board_on_a_tv_is_the_board_alone(client: httpx.AsyncClient) -> None:
+    r = await client.get("/board/LST/COL", params={"tv": "1"})
+    assert r.status_code == 200
+    text = _flat(r.text)
+    # The board fills the screen: site.js sizes it and keeps the screen awake.
+    assert '<html lang="en-GB" class="tv">' in text
+    assert "<nav" not in text and "Share this board" not in text
+    assert '<figure class="departures live" data-feed="/api/board/LST/COL"' in text
+    assert '<p class="stale-note" hidden></p>' in text
+    assert '<button type="button" class="fullscreen quiet" hidden>Full screen</button>' in text
+    assert f'<link rel="canonical" href="{BASE}/board/LST/COL" />' in text
+    # Unlike an embed, it is not for other sites to frame.
+    assert "frame-ancestors 'none'" in r.headers["content-security-policy"]
+    # A loose address keeps ?tv=1 on its way to the board's own.
+    r = await client.get("/board/lst/colchester", params={"tv": "1"})
+    assert r.status_code == 308 and r.headers["location"] == "/board/LST/COL?tv=1"
+
+
+async def test_the_board_page_offers_the_tv_view(client: httpx.AsyncClient) -> None:
+    text = _flat((await client.get("/board/LST")).text)
+    assert '<h2 id="tv">Show it on a TV</h2>' in text
+    # The button needs JavaScript, so it starts hidden; the link works without.
+    assert '<button type="button" data-tv hidden>Show on TV</button>' in text
+    assert f'<code id="tv-link">{BASE}/board/LST?tv=1</code>' in text
+
+
 async def test_a_platform_with_no_trains_says_so(client: httpx.AsyncClient) -> None:
     r = await client.get("/api/board/LST/4")
     assert r.json()["trains"] == []
     page = _flat((await client.get("/board/LST/4")).text)
-    assert '<p class="empty">No departures from platform 4 in the next two hours.</p>' in page
+    assert "No departures from platform 4 in the next two hours.</p>" in page
 
 
 async def test_the_feed_is_the_board_as_data(client: httpx.AsyncClient) -> None:
@@ -355,6 +382,25 @@ async def test_a_failure_is_shared_too(client: httpx.AsyncClient, fetch: FakeFet
     assert page.status_code == 503
     assert "National Rail live data (Darwin) is offline." in page.text
     assert len(fetch.calls) == 1
+
+
+@pytest.mark.parametrize("mode", ["tv", "embed"])
+async def test_a_screen_nobody_reads_shows_why_and_recovers(
+    client: httpx.AsyncClient, fetch: FakeFetch, mode: str
+) -> None:
+    # A TV that reloads during an outage has nobody to read the picker's
+    # form: it gets the board, with the reason where the trains would be, and
+    # site.js puts the usual message back once a fetch works.
+    fetch.error = "National Rail live data (Darwin) is offline."
+    r = await client.get("/board/LST/9", params={mode: "1"})
+    assert r.status_code == 503
+    text = _flat(r.text)
+    assert '<figure class="departures live" data-feed="/api/board/LST/9"' in text
+    assert (
+        '<p class="empty" data-empty="No departures from platform 9 in the next two hours.">'
+        "National Rail live data (Darwin) is offline.</p>"
+    ) in text
+    assert '<form class="picker"' not in text
 
 
 async def test_one_address_can_open_boards_only_so_fast(

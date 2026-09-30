@@ -382,6 +382,17 @@ CI runs the same environments with the versions of uv, tox and tox-uv written in
 
 Tests use a synthetic SCHEDULE feed in Network Rail's JSON format (`tests/feedgen.py`) and API fixtures shaped on the published Darwin schema. They aren't live recordings, so the first run against real services is the final check.
 
+### Preview servers
+
+[`.claude/launch.json`](.claude/launch.json) has two servers that Claude Code's preview pane can start. Both run in demo mode against the development Postgres above, ignore `.env`, and listen on `127.0.0.1` only. Set `PREVIEW_DATABASE_URL` to use another database.
+
+| Name | Runs | Use it for |
+|---|---|---|
+| `web` | `traintracker serve-http` on port 8000, or a free port if that is taken | The public site, the sign-in page and `/mcp`. Sign-in codes are written to the server's log (`MAIL_BACKEND=console`) |
+| `mcp-inspector` | The [MCP Inspector](https://github.com/modelcontextprotocol/inspector) (version 2, through `npx`) on port 6274, with this server as its stdio target | Calling the tools by hand. Its Apps tab draws a tool's MCP App, where it has one |
+
+The Inspector needs Node 22.19 or later. It starts a local server that can run commands, guarded by a token it makes at each launch and puts into the page it serves; the config leaves that on.
+
 ```
 src/traintracker/
   server.py      MCP tools, source fallback, live overlay, CLI

@@ -15,6 +15,11 @@ services:
     startCommand: uv run --no-sync traintracker serve-http
     healthCheckPath: /healthz
     autoDeployTrigger: checksPass
+    # The service answers on its custom domain only; its onrender.com name gives
+    # a 404. One name is one place to put a limit or a rule. Render needs the
+    # service to have a custom domain for this: remove the line when deploying
+    # your own copy without one.
+    renderSubdomainPolicy: disabled
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -34,9 +39,8 @@ services:
         sync: false
       - key: MCP_ACCOUNT_SECRET
         sync: false
-      # This deployment's custom domain, accepted alongside the service's own
-      # onrender.com name; other Host headers are rejected (421). Change or remove
-      # it when deploying your own copy.
+      # This deployment's custom domain; other Host headers are rejected (421).
+      # Change or remove it when deploying your own copy.
       - key: MCP_PUBLIC_HOSTS
         value: traintrackr.live
       # Render's edge puts the caller's address in this header; the limits on the

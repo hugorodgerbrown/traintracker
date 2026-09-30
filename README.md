@@ -283,7 +283,7 @@ The web service holds one day's journey network in memory for `plan_journey` (ab
 1. Create the `traintracker` database and role on your Postgres instance (see [Postgres](#3-postgres)).
 2. In the Render dashboard: **New → Blueprint**, pick this repository, and enter the values Render prompts for. The three email sign-in values go together: give all of them, or leave all three empty and sign in with the passphrase. Use the Postgres instance's *internal* URL, with the `traintracker` role and its password in place of the instance's own user, and `/traintracker` as the database name.
 3. Run the cron job once by hand (**Trigger Run**) to load the first timetable.
-4. Add the server as a claude.ai connector (below). Use your own service's host: its `onrender.com` name, or a custom domain you have added to the service and listed in `MCP_PUBLIC_HOSTS` (the `render.yaml` value is this repository's deployment, `traintrackr.live`).
+4. Add the server as a claude.ai connector (below). Use your own service's host: its `onrender.com` name, or a custom domain you have added to the service and listed in `MCP_PUBLIC_HOSTS` (the `render.yaml` value is this repository's deployment, `traintrackr.live`). `render.yaml` turns the `onrender.com` name off (`renderSubdomainPolicy: disabled`), which Render allows only for a service with a custom domain: remove that line to use the `onrender.com` name.
 
 For a client that can't do OAuth, set `MCP_AUTH_TOKEN` on the service to a long random value; it is accepted as a bearer token alongside OAuth, and never expires. For example, in a terminal (so the token stays out of any transcript), with the token on the clipboard:
 

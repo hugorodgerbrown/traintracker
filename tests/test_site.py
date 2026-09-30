@@ -125,8 +125,10 @@ async def test_the_landing_page_has_the_address_and_the_examples(
     # What it answers comes before how to set it up.
     assert text.index('id="examples"') < text.index('id="url"') < text.index('id="claude"')
     assert "Claude" in text and "ChatGPT" in text
-    # ChatGPT can't add a server outside its directory without developer mode.
-    assert "Developer mode" in text and "isn't in the ChatGPT directory yet" in text
+    # ChatGPT adds a server by URL only in developer mode. The page describes
+    # how to add it, not where it is listed.
+    assert "Developer mode" in text and "directory" not in text
+    assert "coming soon" not in text
 
 
 async def test_the_landing_page_shows_an_example_board(client: httpx.AsyncClient) -> None:

@@ -20,6 +20,7 @@ static MCP_AUTH_TOKEN keeps working as a bearer token alongside OAuth.
 from __future__ import annotations
 
 import asyncio
+import collections
 import dataclasses
 import hashlib
 import hmac
@@ -63,6 +64,12 @@ CODE_TTL = 5 * 60
 ACCESS_TTL = 60 * 60
 REFRESH_TTL = 90 * 24 * 60 * 60
 MAX_ATTEMPTS = 5  # wrong passphrases (or wrong codes) before a sign-in is discarded
+# A sign-in costs nothing to start, so the limit on each one doesn't limit
+# guessing. After this many wrong passphrases in an hour, over all sign-ins, the
+# passphrase is not accepted until the hour has passed.
+MAX_PASSPHRASE_FAILURES = 30
+MIN_PASSPHRASE = 20  # characters; a shorter one gets a warning at start-up
+PAUSED = "Passphrase sign-in is paused after too many wrong passphrases. Try again in an hour."
 LOGIN_CODE_TTL = CODE_MINUTES * 60
 MAX_SENDS = 3  # codes one sign-in may ask for
 MAX_CODES_PER_ADDRESS = 5  # codes one address may be sent in an hour
@@ -175,6 +182,7 @@ class TraintrackerOAuthProvider(
         self.mail_max_per_hour = mail_max_per_hour
         self._mail_cap_logged = 0.0
         self.redirect_hosts = redirect_hosts
+        self._passphrase_failures: collections.deque[float] = collections.deque()
 
     # -- storage -------------------------------------------------------------
 
@@ -521,6 +529,8 @@ class TraintrackerOAuthProvider(
         given = str(form.get("passphrase", ""))
         if not self.passphrase:
             return _page("Sign-in is turned off on this server (MCP_OAUTH_PASSPHRASE is not set).")
+        if self._passphrase_paused():
+            return _page(PAUSED, status=429)
         # Take an attempt before checking the passphrase. The conditional UPDATE
         # locks the row, so parallel submissions can't share one attempt: at most
         # MAX_ATTEMPTS passphrases are ever checked per sign-in.
@@ -537,11 +547,25 @@ class TraintrackerOAuthProvider(
         if not pending:
             return _expired()
         if not hmac.compare_digest(given.encode(), self.passphrase.encode()):
+            self._passphrase_failures.append(time.time())
+            if self._passphrase_paused():
+                log.warning(
+                    "%d wrong passphrases in an hour: passphrase sign-in is paused.",
+                    MAX_PASSPHRASE_FAILURES,
+                )
             await asyncio.sleep(1)  # slow down guessing
             if rows[0][0] >= MAX_ATTEMPTS:
                 return await self._discard(sign_in_id, "Too many wrong passphrases.", 403)
             return self._form(pending, error="Wrong passphrase.", status=401)
         return await self._grant(pending, PASSPHRASE_SUBJECT)
+
+    def _passphrase_paused(self) -> bool:
+        """Whether the hour's wrong passphrases, over every sign-in, have reached
+        the limit. Held in memory: one instance serves the sign-in page."""
+        failures = self._passphrase_failures
+        while failures and failures[0] < time.time() - 3600:
+            failures.popleft()
+        return len(failures) >= MAX_PASSPHRASE_FAILURES
 
     async def send_code(self, request: Request) -> Response:
         """Email a sign-in code to the address given on the sign-in page."""

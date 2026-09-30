@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import secrets
+import time
 from collections.abc import AsyncIterator
 from urllib.parse import parse_qs, urlparse
 
@@ -457,6 +458,58 @@ async def test_wrong_passphrases_end_the_sign_in(
     assert r.status_code == 403
     again = await client.post("/sign-in", data={"request": sign_in, "passphrase": PASSPHRASE})
     assert again.status_code == 400 and "expired" in again.text
+
+
+async def test_wrong_passphrases_over_many_sign_ins_pause_the_passphrase(
+    client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Starting a sign-in is free, so the limit on each one doesn't limit guessing.
+    monkeypatch.setattr(oauth, "MAX_PASSPHRASE_FAILURES", 2)
+
+    async def no_sleep(_: float) -> None: ...
+
+    monkeypatch.setattr(oauth.asyncio, "sleep", no_sleep)
+    client_id = await _register(client)
+    for _ in range(2):
+        sign_in, _ = await _start_sign_in(client, client_id)
+        wrong = await client.post("/sign-in", data={"request": sign_in, "passphrase": "nope"})
+        assert wrong.status_code == 401
+    assert "passphrase sign-in is paused" in caplog.text
+    sign_in, _ = await _start_sign_in(client, client_id)
+    right = await client.post("/sign-in", data={"request": sign_in, "passphrase": PASSPHRASE})
+    assert right.status_code == 429 and "paused" in right.text
+    # An hour on, the passphrase is accepted again.
+    hour_on = time.time() + 3601
+    monkeypatch.setattr(oauth.time, "time", lambda: hour_on)
+    later = await client.post("/sign-in", data={"request": sign_in, "passphrase": PASSPHRASE})
+    assert later.status_code != 429
+
+
+async def test_one_client_address_can_try_a_few_passphrases_only(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(http_app, "PASSPHRASE_LIMIT", (1, 10 / 60))
+    transport = httpx.ASGITransport(app=build_app(server.mcp, settings))
+    async with httpx.AsyncClient(transport=transport, base_url=BASE) as c:
+        sign_in, _ = await _start_sign_in(c, await _register(c))
+        first = await c.post("/sign-in", data={"request": sign_in, "passphrase": "nope"})
+        second = await c.post("/sign-in", data={"request": sign_in, "passphrase": PASSPHRASE})
+    assert (first.status_code, second.status_code) == (401, 429)
+
+
+def test_a_short_passphrase_is_warned_about_at_start_up(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    served: list[object] = []
+    monkeypatch.setattr(http_app, "serve", lambda *args: served.append(args))
+    main(["serve-http"])
+    assert "MCP_OAUTH_PASSPHRASE is shorter" not in caplog.text
+    monkeypatch.setenv("MCP_OAUTH_PASSPHRASE", "swordfish")
+    main(["serve-http"])
+    assert "MCP_OAUTH_PASSPHRASE is shorter than 20 characters" in caplog.text
+    assert len(served) == 2  # a warning, not a refusal to start
 
 
 async def test_parallel_wrong_passphrases_share_the_attempt_limit(

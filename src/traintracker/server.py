@@ -26,7 +26,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from traintracker import demo, http_app, planner, site, stations
+from traintracker import demo, http_app, oauth, planner, site, stations
 from traintracker.config import UK_TZ, Settings, load_dotenv
 from traintracker.darwin import DarwinClient
 from traintracker.errors import AllowanceSpent, TrainTrackerError, UpstreamError
@@ -1088,6 +1088,12 @@ def main(argv: list[str] | None = None) -> None:
         if problem := _sign_in_problem(settings):
             print(problem, file=sys.stderr)
             sys.exit(2)
+        if 0 < len(settings.oauth_passphrase or "") < oauth.MIN_PASSPHRASE:
+            log.warning(
+                "MCP_OAUTH_PASSPHRASE is shorter than %d characters. Anyone can try passphrases "
+                "at the sign-in page; use a long random one.",
+                oauth.MIN_PASSPHRASE,
+            )
         http_app.serve(http_app.build_app(mcp, settings), settings.host, settings.port)
     elif cmd in ("forget", "block") and len(argv) == 2:
         _account_command(cmd, argv[1], settings)

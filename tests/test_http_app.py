@@ -558,7 +558,7 @@ async def test_wrong_passphrases_over_many_sign_ins_pause_the_passphrase(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     # Starting a sign-in is free, so the limit on each one doesn't limit guessing.
-    monkeypatch.setattr(oauth, "MAX_PASSPHRASE_FAILURES", 2)
+    monkeypatch.setattr(oauth, "MAX_WRONG_AN_HOUR", 2)
 
     async def no_sleep(_: float) -> None: ...
 

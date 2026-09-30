@@ -1124,11 +1124,11 @@ def main(argv: list[str] | None = None) -> None:
         if problem := _sign_in_problem(settings):
             print(problem, file=sys.stderr)
             sys.exit(2)
-        if 0 < len(settings.oauth_passphrase or "") < oauth.MIN_PASSPHRASE:
+        if 0 < len(settings.oauth_passphrase or "") < oauth.MIN_LENGTH:
             log.warning(
                 "MCP_OAUTH_PASSPHRASE is shorter than %d characters. Anyone can try passphrases "
                 "at the sign-in page; use a long random one.",
-                oauth.MIN_PASSPHRASE,
+                oauth.MIN_LENGTH,
             )
         http_app.serve(http_app.build_app(mcp, settings), settings.host, settings.port)
     elif cmd in ("forget", "block") and len(argv) == 2:

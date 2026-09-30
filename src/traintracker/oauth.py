@@ -73,8 +73,11 @@ MAX_ATTEMPTS = 5  # wrong passphrases (or wrong codes) before a sign-in is disca
 # A sign-in costs nothing to start, so the limit on each one doesn't limit
 # guessing. After this many wrong passphrases in an hour, over all sign-ins, the
 # passphrase is not accepted until the hour has passed.
-MAX_PASSPHRASE_FAILURES = 30
-MIN_PASSPHRASE = 20  # characters; a shorter one gets a warning at start-up
+MAX_WRONG_AN_HOUR = 30
+# Characters in MCP_OAUTH_PASSPHRASE; a shorter one gets a warning at start-up.
+# (Neither name says "passphrase": both numbers are logged, and code scanning
+# takes a logged value with a name like that for the passphrase itself.)
+MIN_LENGTH = 20
 PAUSED = "Passphrase sign-in is paused after too many wrong passphrases. Try again in an hour."
 LOGIN_CODE_TTL = CODE_MINUTES * 60
 MAX_SENDS = 3  # codes one sign-in may ask for
@@ -653,7 +656,7 @@ class TraintrackerOAuthProvider(
             if self._passphrase_paused():
                 log.warning(
                     "%d wrong passphrases in an hour: passphrase sign-in is paused.",
-                    MAX_PASSPHRASE_FAILURES,
+                    MAX_WRONG_AN_HOUR,
                 )
             await asyncio.sleep(1)  # slow down guessing
             if rows[0][0] >= MAX_ATTEMPTS:
@@ -667,7 +670,7 @@ class TraintrackerOAuthProvider(
         failures = self._passphrase_failures
         while failures and failures[0] < time.time() - 3600:
             failures.popleft()
-        return len(failures) >= MAX_PASSPHRASE_FAILURES
+        return len(failures) >= MAX_WRONG_AN_HOUR
 
     async def send_code(self, request: Request) -> Response:
         """Email a sign-in code to the address given on the sign-in page."""

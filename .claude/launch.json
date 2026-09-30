@@ -1,0 +1,24 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "TRAINTRACKER_NO_DOTENV=1 TRAINTRACKER_DEMO=1 MAIL_BACKEND=console MCP_ACCOUNT_SECRET=local-preview-only HOST=127.0.0.1 PORT=${PORT:-8000} DATABASE_URL=${PREVIEW_DATABASE_URL:-postgresql://postgres:postgres@127.0.0.1:55432/postgres} exec uv run traintracker serve-http"
+      ],
+      "port": 8000,
+      "autoPort": true
+    },
+    {
+      "name": "mcp-inspector",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "MCP_AUTO_OPEN_ENABLED=false exec npx -y @modelcontextprotocol/inspector@2 -e TRAINTRACKER_NO_DOTENV=1 -e TRAINTRACKER_DEMO=1 -e DATABASE_URL=${PREVIEW_DATABASE_URL:-postgresql://postgres:postgres@127.0.0.1:55432/postgres} uv run traintracker"
+      ],
+      "port": 6274
+    }
+  ]
+}

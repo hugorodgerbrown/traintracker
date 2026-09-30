@@ -31,6 +31,7 @@ flowchart LR
 | `service_details` | Every stop for one train | Whichever source issued the ID |
 | `plan_journey` | A to B with changes (up to `max_changes`, default 4), incl. cross-London links | Local timetable + Darwin live overlay |
 | `data_status` | What's configured, timetable freshness, Darwin allowance used, what's missing | — |
+| `privacy_policy` | "What do you keep about me?" The privacy policy as text, with the page's address | The `/privacy` page |
 
 Every tool accepts station names or CRS codes. Ambiguous names ("Sudbury", "Harrow") return the candidates so Claude can ask which one you meant.
 

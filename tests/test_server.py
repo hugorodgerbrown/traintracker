@@ -70,6 +70,7 @@ async def test_lists_all_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
             "service_details",
             "plan_journey",
             "data_status",
+            "privacy_policy",
         }
 
 
@@ -193,6 +194,30 @@ async def test_plan_journey(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
         assert first["changes"] == 1
         assert first["arrive"].startswith("2026-10-02T14:23")
         assert out["origin"]["crs"] == "LST"
+
+
+async def test_privacy_policy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MCP_PUBLIC_URL", "https://tt.test")
+    async with connect(tmp_path, monkeypatch) as client:
+        out = await call(client, "privacy_policy")
+    policy = out["policy"]
+    assert out["url"] == "https://tt.test/privacy"
+    assert policy.startswith("# Privacy policy\n\n")
+    assert "- **Your email address**. Why: To send you a sign-in code." in policy
+    assert "Kept for: Not stored." in policy
+    assert "support@traintrackr.live" in policy
+    # The page's markup and its notes to the maintainer stay out.
+    assert "<" not in policy and "TODO" not in policy
+
+
+async def test_privacy_policy_has_no_address_without_a_public_url(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for key in ("MCP_PUBLIC_URL", "MCP_PUBLIC_HOSTS"):
+        monkeypatch.delenv(key, raising=False)
+    async with connect(tmp_path, monkeypatch) as client:
+        out = await call(client, "privacy_policy")
+    assert "url" not in out
 
 
 async def test_data_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -15,6 +15,9 @@ PlatformSource = Literal["live", "booked"]
 Status = Literal[
     "on_time", "late", "early", "cancelled", "delayed", "no_report", "scheduled", "unknown"
 ]
+TRAINLINE_URL = (
+    "This train's page on Trainline: its stops and live running. Timetable ('tt:') services only."
+)
 
 
 class StationRef(BaseModel):
@@ -55,6 +58,7 @@ class BoardService(BaseModel):
     calling_points: list[CallingPoint] | None = Field(
         None, description="Subsequent stops (departures) or previous stops (arrivals)."
     )
+    trainline_url: str | None = Field(None, description=TRAINLINE_URL)
 
 
 class Board(BaseModel):
@@ -82,6 +86,7 @@ class ServiceDetail(BaseModel):
     cancelled: bool = False
     reason: str | None = None
     calling_points: list[CallingPoint]
+    trainline_url: str | None = Field(None, description=TRAINLINE_URL)
 
 
 class JourneyLeg(BaseModel):
@@ -97,6 +102,7 @@ class JourneyLeg(BaseModel):
     arrive_expected: str | None = None
     platform: str | None = None
     cancelled: bool = False
+    trainline_url: str | None = Field(None, description=TRAINLINE_URL)
 
 
 class Journey(BaseModel):

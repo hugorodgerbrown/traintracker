@@ -24,8 +24,14 @@ from mcp.types import TextResourceContents
 from psycopg import sql
 
 import traintracker
-from traintracker import server, stations, ui
-from traintracker.config import DARWIN_DEPARTURES_URL, UK_TZ, Settings, TimetableDB
+from traintracker import server, stations, trainline, ui
+from traintracker.config import (
+    DARWIN_DEPARTURES_URL,
+    TRAINLINE_LIVE_URL,
+    UK_TZ,
+    Settings,
+    TimetableDB,
+)
 from traintracker.models import Board, BoardService, Journey, JourneyLeg, StationRef
 from traintracker.timetable import Timetable, build
 
@@ -250,6 +256,10 @@ async def test_timetable_board(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         assert [s["scheduled"] for s in out["services"]] == ["13:58", "14:58"]
         assert out["services"][0]["destination"][0]["crs"] == "SUY"
         assert out["services"][0]["operator"] == "Greater Anglia"
+        uid = out["services"][0]["service_id"].split(":")[1]
+        assert out["services"][0]["trainline_url"] == trainline.train_url(
+            TRAINLINE_LIVE_URL, uid, date(2026, 10, 2), ["MKT"]
+        )
 
 
 async def test_a_date_outside_the_timetable_is_refused(
@@ -345,6 +355,9 @@ async def test_service_details_timetable(tmp_path: Path, monkeypatch: pytest.Mon
     async with connect(tmp_path, monkeypatch) as client:
         out = await call(client, "service_details", service_id="tt:B00013:2026-10-02")
         assert [c["station"]["crs"] for c in out["calling_points"]] == ["MKT", "CWC", "BUE", "SUY"]
+        assert out["trainline_url"] == trainline.train_url(
+            TRAINLINE_LIVE_URL, "B00013", date(2026, 10, 2), ["MKT"]
+        )
         msg = await error(client, "service_details", service_id="nonsense")
         assert "darwin:" in msg
 
@@ -364,6 +377,11 @@ async def test_plan_journey(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
         assert first["changes"] == 1
         assert first["arrive"].startswith("2026-10-02T14:23")
         assert out["origin"]["crs"] == "LST"
+        for leg in first["legs"]:  # each train's page, titled for where it is boarded
+            _, uid, run = leg["service_id"].split(":")
+            assert leg["trainline_url"] == trainline.train_url(
+                TRAINLINE_LIVE_URL, uid, date.fromisoformat(run), [leg["board_at"]["crs"]]
+            )
 
 
 async def test_privacy_policy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

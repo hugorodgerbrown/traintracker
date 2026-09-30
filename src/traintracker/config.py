@@ -22,6 +22,8 @@ NR_SCHEDULE_URL = (
     "https://publicdatafeeds.networkrail.co.uk/ntrod/CifFileAuthenticate"
     "?type=CIF_ALL_FULL_DAILY&day=toc-full"
 )
+# Trainline's live boards; a timetable service links to its train's page there.
+TRAINLINE_LIVE_URL = "https://www.thetrainline.com/live"
 
 
 # Requests sent to Darwin in one day before the live tools fall back to booked
@@ -141,6 +143,7 @@ class Settings:
     darwin_daily_limit: int = DARWIN_DAILY_LIMIT
     client_ip_header: str | None = None
     redirect_hosts: tuple[str, ...] = REDIRECT_HOSTS
+    trainline_live_url: str = TRAINLINE_LIVE_URL
 
     @property
     def timetable_db(self) -> TimetableDB:
@@ -244,6 +247,7 @@ class Settings:
             # set it where clients can't reach the server except through that proxy.
             client_ip_header=_env("CLIENT_IP_HEADER"),
             redirect_hosts=_redirect_hosts(),
+            trainline_live_url=_env("TRAINLINE_LIVE_URL") or TRAINLINE_LIVE_URL,
         )
         if (_env("TRAINTRACKER_DEMO") or "").lower() not in TRUE:
             return settings

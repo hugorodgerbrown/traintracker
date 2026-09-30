@@ -105,9 +105,11 @@ async def test_tools_in_demo_mode(settings: Settings) -> None:
         tt = await call(client, "timetable", station="Marks Tey", to="SUY", date=day, time="13:00")
         assert tt["messages"][0] == demo.DEMO_NOTE
         assert tt["services"][0]["scheduled"] == "13:35"
+        assert tt["services"][0]["trainline_url"] is None  # Trainline has no such train
 
         plan = await call(
             client, "plan_journey", origin="Cambridge", destination="SUY", date=day, time="09:00"
         )
         assert plan["journeys"]
+        assert not any(leg["trainline_url"] for j in plan["journeys"] for leg in j["legs"])
         assert plan["journeys"][0]["legs"][-1]["alight_at"]["crs"] == "SUY"

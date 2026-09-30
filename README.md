@@ -149,6 +149,15 @@ flowchart TD
 | Darwin | Real time | Now → +2 hours | 20 s | Darwin service IDs expire soon after the train runs |
 | Timetable (Postgres) | Daily (Network Rail publishes ~06:00) | Two days back → end of the published timetable (usually months) | Until the next rebuild | Booked times only; last-minute changes show up in Darwin, not here |
 
+### Trainline links
+
+A train from the timetable (`timetable`, `plan_journey`, `service_details` with a `tt:` ID, and the live tools when they fall back to booked times) carries `trainline_url`: that train's page on Trainline, with its stops and how it is running. The address is `<TRAINLINE_LIVE_URL>/departures/<station>/<token>`, where the token is the base64 of `/callingPattern/<train UID>/<run date>`. The station only titles the page: the board's station, the station a leg is boarded at, or the train's origin.
+
+- Trains from Darwin have no link: a Darwin service ID carries no train UID.
+- Trainline names stations by a slug of its own name for them. Most follow from the name in the station list; [`trainline_slugs.json`](src/traintracker/data/trainline_slugs.json) holds the ones that differ, and `null` for stations Trainline has no live board for (mostly ones opened since 2022). A train that calls only at those has no link.
+- Trainline publishes no specification for these addresses. They were read off its live boards, and the slugs checked against [its sitemap of live pages](https://www.thetrainline.com/live/sitemap), in September 2026. For a train it doesn't know, Trainline shows the station's board.
+- Demo mode gives no links: its trains are made up.
+
 ### Darwin allowance
 
 Free Darwin access covers 5 million requests per four-week railway period, and one server key serves every user. The server counts the requests it sends to Darwin and reports the total in `traintracker status`, and in `data_status` on a server you run over stdio (a hosted server doesn't tell everyone who signs in how much is left):
@@ -259,6 +268,7 @@ All configuration is by environment variable, read from `.env` in the project fo
 | `MCP_PUBLIC_HOSTS` | — | Comma-separated extra hostnames clients use (e.g. a custom domain), added to `RENDER_EXTERNAL_HOSTNAME`; `serve-http` rejects other `Host` headers (DNS-rebinding protection) |
 | `OPENAI_APPS_CHALLENGE` | — | Token from OpenAI's plugin portal. When set, `serve-http` returns it at `/.well-known/openai-apps-challenge`, which OpenAI fetches to verify the domain |
 | `MIN_INTERCHANGE_MINUTES` | `5` | Minimum change time for planning |
+| `TRAINLINE_LIVE_URL` | `https://www.thetrainline.com/live` | Base of the [Trainline link](#trainline-links) on timetable services |
 | `HTTP_TIMEOUT_SECONDS` | `15` | Upstream request timeout |
 | `TRAINTRACKER_DEMO` | off | `1` uses generated example data instead of any account (see [demo mode](#try-it-without-accounts-demo-mode)) |
 

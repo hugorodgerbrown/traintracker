@@ -142,6 +142,9 @@ async def test_a_code_signs_in_and_the_tokens_carry_the_account(
     ).json()
     account = provider.account_id(ADDRESS)
     assert account == provider.account_id(" pat.traveller@EXAMPLE.org ")
+    # A +tag reaches the same mailbox, so it is the same account.
+    assert account == provider.account_id("pat.traveller+trains@example.org")
+    assert account != provider.account_id("pat@example.org")
     access = await provider.load_access_token(tokens["access_token"])
     assert access is not None and access.subject == account
 

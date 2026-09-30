@@ -668,10 +668,15 @@ class TraintrackerOAuthProvider(
     def account_id(self, address: str) -> str:
         """The account for an email address: a keyed hash, so the stored ID can't
         be turned back into the address, or tested against a guess, without
-        MCP_ACCOUNT_SECRET."""
+        MCP_ACCOUNT_SECRET.
+
+        A +tag is dropped first. Mail to pat+a@ and pat+b@ reaches one mailbox,
+        so they are one account, with one rate limit and one allowance of codes.
+        """
         if not self.account_secret:
             raise ValueError("MCP_ACCOUNT_SECRET is not set.")
-        normal = address.strip().lower().encode()
+        local, at, domain = address.strip().lower().rpartition("@")
+        normal = f"{local.partition('+')[0]}{at}{domain}".encode()
         return hmac.new(self.account_secret.encode(), normal, hashlib.sha256).hexdigest()
 
     def forget(self, address: str) -> bool:

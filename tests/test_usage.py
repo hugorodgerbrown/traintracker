@@ -17,7 +17,7 @@ from traintracker import usage as usage_module
 from traintracker.config import DARWIN_DEPARTURES_URL, Settings
 from traintracker.darwin import DarwinClient
 from traintracker.server import darwin_usage, main
-from traintracker.usage import DarwinUsage, Usage
+from traintracker.usage import DailyBudget, DarwinUsage, Usage
 
 from .test_clients import load
 from .test_server import call, connect
@@ -73,6 +73,42 @@ async def test_counts_are_written_in_batches() -> None:
     await usage.flush()
     assert stored()[(TODAY, "departures")] == 50
     assert usage.read() == Usage(51, {"departures": 50, "service": 1})
+
+
+def test_the_daily_budget_stops_at_its_limit_and_starts_again_the_next_day() -> None:
+    day = TODAY
+    budget = DailyBudget(3, spent=1, today=lambda: day)  # one was sent before a restart
+    assert [budget.take() for _ in range(3)] == [True, True, False]
+    day += timedelta(days=1)
+    assert budget.take()
+
+
+async def test_the_budget_resumes_from_todays_count() -> None:
+    usage = counter()
+    assert usage.spent_today() == 0  # before anything has been stored
+    usage._pending[(TODAY - timedelta(days=1), "departures")] = 40
+    usage.count("departures")
+    usage.count("service")
+    await usage.flush(force=True)
+    usage.count("departures")  # counted, not yet written
+    assert usage.spent_today() == 3
+
+
+@respx.mock
+async def test_past_the_daily_limit_live_tools_answer_with_booked_times(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DARWIN_DAILY_LIMIT", "1")
+    async with connect(tmp_path, monkeypatch) as client:
+        route = respx.get(url__startswith=DARWIN_DEPARTURES_URL).mock(
+            return_value=httpx.Response(200, json=load("darwin_departures_LST.json"))
+        )
+        live = await call(client, "live_departures", station="Liverpool Street")
+        booked = await call(client, "live_departures", station="Marks Tey")
+    assert live["source"] == "darwin" and booked["source"] == "timetable"
+    assert booked["messages"][0].startswith("This server has used today's allowance")
+    assert booked["messages"][1] == "Showing booked times instead."
+    assert route.call_count == 1
 
 
 async def test_shutdown_writes_what_is_waiting() -> None:

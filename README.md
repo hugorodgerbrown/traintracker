@@ -151,6 +151,7 @@ Darwin usage: 412,906 requests in the last 28 days, 8.26% of 5,000,000
 - **What is counted:** each request sent to Darwin, failed ones included. A board answered from the 20-second cache sends nothing and counts nothing. Demo mode counts nothing.
 - **The period:** a rolling 28 days. Railway periods are not simple to derive (the first and last of the year vary in length), and a rolling window is never less strict than the period it overlaps.
 - **Per product:** the count is kept for each Rail Data Marketplace product (`departures`, `arrivals`, `service`) and the percentage uses the total. If your allowance is per product, the percentage overstates your usage.
+- **Daily limit:** the server sends Darwin at most `DARWIN_DAILY_LIMIT` requests in one UK day (170,000 by default; the allowance works out at about 178,000 a day). Past that the live tools answer with booked times, and say why, until midnight. The count for the day is resumed after a restart. `0` turns the limit off.
 - **Warnings:** the log gets a warning when usage passes 70% of the allowance and another at 90%. Each is given once, and again only if usage falls below the mark and returns, or the server restarts above it.
 - **Storage:** one small table, `darwin_requests`, in its own schema (`USAGE_SCHEMA`), so the count survives restarts and timetable refreshes. Counts gather in memory and are written when 50 are waiting or a minute has passed, and at shutdown; a server that is killed loses at most that many. A failed write is logged and retried, and never fails a tool call. Rows older than 60 days are deleted.
 
@@ -225,6 +226,7 @@ All configuration is by environment variable, read from `.env` in the project fo
 | `DATABASE_URL` | — | Postgres database for the timetable (required) |
 | `TIMETABLE_SCHEMA` | `timetable` | Schema the timetable lives in (demo mode appends `_demo`) |
 | `USAGE_SCHEMA` | `traintracker_usage` | Schema for the count of requests sent to Darwin (see [Darwin allowance](#darwin-allowance)) |
+| `DARWIN_DAILY_LIMIT` | `170000` | Most requests sent to Darwin in one UK day; past it the live tools answer with booked times. `0` turns the limit off |
 | `TIMETABLE_AUTO_REFRESH` | `1` | `0` stops the server downloading the timetable itself (use a cron job instead) |
 | `TIMETABLE_MAX_AGE_HOURS` | `26` | Re-download when older than this |
 | `TRAINTRACKER_DATA_DIR` | `$XDG_DATA_HOME/traintracker` if set, else `~/.traintracker` | Where the feed is downloaded to before import |
@@ -304,11 +306,11 @@ With only the passphrase set, the page is the passphrase form and nothing else. 
 
 **Email codes.** The person enters an address and receives a code that lasts 10 minutes and works once, for that sign-in only. Five wrong codes discard the sign-in, as five wrong passphrases do. To limit what the page can be made to send, a sign-in can ask for three codes, an address is sent five an hour, and the server sends `MAIL_MAX_PER_HOUR` an hour in all.
 
-**Accounts.** The address is passed to Resend to deliver the code and is not stored. The account is an HMAC-SHA256 of the lower-cased address under `MCP_ACCOUNT_SECRET`, so the stored ID can't be turned back into the address, or tested against a guess, without the secret. An account holds its ID, when it was created, when it was last used (a sign-in or a token refresh) and whether it is blocked. Accounts not used for 180 days are deleted, with their tokens. `traintracker forget EMAIL` deletes one on request; `traintracker block EMAIL` shuts one out, and `UPDATE mcp_auth.accounts SET blocked = false` lets them all back in.
+**Accounts.** The address is passed to Resend to deliver the code and is not stored. The account is an HMAC-SHA256 of the lower-cased address, without any `+tag`, under `MCP_ACCOUNT_SECRET`, so the stored ID can't be turned back into the address, or tested against a guess, without the secret. An account holds its ID, when it was created, when it was last used (a sign-in or a token refresh) and whether it is blocked. Accounts not used for 180 days are deleted, with their tokens. `traintracker forget EMAIL` deletes one on request; `traintracker block EMAIL` shuts one out, and `UPDATE mcp_auth.accounts SET blocked = false` lets them all back in.
 
 Everyone who signs in with the passphrase shares one account, `passphrase`.
 
-**Rate limit.** Tool calls over HTTP are limited per account: `RATE_LIMIT_BURST` calls at once, refilled at `RATE_LIMIT_PER_MINUTE`. One Darwin key serves every user, and the limit stops one account spending the whole allowance. A call over the limit comes back as a tool error, *Too many requests. Try again in N seconds.*, which the model can read and relay. The counts are held in memory, so a restart clears them. The static token counts as one account. The stdio server is not limited.
+**Rate limit.** Tool calls over HTTP are limited per account: `RATE_LIMIT_BURST` calls at once, refilled at `RATE_LIMIT_PER_MINUTE`. One Darwin key serves every user, and the limit stops one account spending the whole allowance. A call pays for one request to Darwin; a call that makes more (a long board read page by page, a journey with several legs) is charged one for each further request, so the account's next calls wait longer. A call over the limit comes back as a tool error, *Too many requests. Try again in N seconds.*, which the model can read and relay. The counts are held in memory, so a restart clears them. The static token counts as one account. The stdio server is not limited.
 
 **Running it locally.** `MAIL_BACKEND=console` with `MCP_ACCOUNT_SECRET` set writes the code to the log in place of sending it. Don't use it on a host whose logs other people can read.
 

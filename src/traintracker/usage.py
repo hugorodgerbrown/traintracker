@@ -14,6 +14,9 @@ Counts are kept in Postgres, in a schema of their own: the timetable schema is
 replaced on every refresh, and the auth schema only exists under serve-http.
 They gather in memory and are written in batches, so counting costs a tool call
 nothing, and a failed write never fails one.
+
+Counting alone stops nothing, so there is also a ceiling on the requests sent in
+one day (DailyBudget). Past it the live tools answer with booked times.
 """
 
 from __future__ import annotations
@@ -70,6 +73,37 @@ class Usage:
 
 def _today() -> date:
     return datetime.now(UK_TZ).date()
+
+
+class DailyBudget:
+    """At most `limit` requests to Darwin in one UK day, over every account.
+
+    The per-account rate limit bounds one account, and an account costs an
+    email address, so many of them could still spend the allowance between
+    them. The count is held in memory; `spent` carries it over a restart.
+    """
+
+    def __init__(self, limit: int, spent: int = 0, today: Callable[[], date] = _today) -> None:
+        self.limit = limit
+        self.today = today
+        self._day = today()
+        self._spent = spent
+
+    def take(self) -> bool:
+        """Spend one request; False when today's are used up."""
+        day = self.today()
+        if day != self._day:
+            self._day, self._spent = day, 0
+        if self._spent >= self.limit:
+            return False
+        self._spent += 1
+        if self._spent == self.limit:
+            log.warning(
+                "Darwin daily limit of %d requests reached; live tools answer with booked "
+                "times until midnight.",
+                self.limit,
+            )
+        return True
 
 
 class DarwinUsage:
@@ -170,6 +204,23 @@ class DarwinUsage:
         ).fetchall()
         by_product = {product: int(requests) for product, requests in rows}
         return Usage(sum(by_product.values()), by_product)
+
+    def spent_today(self) -> int:
+        """Requests counted today, stored or waiting: where the daily budget resumes."""
+        day = self.today()
+        try:
+            with psycopg.connect(self.dsn, connect_timeout=10) as con:
+                row = con.execute(
+                    sql.SQL(
+                        "SELECT coalesce(sum(requests), 0)::bigint FROM {s}.darwin_requests "
+                        "WHERE day = %s"
+                    ).format(s=self.schema),
+                    (day,),
+                ).fetchone()
+        except (psycopg.errors.UndefinedTable, psycopg.errors.InvalidSchemaName):
+            row = None
+        waiting = sum(n for (d, _), n in self._pending.items() if d == day)
+        return (int(row[0]) if row else 0) + waiting
 
     def read(self) -> Usage:
         """Usage over the window: what is stored, plus what is waiting to be."""

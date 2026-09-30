@@ -6,18 +6,28 @@ from __future__ import annotations
 import os
 from typing import Any
 
+import httpx
 import httpx2
 import pytest
+import respx
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from mcp.server.auth.provider import AccessToken
 from starlette.requests import Request
 
-from traintracker import server
-from traintracker.config import Settings
+from traintracker import ratelimit, server
+from traintracker.config import DARWIN_DEPARTURES_URL, Settings
 from traintracker.http_app import build_app
-from traintracker.ratelimit import RateLimiter, RateLimitMiddleware, account_key, limited
+from traintracker.ratelimit import (
+    RateLimiter,
+    RateLimitMiddleware,
+    account_key,
+    charge_upstream,
+    limited,
+)
+
+from .test_server import _darwin_board, _darwin_svc
 
 BASE = "https://tt.test"
 
@@ -64,6 +74,32 @@ def test_idle_buckets_are_forgotten() -> None:
     assert set(limiter._buckets) == {"b", "c"}
     limiter.take("d")  # nothing has refilled: the longest idle goes
     assert set(limiter._buckets) == {"c", "d"}
+
+
+def test_a_charge_puts_the_bucket_in_debt_but_no_deeper_than_a_full_one() -> None:
+    clock = Clock()
+    limiter = RateLimiter(per_minute=60, burst=2, clock=clock)  # one a second
+    assert limiter.take("a") == 0
+    for _ in range(10):
+        limiter.charge("a")
+    assert limiter.take("a") == 3  # from two in debt back up to one
+    clock.now += 3
+    assert limiter.take("a") == 0
+
+
+def test_a_call_covers_its_first_upstream_request_and_is_charged_for_the_rest() -> None:
+    limiter = RateLimiter(per_minute=60, burst=5, clock=Clock())
+    charge_upstream()  # no call in progress (stdio): nothing to charge
+    assert limiter.take("a") == 0
+    current = ratelimit._call.set(ratelimit._Call(limiter, "a"))
+    try:
+        charge_upstream()
+        assert limiter._buckets["a"].tokens == 4
+        charge_upstream()
+        charge_upstream()
+        assert limiter._buckets["a"].tokens == 2
+    finally:
+        ratelimit._call.reset(current)
 
 
 def test_the_message_reads_as_a_sentence() -> None:
@@ -116,6 +152,37 @@ async def test_a_limited_call_is_a_tool_error_the_model_can_read(settings: Setti
     assert [r.is_error for r in results] == [False, False, True]
     text = " ".join(getattr(c, "text", "") for c in results[2].content)
     assert text.startswith("Too many requests. Try again in ") and text.endswith(" seconds.")
+
+
+@respx.mock
+async def test_a_call_that_pages_through_a_board_pays_for_each_request(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DARWIN_API_KEY", "darwin-key")
+    # Ten services is a full page, so the board is read page by page: three
+    # requests to Darwin for the one call, and a bucket of two is left in debt.
+    first = [_darwin_svc(f"13:{m:02d}", "2") for m in range(1, 11)]
+    second = [_darwin_svc(f"13:{m:02d}", "2") for m in range(10, 20)]
+    route = respx.get(f"{DARWIN_DEPARTURES_URL}/GetDepBoardWithDetails/LST").mock(
+        side_effect=lambda request: httpx.Response(
+            200, json=_darwin_board(first if request.url.params["timeOffset"] == "0" else second)
+        )
+    )
+    app = build_app(server.mcp, settings)
+    http = httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=app),
+        base_url=BASE,
+        headers={"Authorization": "Bearer static-token"},
+    )
+    async with (
+        app.router.lifespan_context(app),
+        http,
+        Client(streamable_http_client(f"{BASE}/mcp", http_client=http)) as client,
+    ):
+        board = await client.call_tool("platform_departures", {"station": "LST", "platform": "9"})
+        after = await client.call_tool("find_station", {"query": "sudbury"})
+    assert not board.is_error and route.call_count == 3
+    assert after.is_error
 
 
 def test_the_limiter_is_replaced_not_stacked(

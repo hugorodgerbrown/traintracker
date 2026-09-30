@@ -24,6 +24,10 @@ NR_SCHEDULE_URL = (
 )
 
 
+# Requests sent to Darwin in one day before the live tools fall back to booked
+# times. The free allowance is 5 million per four weeks, about 178,000 a day.
+DARWIN_DAILY_LIMIT = 170_000
+
 TRUE = {"1", "true", "yes", "on"}
 
 
@@ -119,6 +123,7 @@ class Settings:
     rate_limit_burst: int = 10
     usage_schema: str = "traintracker_usage"
     openai_apps_challenge: str | None = None
+    darwin_daily_limit: int = DARWIN_DAILY_LIMIT
 
     @property
     def timetable_db(self) -> TimetableDB:
@@ -211,6 +216,7 @@ class Settings:
             rate_limit_burst=int(_env("RATE_LIMIT_BURST") or 10),
             usage_schema=_env("USAGE_SCHEMA") or "traintracker_usage",
             openai_apps_challenge=_env("OPENAI_APPS_CHALLENGE"),
+            darwin_daily_limit=int(_env("DARWIN_DAILY_LIMIT") or DARWIN_DAILY_LIMIT),
         )
         if (_env("TRAINTRACKER_DEMO") or "").lower() not in TRUE:
             return settings

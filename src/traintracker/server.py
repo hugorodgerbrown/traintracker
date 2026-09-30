@@ -29,7 +29,7 @@ from pydantic import Field
 from traintracker import demo, http_app, planner, site, stations
 from traintracker.config import UK_TZ, Settings, load_dotenv
 from traintracker.darwin import DarwinClient
-from traintracker.errors import TrainTrackerError, UpstreamError
+from traintracker.errors import AllowanceSpent, TrainTrackerError, UpstreamError
 from traintracker.models import (
     Board,
     BoardService,
@@ -51,7 +51,7 @@ from traintracker.timetable import (
     fmt_minutes,
     minutes_on,
 )
-from traintracker.usage import DarwinUsage
+from traintracker.usage import DailyBudget, DarwinUsage
 
 log = logging.getLogger("traintracker")
 P = ParamSpec("P")
@@ -176,7 +176,7 @@ async def lifespan(_server: MCPServer[None]) -> AsyncIterator[None]:
         _app = App(
             settings=settings,
             http=http,
-            darwin=DarwinClient(settings, http, usage),
+            darwin=DarwinClient(settings, http, usage, await darwin_budget(settings, usage)),
             usage=usage,
         )
         _app.maybe_refresh()
@@ -199,6 +199,22 @@ def darwin_usage(settings: Settings) -> DarwinUsage | None:
     if settings.demo or not settings.has_any_darwin or not settings.database_url:
         return None
     return DarwinUsage(settings.database_url, settings.usage_schema)
+
+
+async def darwin_budget(settings: Settings, usage: DarwinUsage | None) -> DailyBudget | None:
+    """The day's ceiling on Darwin requests, resumed from what today's count
+    already holds; None in demo mode, or with DARWIN_DAILY_LIMIT=0."""
+    if settings.demo or settings.darwin_daily_limit <= 0:
+        return None
+    spent = 0
+    if usage:
+        try:
+            spent = await asyncio.to_thread(usage.spent_today)
+        except psycopg.Error as exc:
+            log.warning(
+                "Today's Darwin count couldn't be read; the daily limit starts at 0: %s", exc
+            )
+    return DailyBudget(settings.darwin_daily_limit, spent)
 
 
 def _prewarm(settings: Settings) -> None:
@@ -477,6 +493,8 @@ async def _live_board(
 
 
 def _darwin_offline(exc: Exception) -> str:
+    if isinstance(exc, AllowanceSpent):
+        return f"{exc} Delays, cancellations and live platforms are not available."
     return (
         f"National Rail live data (Darwin) is offline ({_why(exc)}). "
         "Delays, cancellations and live platforms are not available."

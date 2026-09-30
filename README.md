@@ -269,7 +269,7 @@ The server is its own OAuth authorization server, so it can be added once in cla
 1. In claude.ai: **Settings → Connectors → Add custom connector**, name `traintracker`, URL `https://<your-service-host>/mcp`. Leave the OAuth client fields empty: Claude registers itself.
 2. Claude opens the server's sign-in page. Sign in (see [Sign-in](#sign-in)).
 
-Sign-in hands Claude a one-hour access token and a 90-day refresh token, rotated on each refresh. Clients, codes, tokens and accounts are stored in the `mcp_auth` schema, tokens as SHA-256 hashes. To sign every client out, run `TRUNCATE mcp_auth.tokens` against the database. Changing the passphrase doesn't sign anyone out; truncate the tokens as well.
+Sign-in hands Claude a one-hour access token and a 90-day refresh token, rotated on each refresh. The authorization server metadata lists the `offline_access` scope and public clients (`none`), which the MCP SDK's own metadata leaves out: ChatGPT may drop a connection when its access token expires unless `offline_access` is listed. Every client may ask for that scope; a refresh token is issued either way. Clients, codes, tokens and accounts are stored in the `mcp_auth` schema, tokens as SHA-256 hashes. To sign every client out, run `TRUNCATE mcp_auth.tokens` against the database. Changing the passphrase doesn't sign anyone out; truncate the tokens as well.
 
 ### Sign-in
 

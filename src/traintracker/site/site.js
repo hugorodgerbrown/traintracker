@@ -27,6 +27,7 @@ const TICK_MS = 45;
 const NARROW_BELOW = 480; // px of panel width
 const STALE_AFTER_MS = 5 * 60 * 1000; // a live board this long without an update says so
 const FETCH_TIMEOUT_MS = 20 * 1000;
+const MIN_PITCH = 4; // px: a TV board's flaps are never smaller than this
 const IDLE_MS = 3000; // on a TV, the cursor hides after this long without moving
 const RELOAD_HOUR = 3; // a TV board reloads itself once a night, in this hour (UK time)
 
@@ -182,8 +183,7 @@ function board(figure) {
       flaps.style.removeProperty("--pitch");
       return;
     }
-    const pitch = pitchFor(laidOut);
-    flaps.style.setProperty("--pitch", `${Math.max(4, Math.floor(pitch * 10) / 10)}px`);
+    flaps.style.setProperty("--pitch", `${drawnPitch(laidOut)}px`);
   }
 
   /** The layout with the larger flaps on this screen, one line a train on a
@@ -191,10 +191,17 @@ function board(figure) {
    * the columns the screen has to spare at that size. */
   function tvLayout() {
     const base = pitchFor(NARROW) > pitchFor(WIDE) ? NARROW : WIDE;
-    const pitch = pitchFor(base);
+    // At the size the flaps will be drawn, which is never below MIN_PITCH.
+    const pitch = drawnPitch(base);
     const fits = Math.floor(inner().across / (pitch + 2)); // flaps across, with their margins
     const extra = fits - columns(base[0]);
     return extra > 0 ? widen(base, extra) : base;
+  }
+
+  /** The pitch the flaps are drawn at in `layout`: the largest that fits,
+   * to a tenth of a pixel, and no less than MIN_PITCH. */
+  function drawnPitch(layout) {
+    return Math.max(MIN_PITCH, Math.floor(pitchFor(layout) * 10) / 10);
   }
 
   /** The room inside the flaps' box, in px. */

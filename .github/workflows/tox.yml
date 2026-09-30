@@ -31,10 +31,13 @@ jobs:
       matrix:
         env: [format, lint, type, tests]
     steps:
-      - uses: actions/checkout@v7
+      # Actions are pinned to a commit: a tag can be moved to other code.
+      # Dependabot raises the commit and the version in the comment together.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
+          version: "0.12.19" # as in render.yaml
           enable-cache: true
-      - run: uvx --with tox-uv tox -e ${{ matrix.env }}
+      - run: uvx --with tox-uv==1.36.0 tox@4.64.5 -e ${{ matrix.env }}

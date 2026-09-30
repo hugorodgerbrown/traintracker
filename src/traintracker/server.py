@@ -12,6 +12,7 @@ import functools
 import logging
 import re
 import sys
+import traceback
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -26,10 +27,10 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from traintracker import demo, http_app, planner, site, stations
+from traintracker import demo, http_app, oauth, planner, site, stations
 from traintracker.config import UK_TZ, Settings, load_dotenv
 from traintracker.darwin import DarwinClient
-from traintracker.errors import TrainTrackerError, UpstreamError
+from traintracker.errors import AllowanceSpent, TrainTrackerError, UpstreamError
 from traintracker.models import (
     Board,
     BoardService,
@@ -51,11 +52,15 @@ from traintracker.timetable import (
     fmt_minutes,
     minutes_on,
 )
-from traintracker.usage import DarwinUsage
+from traintracker.usage import DailyBudget, DarwinUsage
 
 log = logging.getLogger("traintracker")
 P = ParamSpec("P")
 R = TypeVar("R")
+
+SDK_TOOL_LOGGER = "mcp.server.mcpserver.server"
+HEAVY_AT_ONCE = 2  # timetable reads and journey plans running at one time
+BUSY_AFTER = 10.0  # seconds a call waits for its turn before it is told to retry
 
 INSTRUCTIONS = """\
 GB (National Rail) train times.
@@ -89,6 +94,32 @@ class App:
     refresh_error: str | None = None
     refresh_started: datetime | None = None
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    _heavy: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(HEAVY_AT_ONCE))
+
+    async def off_loop(self, fn: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+        """Run timetable work in a thread, HEAVY_AT_ONCE at a time.
+
+        Reading a day's schedules or planning a journey takes seconds of CPU.
+        On the event loop it would hold up every other request, the health
+        check included; in threads without a limit, a run of calls would take
+        every worker, and the sign-in endpoints use the same ones.
+        """
+        try:
+            await asyncio.wait_for(self._heavy.acquire(), BUSY_AFTER)
+        except TimeoutError:
+            raise ToolError("The server is busy. Try again in a few seconds.") from None
+        work = asyncio.ensure_future(asyncio.to_thread(fn, *args, **kwargs))
+
+        def finished(done: asyncio.Future[R]) -> None:
+            self._heavy.release()
+            if not done.cancelled():
+                done.exception()  # retrieved here if the caller has gone
+
+        # The turn is given up when the thread ends, not when the caller stops
+        # waiting: a cancelled call leaves its thread running, and a run of
+        # cancelled calls would otherwise start any number of them.
+        work.add_done_callback(finished)
+        return await asyncio.shield(work)
 
     def timetable(self) -> Timetable:
         try:
@@ -176,7 +207,7 @@ async def lifespan(_server: MCPServer[None]) -> AsyncIterator[None]:
         _app = App(
             settings=settings,
             http=http,
-            darwin=DarwinClient(settings, http, usage),
+            darwin=DarwinClient(settings, http, usage, await darwin_budget(settings, usage)),
             usage=usage,
         )
         _app.maybe_refresh()
@@ -199,6 +230,22 @@ def darwin_usage(settings: Settings) -> DarwinUsage | None:
     if settings.demo or not settings.has_any_darwin or not settings.database_url:
         return None
     return DarwinUsage(settings.database_url, settings.usage_schema)
+
+
+async def darwin_budget(settings: Settings, usage: DarwinUsage | None) -> DailyBudget | None:
+    """The day's ceiling on Darwin requests, resumed from what today's count
+    already holds; None in demo mode, or with DARWIN_DAILY_LIMIT=0."""
+    if settings.demo or settings.darwin_daily_limit <= 0:
+        return None
+    spent = 0
+    if usage:
+        try:
+            spent = await asyncio.to_thread(usage.spent_today)
+        except psycopg.Error as exc:
+            log.warning(
+                "Today's Darwin count couldn't be read; the daily limit starts at 0: %s", exc
+            )
+    return DailyBudget(settings.darwin_daily_limit, spent)
 
 
 def _prewarm(settings: Settings) -> None:
@@ -244,6 +291,19 @@ def _when(day: str | None, time: str | None) -> datetime:
         raise ToolError(f"Time '{time}' should be HH:MM (24-hour).") from exc
 
 
+def _covered(tt: Timetable, day: date) -> None:
+    """Refuse a date outside the timetable.
+
+    Nothing runs on such a date, so there is no answer to give, and each new
+    date costs a read of every schedule to find that out.
+    """
+    first, last = tt.meta.get("valid_from"), tt.meta.get("valid_to")
+    iso = day.isoformat()
+    if (first and iso < first) or (last and iso > last):
+        span = f"{first} to {last}" if first and last else f"up to {last}" if last else first
+        raise ToolError(f"{iso} is outside the timetable, which covers {span}.")
+
+
 def _tool_errors(
     fn: Callable[P, Awaitable[R]],
 ) -> Callable[P, Awaitable[R]]:
@@ -268,7 +328,19 @@ def _tool_errors(
         except httpx.TimeoutException as exc:
             raise ToolError("The upstream service timed out; try again.") from exc
         except httpx.HTTPError as exc:
-            raise ToolError(f"Network error reaching the data source: {exc}") from exc
+            log.warning("Network error reaching the data source: %s", type(exc).__name__)
+            raise ToolError("Network error reaching the data source; try again.") from exc
+        except Exception as exc:
+            # The message may repeat what the caller asked, which the privacy
+            # policy keeps out of the logs. Log the kind of error and where it
+            # was raised, and leave the message out.
+            log.error(
+                "%s in %s\n%s",
+                type(exc).__name__,
+                fn.__name__,
+                "".join(traceback.format_tb(exc.__traceback__)),
+            )
+            raise ToolError("Something went wrong on the server. Try again.") from None
 
     return wrapper
 
@@ -334,11 +406,7 @@ def _timetable_board(
             (minutes_on(day, trip, t) or 0, _trip_board_service(trip, idx, day, board, points))
         )
     services.sort(key=lambda x: x[0])
-    notes = []
-    valid_to = tt.meta.get("valid_to")
-    if valid_to and day.isoformat() > valid_to:
-        notes.append(f"The timetable only runs to {valid_to}; later dates may be incomplete.")
-    notes.append("Booked (timetabled) times; engineering-work changes appear once published.")
+    notes = ["Booked (timetabled) times; engineering-work changes appear once published."]
     return Board(
         station=StationRef(name=st.name, crs=st.crs),
         board=board,
@@ -353,6 +421,9 @@ def _timetable_board(
 # --------------------------------------------------------------------- tools
 
 LIVE, LOCAL = True, False
+# The longest station name is under 40 characters, and matching a name costs time
+# in proportion to its length, so text from the caller is capped.
+NAME = stations.MAX_QUERY
 
 
 def _tool(title: str, open_world: bool) -> Callable[[Callable[P, R]], Callable[P, R]]:
@@ -379,7 +450,9 @@ def _tool(title: str, open_world: bool) -> Callable[[Callable[P, R]], Callable[P
 
 @_tool("Find a station", LOCAL)
 async def find_station(
-    query: Annotated[str, Field(description="Station name, partial name or 3-letter CRS code.")],
+    query: Annotated[
+        str, Field(max_length=NAME, description="Station name, partial name or 3-letter CRS code.")
+    ],
     limit: Annotated[int, Field(ge=1, le=20)] = 5,
 ) -> list[StationMatch]:
     """Find GB (National Rail) railway stations by name, part of a name or 3-letter CRS
@@ -393,8 +466,10 @@ async def find_station(
 @_tool("Live departures", LIVE)
 @_tool_errors
 async def live_departures(
-    station: Annotated[str, Field(description="Station name or CRS code.")],
-    to: Annotated[str | None, Field(description="Only trains calling at this station.")] = None,
+    station: Annotated[str, Field(max_length=NAME, description="Station name or CRS code.")],
+    to: Annotated[
+        str | None, Field(max_length=NAME, description="Only trains calling at this station.")
+    ] = None,
     rows: Annotated[int, Field(ge=1, le=50)] = 10,
     offset_minutes: Annotated[
         int, Field(ge=-119, le=119, description="Shift the board start (e.g. 30 = from +30 min).")
@@ -448,15 +523,18 @@ async def _live_board(
         except (UpstreamError, httpx.HTTPError) as exc:
             notes.append(_darwin_offline(exc))
     if b is None:
+
+        def booked() -> Board:
+            return _timetable_board(a.timetable(), st, start, 120, board, other, rows, points)
+
         try:
-            tt = a.timetable()
+            b = await a.off_loop(booked)
         except TimetableMissing as exc:
             if notes:
                 raise UpstreamError(
                     f"{notes[0]} Booked times aren't available either: {exc}"
                 ) from exc
             raise
-        b = _timetable_board(tt, st, start, 120, board, other, rows, points)
         notes.append(
             "Showing booked times instead."
             if notes
@@ -470,6 +548,8 @@ async def _live_board(
 
 
 def _darwin_offline(exc: Exception) -> str:
+    if isinstance(exc, AllowanceSpent):
+        return f"{exc} Delays, cancellations and live platforms are not available."
     return (
         f"National Rail live data (Darwin) is offline ({_why(exc)}). "
         "Delays, cancellations and live platforms are not available."
@@ -479,15 +559,18 @@ def _darwin_offline(exc: Exception) -> str:
 def _why(exc: Exception) -> str:
     if isinstance(exc, httpx.TimeoutException):
         return "timed out"
+    if isinstance(exc, httpx.HTTPError):
+        return "network error"
     return str(exc) or type(exc).__name__
 
 
 @_tool("Live arrivals", LIVE)
 @_tool_errors
 async def live_arrivals(
-    station: Annotated[str, Field(description="Station name or CRS code.")],
+    station: Annotated[str, Field(max_length=NAME, description="Station name or CRS code.")],
     from_station: Annotated[
-        str | None, Field(description="Only trains that called at this station earlier.")
+        str | None,
+        Field(max_length=NAME, description="Only trains that called at this station earlier."),
     ] = None,
     rows: Annotated[int, Field(ge=1, le=50)] = 10,
     include_calling_points: bool = False,
@@ -509,10 +592,13 @@ async def live_arrivals(
 @_tool("Departure platform", LIVE)
 @_tool_errors
 async def departure_platform(
-    station: Annotated[str, Field(description="Station name or CRS code.")],
-    to: Annotated[str | None, Field(description="Only trains calling at this station.")] = None,
+    station: Annotated[str, Field(max_length=NAME, description="Station name or CRS code.")],
+    to: Annotated[
+        str | None, Field(max_length=NAME, description="Only trains calling at this station.")
+    ] = None,
     time: Annotated[
-        str | None, Field(description="Booked departure HH:MM (24h). Default: the next train.")
+        str | None,
+        Field(max_length=5, description="Booked departure HH:MM (24h). Default: the next train."),
     ] = None,
 ) -> PlatformCheck:
     """The platform one train leaves from at a GB railway station: the next departure,
@@ -565,8 +651,8 @@ def _platform_note(svc: BoardService, b: Board) -> str:
 @_tool("Departures from a platform", LIVE)
 @_tool_errors
 async def platform_departures(
-    station: Annotated[str, Field(description="Station name or CRS code.")],
-    platform: Annotated[str, Field(description="Platform, e.g. '4' or '9B'.")],
+    station: Annotated[str, Field(max_length=NAME, description="Station name or CRS code.")],
+    platform: Annotated[str, Field(max_length=12, description="Platform, e.g. '4' or '9B'.")],
     count: Annotated[int, Field(ge=1, le=10)] = 3,
 ) -> Board:
     """The next trains leaving from one platform of a GB railway station in the next two
@@ -657,15 +743,22 @@ def _minutes_until(hhmm: str | None) -> int:
 @_tool("Timetable", LOCAL)
 @_tool_errors
 async def timetable(
-    station: Annotated[str, Field(description="Station name or CRS code.")],
-    date: Annotated[str | None, Field(description="YYYY-MM-DD, 'today' or 'tomorrow'.")] = None,
+    station: Annotated[str, Field(max_length=NAME, description="Station name or CRS code.")],
+    date: Annotated[
+        str | None, Field(max_length=10, description="YYYY-MM-DD, 'today' or 'tomorrow'.")
+    ] = None,
     time: Annotated[
         str | None,
-        Field(description="Start time HH:MM (24h). Default: now today, else the whole day."),
+        Field(
+            max_length=5,
+            description="Start time HH:MM (24h). Default: now today, else the whole day.",
+        ),
     ] = None,
-    to: Annotated[str | None, Field(description="Only trains later calling here.")] = None,
+    to: Annotated[
+        str | None, Field(max_length=NAME, description="Only trains later calling here.")
+    ] = None,
     from_station: Annotated[
-        str | None, Field(description="Only trains earlier calling here.")
+        str | None, Field(max_length=NAME, description="Only trains earlier calling here.")
     ] = None,
     board: Literal["departures", "arrivals"] = "departures",
     window_minutes: Annotated[int, Field(ge=10, le=1440)] = 180,
@@ -682,9 +775,15 @@ async def timetable(
     when = _when(date, time)
     if not time and when.date() != datetime.now(UK_TZ).date():
         window_minutes = 1440  # "what runs on Saturday?" means the whole day
-    b = _timetable_board(
-        a.timetable(), st, when, window_minutes, board, other, rows, include_calling_points
-    )
+
+    def booked() -> Board:
+        tt = a.timetable()
+        _covered(tt, when.date())
+        return _timetable_board(
+            tt, st, when, window_minutes, board, other, rows, include_calling_points
+        )
+
+    b = await a.off_loop(booked)
     if a.settings.demo:
         b.messages.insert(0, demo.DEMO_NOTE)
     return b
@@ -694,7 +793,8 @@ async def timetable(
 @_tool_errors
 async def service_details(
     service_id: Annotated[
-        str, Field(description="A service_id from another tool (darwin:… or tt:…).")
+        str,
+        Field(max_length=NAME, description="A service_id from another tool (darwin:… or tt:…)."),
     ],
 ) -> ServiceDetail:
     """Every stop of one GB train, with booked times and, for a train taken from a live
@@ -708,7 +808,13 @@ async def service_details(
             run_date = date.fromisoformat(run)
         except ValueError as exc:
             raise ToolError(f"'{service_id}' is not a valid timetable service ID.") from exc
-        trip = a.timetable().trip(uid, run_date)
+
+        def find() -> Trip | None:
+            tt = a.timetable()
+            _covered(tt, run_date)
+            return tt.trip(uid, run_date)
+
+        trip = await a.off_loop(find)
         if trip is None:
             raise ToolError(f"No timetabled service {uid} runs on {run}.")
         return ServiceDetail(
@@ -736,11 +842,19 @@ async def service_details(
 @_tool("Plan a journey", LIVE)
 @_tool_errors
 async def plan_journey(
-    origin: Annotated[str, Field(description="Start station name or CRS code.")],
-    destination: Annotated[str, Field(description="End station name or CRS code.")],
-    date: Annotated[str | None, Field(description="YYYY-MM-DD, 'today' or 'tomorrow'.")] = None,
-    time: Annotated[str | None, Field(description="Depart at or after HH:MM. Default now.")] = None,
-    via: Annotated[str | None, Field(description="Force a change at this station.")] = None,
+    origin: Annotated[str, Field(max_length=NAME, description="Start station name or CRS code.")],
+    destination: Annotated[
+        str, Field(max_length=NAME, description="End station name or CRS code.")
+    ],
+    date: Annotated[
+        str | None, Field(max_length=10, description="YYYY-MM-DD, 'today' or 'tomorrow'.")
+    ] = None,
+    time: Annotated[
+        str | None, Field(max_length=5, description="Depart at or after HH:MM. Default now.")
+    ] = None,
+    via: Annotated[
+        str | None, Field(max_length=NAME, description="Force a change at this station.")
+    ] = None,
     count: Annotated[int, Field(ge=1, le=6)] = 3,
     max_changes: Annotated[int, Field(ge=0, le=6)] = 4,
     live: Annotated[bool, Field(description="Overlay Darwin live times for today.")] = True,
@@ -757,19 +871,23 @@ async def plan_journey(
     if v and v.crs in (o.crs, d.crs):
         v = None  # "via" an end point is no constraint
     when = _when(date, time)
-    tt = a.timetable()
     mct = a.settings.min_interchange_minutes
-    journeys = await asyncio.to_thread(
-        planner.plan,
-        tt,
-        o.crs,
-        d.crs,
-        when,
-        via=v.crs if v else None,
-        count=count,
-        max_changes=max_changes,
-        mct=mct,
-    )
+
+    def plan() -> list[Journey]:
+        tt = a.timetable()
+        _covered(tt, when.date())
+        return planner.plan(
+            tt,
+            o.crs,
+            d.crs,
+            when,
+            via=v.crs if v else None,
+            count=count,
+            max_changes=max_changes,
+            mct=mct,
+        )
+
+    journeys = await a.off_loop(plan)
     notes = ["Times are booked (timetable) times unless a leg shows expected times."]
     if a.settings.demo:
         notes.insert(0, demo.DEMO_NOTE)
@@ -780,9 +898,6 @@ async def plan_journey(
             "No journey found before the end of the service day. Try an earlier time, "
             "tomorrow, or a via station."
         )
-    valid_to = tt.meta.get("valid_to")
-    if valid_to and when.date().isoformat() > valid_to:
-        notes.append(f"The timetable only runs to {valid_to}.")
     if live and a.settings.has_darwin and when.date() == datetime.now(UK_TZ).date():
         await _overlay_live(a, journeys, mct, notes)
     return JourneyPlan(
@@ -809,7 +924,7 @@ async def _overlay_live(a: App, journeys: list[Journey], mct: int, notes: list[s
                 boards[key] = await a.darwin.board(frm, "departures", filter_crs=to, rows=20)
             except (TrainTrackerError, httpx.HTTPError) as exc:
                 # Live times are a bonus; the plan stands without them.
-                log.info("Live overlay skipped for %s->%s: %s", frm, to, exc)
+                log.info("Live overlay skipped for a leg: %s", type(exc).__name__)
                 boards[key] = None
                 failure = failure or exc
         return boards[key]
@@ -913,9 +1028,9 @@ def _at_risk(j: Journey, mct: int) -> bool:
 
 @_tool("Data status", LOCAL)
 async def data_status() -> dict[str, Any]:
-    """Which data sources this server has configured, how fresh its timetable is, how
-    much of the Darwin request allowance has been used, and what is missing. Takes no
-    arguments."""
+    """Which data sources this server has configured, how fresh its timetable is, and
+    what is missing. A server you run yourself also reports how much of the Darwin
+    request allowance has been used. Takes no arguments."""
     a = app()
     s = a.settings
     age = a.timetable_age()
@@ -939,7 +1054,14 @@ async def data_status() -> dict[str, Any]:
         },
         "min_interchange_minutes": s.min_interchange_minutes,
     }
-    if a.usage:
+    if s.public:
+        # A hosted server answers anyone who signs in. How it is set up inside,
+        # and how much of the allowance is left, are for whoever runs it:
+        # `traintracker status` and the log have them.
+        timetable = status["network_rail_timetable"]
+        for internal in ("schema", "last_refresh_error"):
+            del timetable[internal]
+    elif a.usage:
         status["darwin_usage"] = await _usage_status(a.usage)
     if s.demo:
         # Replace the account details: none are used in demo mode.
@@ -960,9 +1082,9 @@ async def privacy_policy() -> dict[str, Any]:
     held. Takes no arguments."""
     # The text comes from the /privacy page itself, so the two can't disagree.
     policy: dict[str, Any] = {"policy": site.page_text("/privacy")}
-    url = app().settings.public_url
-    if not url.startswith("http://localhost"):  # a stdio server has no public page
-        policy["url"] = f"{url}/privacy"
+    settings = app().settings
+    if settings.public:  # a stdio server has no public page
+        policy["url"] = f"{settings.public_url}/privacy"
     return policy
 
 
@@ -970,7 +1092,8 @@ async def _usage_status(usage: DarwinUsage) -> dict[str, Any]:
     try:
         return (await asyncio.to_thread(usage.read)).as_dict()
     except psycopg.Error as exc:
-        return {"error": f"The usage count couldn't be read: {exc}"}
+        log.warning("The Darwin usage count couldn't be read: %s", exc)
+        return {"error": "The usage count couldn't be read."}
 
 
 # ----------------------------------------------------------------------- CLI
@@ -983,6 +1106,10 @@ def configure_logging() -> None:
     # presigned S3 URL whose query string holds temporary AWS credentials.
     for name in ("httpx", "httpcore"):
         logging.getLogger(name).setLevel(logging.WARNING)
+    # The SDK logs each failed tool call at INFO with the error text, and the
+    # text names what was asked for ("'Yeovil' is ambiguous"). The privacy policy
+    # says questions are not written to logs.
+    logging.getLogger(SDK_TOOL_LOGGER).setLevel(logging.WARNING)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -997,6 +1124,12 @@ def main(argv: list[str] | None = None) -> None:
         if problem := _sign_in_problem(settings):
             print(problem, file=sys.stderr)
             sys.exit(2)
+        if 0 < len(settings.oauth_passphrase or "") < oauth.MIN_LENGTH:
+            log.warning(
+                "MCP_OAUTH_PASSPHRASE is shorter than %d characters. Anyone can try passphrases "
+                "at the sign-in page; use a long random one.",
+                oauth.MIN_LENGTH,
+            )
         http_app.serve(http_app.build_app(mcp, settings), settings.host, settings.port)
     elif cmd in ("forget", "block") and len(argv) == 2:
         _account_command(cmd, argv[1], settings)
@@ -1051,14 +1184,20 @@ def _account_command(cmd: str, address: str, settings: Settings) -> None:
         print("MCP_ACCOUNT_SECRET is not set, so there are no email accounts.", file=sys.stderr)
         sys.exit(2)
     provider = http_app.build_provider(settings)
-    provider.create_tables()
-    if cmd == "block":
-        provider.block(address)
-        print("Blocked: the address can't sign in and its tokens no longer work.", file=sys.stderr)
-    elif provider.forget(address):
-        print("Forgotten: the account and its tokens are deleted.", file=sys.stderr)
-    else:
-        print("No account for that address.", file=sys.stderr)
+    try:
+        provider.create_tables()
+        if cmd == "block":
+            provider.block(address)
+            print(
+                "Blocked: the address can't sign in and its tokens no longer work.",
+                file=sys.stderr,
+            )
+        elif provider.forget(address):
+            print("Forgotten: the account and its tokens are deleted.", file=sys.stderr)
+        else:
+            print("No account for that address.", file=sys.stderr)
+    finally:
+        provider.close()
 
 
 def _usage_line(settings: Settings) -> str:

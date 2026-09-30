@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
+import threading
+import time
 import tomllib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -15,11 +19,12 @@ import psycopg
 import pytest
 import respx
 from mcp import Client
+from mcp.server.mcpserver.exceptions import ToolError
 from psycopg import sql
 
 import traintracker
-from traintracker import server
-from traintracker.config import DARWIN_DEPARTURES_URL, UK_TZ, TimetableDB
+from traintracker import server, stations
+from traintracker.config import DARWIN_DEPARTURES_URL, UK_TZ, Settings, TimetableDB
 from traintracker.models import Journey, JourneyLeg, StationRef
 from traintracker.timetable import Timetable, build
 
@@ -137,6 +142,25 @@ async def test_find_station(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
         assert {"SUY", "SDH", "SUD"} <= set(crs)
 
 
+async def test_overlong_text_is_refused_before_it_is_matched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Matching costs time in proportion to the text, so a megabyte of it would
+    # hold the server up for every other caller.
+    long_name = "kings cross " * 10
+    assert stations.search(long_name) == []
+    async with connect(tmp_path, monkeypatch) as client:
+        for tool, args in (
+            ("find_station", {"query": long_name}),
+            ("live_departures", {"station": long_name}),
+            ("plan_journey", {"origin": "LST", "destination": "SUY", "via": long_name}),
+            ("timetable", {"station": "LST", "date": "2026-10-02 and more"}),
+            ("service_details", {"service_id": "darwin:" + "x" * 100}),
+        ):
+            result = await client.call_tool(tool, args)
+            assert result.is_error, tool
+
+
 async def test_ambiguous_station_is_a_clear_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -172,6 +196,95 @@ async def test_timetable_board(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         assert [s["scheduled"] for s in out["services"]] == ["13:58", "14:58"]
         assert out["services"][0]["destination"][0]["crs"] == "SUY"
         assert out["services"][0]["operator"] == "Greater Anglia"
+
+
+async def test_a_date_outside_the_timetable_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The test timetable was built on 26 September and its schedules end on
+    # 31 December. Each new date costs a read of every schedule, so dates it
+    # can't answer for are turned away before that.
+    async with connect(tmp_path, monkeypatch) as client:
+        late = await error(client, "timetable", station="Marks Tey", date="2027-06-01")
+        early = await error(
+            client, "plan_journey", origin="LST", destination="SUY", date="2026-09-01"
+        )
+        never = await error(client, "service_details", service_id="tt:B00013:2031-01-01")
+    assert late.endswith(
+        "2027-06-01 is outside the timetable, which covers 2026-09-24 to 2026-12-31."
+    )
+    assert "2026-09-01 is outside the timetable" in early
+    assert "2031-01-01 is outside the timetable" in never
+
+
+async def test_timetable_work_waits_its_turn_and_gives_up_when_the_server_is_busy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(server, "HEAVY_AT_ONCE", 1)
+    monkeypatch.setattr(server, "BUSY_AFTER", 0.05)
+    board = server._timetable_board
+
+    def slow(*args: Any) -> Any:
+        time.sleep(0.3)
+        return board(*args)
+
+    monkeypatch.setattr(server, "_timetable_board", slow)
+    async with connect(tmp_path, monkeypatch) as client:
+        results = await asyncio.gather(
+            *(
+                client.call_tool("timetable", {"station": "Marks Tey", "date": "2026-10-02"})
+                for _ in range(2)
+            )
+        )
+    assert sorted(r.is_error for r in results) == [False, True]
+    busy = next(r for r in results if r.is_error)
+    assert "busy" in " ".join(getattr(c, "text", "") for c in busy.content)
+
+
+async def test_what_was_asked_stays_out_of_the_logs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    # The privacy policy says so. A failed call is the risk: its error names the
+    # station that was asked for.
+    server.configure_logging()
+
+    def broken(_tt: Any, station: Any, *_: Any) -> Any:
+        raise RuntimeError(f"no board for {station.name}")
+
+    async with connect(tmp_path, monkeypatch) as client:
+        with caplog.at_level(logging.INFO):
+            ambiguous = await error(client, "timetable", station="sudbury", date="2026-10-02")
+            monkeypatch.setattr(server, "_timetable_board", broken)
+            failed = await error(client, "timetable", station="Marks Tey", date="2026-10-02")
+    assert "sudbury" in ambiguous  # the caller is told
+    assert "Something went wrong on the server" in failed and "Marks Tey" not in failed
+    assert "sudbury" not in caplog.text.lower() and "marks tey" not in caplog.text.lower()
+    # The fault itself is still recorded: what kind, and where.
+    assert "RuntimeError in timetable" in caplog.text and "in broken" in caplog.text
+
+
+async def test_a_cancelled_call_keeps_its_turn_until_its_work_ends(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Cancelling a call doesn't stop its thread. If the turn were given up at
+    # once, calls started and cancelled in a run would each leave a thread working.
+    monkeypatch.setattr(server, "HEAVY_AT_ONCE", 1)
+    monkeypatch.setattr(server, "BUSY_AFTER", 0.05)
+    a = server.App(settings=Settings.from_env(), http=None, darwin=None)  # type: ignore[arg-type]
+    finish = threading.Event()
+    first = asyncio.create_task(a.off_loop(finish.wait))
+    await asyncio.sleep(0.05)
+    first.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await first
+    with pytest.raises(ToolError, match="busy"):
+        await a.off_loop(lambda: None)
+    finish.set()
+    for _ in range(100):
+        if not a._heavy.locked():
+            break
+        await asyncio.sleep(0.01)
+    assert await a.off_loop(lambda: 7) == 7
 
 
 async def test_service_details_timetable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -21,6 +21,10 @@ class Station:
     lon: float
 
 
+# No station name comes near this. Fuzzy matching takes time in proportion to the
+# query's length, so anything longer is not matched at all.
+MAX_QUERY = 80
+
 # Common abbreviations people type, expanded before fuzzy matching.
 _ABBREVIATIONS = {
     r"\bst\b": "street",
@@ -66,7 +70,7 @@ def by_crs(crs: str) -> Station | None:
 def search(query: str, limit: int = 5) -> list[tuple[Station, float]]:
     """Ranked matches with a 0-100 score. An exact CRS code always ranks first."""
     query = query.strip()
-    if not query:
+    if not query or len(query) > MAX_QUERY:
         return []
     results: list[tuple[Station, float]] = []
     exact = by_crs(query) if len(query) == 3 and query.isalpha() else None

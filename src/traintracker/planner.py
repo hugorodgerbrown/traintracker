@@ -101,7 +101,9 @@ def network(tt: Timetable, built_at: str | None, day: date) -> Network:
         return _network(tt, built_at, day)
 
 
-@lru_cache(maxsize=3)
+# A day's network is over a hundred megabytes, and the hosted server has 512 MB:
+# today and one other date are kept, and a third replaces the older of them.
+@lru_cache(maxsize=2)
 def _network(tt: Timetable, _built_at: str | None, day: date) -> Network:
     trips = tuple(tt.day_trips(day))
     conns: list[Conn] = []

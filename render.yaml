@@ -1,16 +1,25 @@
 # Render Blueprint: the MCP server over HTTP, plus a daily timetable refresh.
 # Both use a database on a (shared) Render Postgres instance; set DATABASE_URL
 # to its internal URL when Render prompts for it. See "Deploy to Render" in the README.
+#
+# uv is pinned: the build runs with the service's secrets in its environment, so
+# it installs a known version, and uv then installs exactly what uv.lock lists.
+# Raise the version here and in .github/workflows/tox.yml together.
 services:
   - type: web
     name: traintracker
     runtime: python
     region: frankfurt
     plan: 0.5c-512mb
-    buildCommand: pip install uv && uv sync --locked --no-dev
+    buildCommand: pip install uv==0.12.19 && uv sync --locked --no-dev
     startCommand: uv run --no-sync traintracker serve-http
     healthCheckPath: /healthz
     autoDeployTrigger: checksPass
+    # The service answers on its custom domain only; its onrender.com name gives
+    # a 404. One name is one place to put a limit or a rule. Render needs the
+    # service to have a custom domain for this: remove the line when deploying
+    # your own copy without one.
+    renderSubdomainPolicy: disabled
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -21,11 +30,23 @@ services:
       # clients that can't.
       - key: MCP_OAUTH_PASSPHRASE
         sync: false
-      # This deployment's custom domain, accepted alongside the service's own
-      # onrender.com name; other Host headers are rejected (421). Change or remove
-      # it when deploying your own copy.
+      # Email sign-in, for everyone else: a Resend API key, the sender of the
+      # code (on a domain verified with Resend), and the key that turns an
+      # address into an account ID. All three, or none to leave it off.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: MCP_ACCOUNT_SECRET
+        sync: false
+      # This deployment's custom domain; other Host headers are rejected (421).
+      # Change or remove it when deploying your own copy.
       - key: MCP_PUBLIC_HOSTS
         value: traintrackr.live
+      # Render's edge puts the caller's address in this header; the limits on the
+      # endpoints that come before sign-in are counted against it.
+      - key: CLIENT_IP_HEADER
+        value: CF-Connecting-IP
       # The cron job below refreshes the timetable; the web service only reads it.
       - key: TIMETABLE_AUTO_REFRESH
         value: "0"
@@ -38,7 +59,7 @@ services:
     # 06:30 UTC (06:30 GMT / 07:30 BST): after Network Rail publishes the daily
     # extract at about 06:00 UK time.
     schedule: "30 6 * * *"
-    buildCommand: pip install uv && uv sync --locked --no-dev
+    buildCommand: pip install uv==0.12.19 && uv sync --locked --no-dev
     startCommand: uv run --no-sync traintracker refresh
     autoDeployTrigger: checksPass
     envVars:

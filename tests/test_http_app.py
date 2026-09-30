@@ -6,26 +6,44 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import json
 import os
 import secrets
+import time
 from collections.abc import AsyncIterator
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import httpx
 import psycopg
 import pytest
+from mcp.server.auth.provider import TokenError
 from mcp.server.transport_security import TransportSecurityMiddleware
+from mcp.shared.auth import OAuthToken
 from starlette.requests import Request
 
-from traintracker import oauth, server
+from traintracker import http_app, oauth, server
 from traintracker.config import Settings
-from traintracker.http_app import build_app, transport_security
+from traintracker.http_app import (
+    MAX_MCP_BODY,
+    MAX_OPEN_BODY,
+    OpenEndpointLimits,
+    build_app,
+    transport_security,
+)
 from traintracker.oauth import TraintrackerOAuthProvider
 from traintracker.server import main
 
 BASE = "https://tt.test"
 CALLBACK = "https://claude.ai/api/mcp/auth_callback"
 PASSPHRASE = "correct horse battery staple"
+REGISTRATION = {
+    "client_name": "Claude",
+    "redirect_uris": [CALLBACK],
+    "token_endpoint_auth_method": "none",
+    "grant_types": ["authorization_code", "refresh_token"],
+    "response_types": ["code"],
+}
 
 
 @pytest.fixture
@@ -58,16 +76,7 @@ def _provider(settings: Settings) -> TraintrackerOAuthProvider:
 
 
 async def _register(client: httpx.AsyncClient) -> str:
-    r = await client.post(
-        "/register",
-        json={
-            "client_name": "Claude",
-            "redirect_uris": [CALLBACK],
-            "token_endpoint_auth_method": "none",
-            "grant_types": ["authorization_code", "refresh_token"],
-            "response_types": ["code"],
-        },
-    )
+    r = await client.post("/register", json=REGISTRATION)
     assert r.status_code == 201, r.text
     return str(r.json()["client_id"])
 
@@ -108,6 +117,180 @@ async def test_discovery_and_unauthenticated_mcp(client: httpx.AsyncClient) -> N
     assert r.status_code == 401
     assert "resource_metadata" in r.headers["www-authenticate"]
     assert (await client.get("/healthz")).text == "ok"
+
+
+async def test_an_oversized_mcp_request_is_refused(client: httpx.AsyncClient) -> None:
+    r = await client.post(
+        "/mcp",
+        headers={"Authorization": "Bearer static-token"},
+        json={"jsonrpc": "2.0", "id": 1, "method": "ping", "params": {"pad": "x" * MAX_MCP_BODY}},
+    )
+    assert r.status_code == 413
+
+
+async def test_a_registration_must_be_small(client: httpx.AsyncClient, settings: Settings) -> None:
+    # Anyone can register, so a registration can't be used to store much.
+    wordy = await client.post("/register", json={**REGISTRATION, "client_name": "C" * 5000})
+    assert wordy.status_code == 400 and "too large" in wordy.json()["error_description"]
+    huge = await client.post("/register", json={**REGISTRATION, "client_name": "C" * MAX_OPEN_BODY})
+    assert huge.status_code == 413
+    with psycopg.connect(settings.database_url or "") as con:
+        assert con.execute(f"SELECT count(*) FROM {settings.auth_schema}.clients").fetchone() == (
+            0,
+        )
+
+
+async def test_registration_stops_at_the_client_limit(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(oauth, "MAX_CLIENTS", 2)
+    await _register(client)
+    await _register(client)
+    full = await client.post("/register", json=REGISTRATION)
+    assert full.status_code == 400 and "Try again later" in full.json()["error_description"]
+
+
+async def test_clients_nobody_uses_are_deleted(
+    client: httpx.AsyncClient, settings: Settings
+) -> None:
+    provider = _provider(settings)
+    abandoned, pending, in_use = [await _register(client) for _ in range(3)]
+    await _start_sign_in(client, pending)
+    sign_in, verifier = await _start_sign_in(client, in_use)
+    ok = await client.post("/sign-in", data={"request": sign_in, "passphrase": PASSPHRASE})
+    code = parse_qs(urlparse(ok.headers["location"]).query)["code"][0]
+    tokens = await _token(
+        client,
+        grant_type="authorization_code",
+        code=code,
+        redirect_uri=CALLBACK,
+        client_id=in_use,
+        code_verifier=verifier,
+    )
+    assert tokens.status_code == 200
+    with psycopg.connect(settings.database_url or "", autocommit=True) as con:
+        con.execute(
+            f"UPDATE {settings.auth_schema}.clients SET created_at = now() - interval '8 days'"
+        )
+    await _register(client)  # the next registration clears them out
+    assert await provider.get_client(abandoned) is None
+    assert await provider.get_client(pending) is not None
+    assert await provider.get_client(in_use) is not None
+
+
+async def test_an_oversized_authorization_request_is_refused(client: httpx.AsyncClient) -> None:
+    client_id = await _register(client)
+    r = await client.get(
+        "/authorize",
+        params={
+            "response_type": "code",
+            "client_id": client_id,
+            "redirect_uri": CALLBACK,
+            "code_challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+            "state": "s" * 9000,
+        },
+    )
+    assert r.status_code == 302 and "error=invalid_request" in r.headers["location"]
+
+
+async def test_a_client_can_only_return_to_a_known_app_or_a_loopback_address(
+    client: httpx.AsyncClient, settings: Settings
+) -> None:
+    async def register(*uris: str) -> httpx.Response:
+        return await client.post("/register", json={**REGISTRATION, "redirect_uris": list(uris)})
+
+    for uri in (
+        "https://evil.example/cb",
+        "http://claude.ai/api/mcp/auth_callback",  # not https
+        "https://claude.ai.evil.example/cb",
+        "javascript:alert(1)",
+    ):
+        refused = await register(CALLBACK, uri)
+        assert refused.status_code == 400, uri
+        assert refused.json()["error"] == "invalid_redirect_uri"
+    for uri in (
+        "https://chatgpt.com/connector_platform_oauth_redirect",
+        "http://127.0.0.1:6274/oauth/callback",
+        "http://localhost:8766/callback",
+        "http://[::1]:9000/callback",
+    ):
+        assert (await register(uri)).status_code == 201, uri
+
+    # A client stored before the rule is not redirected to: not on an error
+    # either, which is how /authorize could be made to send a browser anywhere.
+    stored = {**REGISTRATION, "client_id": "old", "redirect_uris": ["https://evil.example/cb"]}
+    with psycopg.connect(settings.database_url or "", autocommit=True) as con:
+        con.execute(
+            f"INSERT INTO {settings.auth_schema}.clients (client_id, info) VALUES (%s, %s)",
+            ("old", json.dumps(stored)),
+        )
+    r = await client.get(
+        "/authorize",
+        params={
+            "response_type": "code",
+            "client_id": "old",
+            "redirect_uri": "https://evil.example/cb",
+            "code_challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+            "scope": "no-such-scope",
+        },
+    )
+    assert r.status_code == 400 and "location" not in r.headers
+
+
+async def test_the_apps_a_client_can_return_to_are_configurable(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MCP_REDIRECT_HOSTS", "App.Example, other.example")
+    assert Settings.from_env().redirect_hosts == ("app.example", "other.example")
+    transport = httpx.ASGITransport(app=build_app(server.mcp, Settings.from_env()))
+    async with httpx.AsyncClient(transport=transport, base_url=BASE) as c:
+        ok = await c.post(
+            "/register", json={**REGISTRATION, "redirect_uris": ["https://app.example/cb"]}
+        )
+        assert ok.status_code == 201
+        assert (await c.post("/register", json=REGISTRATION)).status_code == 400  # claude.ai
+    monkeypatch.setenv("MCP_REDIRECT_HOSTS", "*")
+    transport = httpx.ASGITransport(app=build_app(server.mcp, Settings.from_env()))
+    async with httpx.AsyncClient(transport=transport, base_url=BASE) as c:
+        anywhere = await c.post(
+            "/register", json={**REGISTRATION, "redirect_uris": ["cursor://anysphere/cb"]}
+        )
+        assert anywhere.status_code == 201
+
+
+async def test_each_address_may_register_at_a_limited_rate(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(http_app, "REGISTER_LIMIT", (2, 1.0))
+    monkeypatch.setenv("CLIENT_IP_HEADER", "CF-Connecting-IP")
+    transport = httpx.ASGITransport(app=build_app(server.mcp, Settings.from_env()))
+    async with httpx.AsyncClient(transport=transport, base_url=BASE) as c:
+
+        async def register(address: str) -> httpx.Response:
+            return await c.post(
+                "/register", json=REGISTRATION, headers={"CF-Connecting-IP": address}
+            )
+
+        assert [(await register("203.0.113.7")).status_code for _ in range(3)] == [201, 201, 429]
+        refused = await register("203.0.113.7")
+        assert int(refused.headers["retry-after"]) > 0
+        # Another address has its own count, and other endpoints are not held up.
+        assert (await register("203.0.113.8")).status_code == 201
+        assert (await c.get("/healthz")).status_code == 200
+
+
+def test_the_caller_is_the_connection_unless_a_proxy_header_is_trusted() -> None:
+    scope = {
+        "type": "http",
+        "client": ("10.0.0.1", 4000),
+        "headers": [(b"cf-connecting-ip", b"203.0.113.7")],
+    }
+
+    async def app(*_: object) -> None: ...
+
+    assert OpenEndpointLimits(app, {}).address(scope) == "10.0.0.1"
+    assert OpenEndpointLimits(app, {}, "CF-Connecting-IP").address(scope) == "203.0.113.7"
+    assert OpenEndpointLimits(app, {}, "X-Real-IP").address(scope) == "10.0.0.1"
 
 
 @pytest.mark.usefixtures("settings")
@@ -268,6 +451,95 @@ async def test_sign_in_issues_tokens_that_rotate_and_revoke(
     assert await provider.load_access_token(new_access) is None
 
 
+async def test_a_replaced_refresh_token_used_again_signs_the_connection_out(
+    client: httpx.AsyncClient,
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    provider = _provider(settings)
+    client_id = await _register(client)
+    sign_in, verifier = await _start_sign_in(client, client_id)
+    ok = await client.post("/sign-in", data={"request": sign_in, "passphrase": PASSPHRASE})
+    first = (
+        await _token(
+            client,
+            grant_type="authorization_code",
+            code=parse_qs(urlparse(ok.headers["location"]).query)["code"][0],
+            redirect_uri=CALLBACK,
+            client_id=client_id,
+            code_verifier=verifier,
+        )
+    ).json()
+
+    async def refresh(token: str) -> httpx.Response:
+        return await _token(
+            client, grant_type="refresh_token", refresh_token=token, client_id=client_id
+        )
+
+    second = (await refresh(first["refresh_token"])).json()
+    # Straight away it is a client repeating a request: refused, nothing else.
+    assert (await refresh(first["refresh_token"])).status_code == 400
+    assert await provider.load_access_token(second["access_token"]) is not None
+    third = (await refresh(second["refresh_token"])).json()
+
+    # Later, it is a second holder of the token. Every token of the sign-in
+    # goes, however many times it has been refreshed since.
+    monkeypatch.setattr(oauth, "REUSE_GRACE", -1)
+    assert (await refresh(first["refresh_token"])).status_code == 400
+    assert "used again" in caplog.text
+    assert await provider.load_access_token(third["access_token"]) is None
+    assert (await refresh(third["refresh_token"])).status_code == 400
+    with psycopg.connect(settings.database_url or "") as con:
+        assert con.execute(f"SELECT count(*) FROM {settings.auth_schema}.tokens").fetchone() == (0,)
+
+
+async def test_two_refreshes_of_one_token_at_once_issue_one_pair(
+    client: httpx.AsyncClient, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider = _provider(settings)
+    client_id = await _register(client)
+    sign_in, verifier = await _start_sign_in(client, client_id)
+    ok = await client.post("/sign-in", data={"request": sign_in, "passphrase": PASSPHRASE})
+    tokens = (
+        await _token(
+            client,
+            grant_type="authorization_code",
+            code=parse_qs(urlparse(ok.headers["location"]).query)["code"][0],
+            redirect_uri=CALLBACK,
+            client_id=client_id,
+            code_verifier=verifier,
+        )
+    ).json()
+    registered = await provider.get_client(client_id)
+    assert registered is not None
+    refresh = await provider.load_refresh_token(registered, tokens["refresh_token"])
+    assert refresh is not None
+
+    # The second request finds the token still current, and then the first
+    # request completes before the second goes on to spend it.
+    real_db = provider._db
+    winner: list[OAuthToken] = []
+
+    async def overtaken(*statements: Any, fetch: bool = False) -> list[tuple[Any, ...]]:
+        rows = await real_db(*statements, fetch=fetch)
+        if statements[0][0].startswith("SELECT family") and not winner:
+            monkeypatch.setattr(provider, "_db", real_db)
+            winner.append(await provider.exchange_refresh_token(registered, refresh, []))
+        return rows
+
+    monkeypatch.setattr(provider, "_db", overtaken)
+    with pytest.raises(TokenError, match="already used"):
+        await provider.exchange_refresh_token(registered, refresh, [])
+    # The first request's tokens stand, and the old token is still on record.
+    assert await provider.load_access_token(winner[0].access_token) is not None
+    with psycopg.connect(settings.database_url or "") as con:
+        kinds = con.execute(
+            f"SELECT kind FROM {settings.auth_schema}.tokens ORDER BY kind"
+        ).fetchall()
+    assert [k for (k,) in kinds] == ["access", "refresh", "rotated"]
+
+
 async def test_wrong_passphrases_end_the_sign_in(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -278,6 +550,58 @@ async def test_wrong_passphrases_end_the_sign_in(
     assert r.status_code == 403
     again = await client.post("/sign-in", data={"request": sign_in, "passphrase": PASSPHRASE})
     assert again.status_code == 400 and "expired" in again.text
+
+
+async def test_wrong_passphrases_over_many_sign_ins_pause_the_passphrase(
+    client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Starting a sign-in is free, so the limit on each one doesn't limit guessing.
+    monkeypatch.setattr(oauth, "MAX_WRONG_AN_HOUR", 2)
+
+    async def no_sleep(_: float) -> None: ...
+
+    monkeypatch.setattr(oauth.asyncio, "sleep", no_sleep)
+    client_id = await _register(client)
+    for _ in range(2):
+        sign_in, _ = await _start_sign_in(client, client_id)
+        wrong = await client.post("/sign-in", data={"request": sign_in, "passphrase": "nope"})
+        assert wrong.status_code == 401
+    assert "passphrase sign-in is paused" in caplog.text
+    sign_in, _ = await _start_sign_in(client, client_id)
+    right = await client.post("/sign-in", data={"request": sign_in, "passphrase": PASSPHRASE})
+    assert right.status_code == 429 and "paused" in right.text
+    # An hour on, the passphrase is accepted again.
+    hour_on = time.time() + 3601
+    monkeypatch.setattr(oauth.time, "time", lambda: hour_on)
+    later = await client.post("/sign-in", data={"request": sign_in, "passphrase": PASSPHRASE})
+    assert later.status_code != 429
+
+
+async def test_one_client_address_can_try_a_few_passphrases_only(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(http_app, "PASSPHRASE_LIMIT", (1, 10 / 60))
+    transport = httpx.ASGITransport(app=build_app(server.mcp, settings))
+    async with httpx.AsyncClient(transport=transport, base_url=BASE) as c:
+        sign_in, _ = await _start_sign_in(c, await _register(c))
+        first = await c.post("/sign-in", data={"request": sign_in, "passphrase": "nope"})
+        second = await c.post("/sign-in", data={"request": sign_in, "passphrase": PASSPHRASE})
+    assert (first.status_code, second.status_code) == (401, 429)
+
+
+def test_a_short_passphrase_is_warned_about_at_start_up(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    served: list[object] = []
+    monkeypatch.setattr(http_app, "serve", lambda *args: served.append(args))
+    main(["serve-http"])
+    assert "MCP_OAUTH_PASSPHRASE is shorter" not in caplog.text
+    monkeypatch.setenv("MCP_OAUTH_PASSPHRASE", "swordfish")
+    main(["serve-http"])
+    assert "MCP_OAUTH_PASSPHRASE is shorter than 20 characters" in caplog.text
+    assert len(served) == 2  # a warning, not a refusal to start
 
 
 async def test_parallel_wrong_passphrases_share_the_attempt_limit(
@@ -346,6 +670,25 @@ async def test_unknown_sign_in_link(client: httpx.AsyncClient) -> None:
     r = await client.get("/sign-in", params={"request": "made-up"})
     assert r.status_code == 400
     assert r.headers["x-frame-options"] == "DENY"
+
+
+async def test_token_checks_share_connections_and_skip_what_is_not_a_token(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider = _provider(settings)
+    for _ in range(5):
+        assert await provider.load_access_token(secrets.token_urlsafe(32)) is None
+    # The checks shared connections, where each used to open its own. (The
+    # pool may open a second while the first check waits for the first.)
+    stats = provider._pool.get_stats()
+    assert stats["requests_num"] == 5 and stats["connections_num"] <= 2
+
+    async def no_database(*_: object, **__: object) -> list[tuple[object, ...]]:
+        raise AssertionError("the database was asked")
+
+    monkeypatch.setattr(provider, "_db", no_database)
+    for junk in ("", "x", "Bearer", "a" * 42, "a" * 44, "a" * 42 + "!", "a" * 5000):
+        assert await provider.load_access_token(junk) is None
 
 
 async def test_static_token_still_works(settings: Settings) -> None:

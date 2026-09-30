@@ -890,6 +890,8 @@ _HEADERS = {
     # and that redirect goes to the client's callback (claude.ai), not 'self'.
     "Content-Security-Policy": "default-src 'none'; style-src 'self'; img-src 'self'",
     "Referrer-Policy": "same-origin",
+    "Strict-Transport-Security": site.HSTS,
+    "X-Content-Type-Options": "nosniff",
 }
 
 

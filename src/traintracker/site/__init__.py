@@ -72,12 +72,18 @@ ASSETS = {
 # Browsers ask for /favicon.ico whatever the page links to; answer with the PNG.
 FAVICON = "/favicon.ico"
 
+# A browser that has seen this asks for the site over https from then on, for a
+# year, without first trying http. It has no effect on a page served over http
+# (a server run on localhost).
+HSTS = "max-age=31536000"
+
 # Nothing is loaded from anywhere else, and nothing inline runs.
 HEADERS = {
     "Content-Security-Policy": (
         "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; "
         "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
     ),
+    "Strict-Transport-Security": HSTS,
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "strict-origin-when-cross-origin",
 }

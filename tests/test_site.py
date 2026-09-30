@@ -49,6 +49,8 @@ async def test_pages_are_served(client: httpx.AsyncClient, path: str) -> None:
     # Nothing inline and nothing from another origin can run or load.
     policy = r.headers["content-security-policy"]
     assert "default-src 'none'" in policy and "unsafe-inline" not in policy
+    assert r.headers["strict-transport-security"] == "max-age=31536000"
+    assert r.headers["x-content-type-options"] == "nosniff"
     assert "set-cookie" not in r.headers
     assert r.text.startswith("<!doctype html>") and '<html lang="en-GB">' in r.text
     assert "{{" not in r.text, "an unfilled field"
@@ -240,6 +242,8 @@ async def test_the_sign_in_page_uses_the_site_stylesheet(client: httpx.AsyncClie
     assert page.headers["content-security-policy"] == (
         "default-src 'none'; style-src 'self'; img-src 'self'"
     )
+    assert page.headers["strict-transport-security"] == "max-age=31536000"
+    assert page.headers["x-content-type-options"] == "nosniff"
 
 
 async def test_mcp_and_the_health_check_are_unchanged(client: httpx.AsyncClient) -> None:

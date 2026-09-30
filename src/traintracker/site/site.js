@@ -284,6 +284,7 @@ function follow(figure, seconds, show) {
       if (!response.ok) throw new Error(data.error || "The board couldn't be fetched.");
       rows(table, data.trains);
       empty.hidden = data.trains.length > 0;
+      empty.textContent = empty.dataset.empty; // in place of why it couldn't be fetched
       notes.replaceChildren(
         ...data.messages.map((message) => {
           const item = document.createElement("li");
@@ -302,7 +303,8 @@ function follow(figure, seconds, show) {
     } finally {
       busy = false;
       // Old times on a board nobody is watching closely look as good as new ones.
-      const old = Date.now() - good >= STALE_AFTER_MS;
+      // A board that never had times ("-") says why in place of them instead.
+      const old = goodAt !== "-" && Date.now() - good >= STALE_AFTER_MS;
       figure.classList.toggle("stale", old);
       stale.hidden = !old;
       stale.textContent = old ? `Not updated since ${goodAt}. These times may be out of date.` : "";
@@ -402,7 +404,16 @@ function reloadAtNight() {
 }
 
 function goFullscreen() {
-  root.requestFullscreen?.().catch(() => {});
+  return root.requestFullscreen?.() ?? Promise.reject(new Error("No full screen here"));
+}
+
+/** Back to the page as it was, after TV mode from the button. */
+function leaveTv() {
+  inPlace = false;
+  root.classList.remove("tv", "idle");
+  window.history.replaceState(null, "", tvAddress(false));
+  wakeLock?.release();
+  showFullscreenButtons();
 }
 
 function showFullscreenButtons() {
@@ -419,29 +430,24 @@ function tvAddress(on) {
   return url.href;
 }
 
+// Leaving full screen is the only way back from the button's TV mode, so the
+// button is offered only where full screen is, and a refusal undoes it.
 for (const button of document.querySelectorAll("button[data-tv]")) {
-  button.hidden = false;
+  button.hidden = !root.requestFullscreen;
   button.addEventListener("click", () => {
     inPlace = true;
     root.classList.add("tv");
     window.history.replaceState(null, "", tvAddress(true));
-    goFullscreen();
-    startTv();
+    goFullscreen().then(startTv, leaveTv);
   });
 }
 
 for (const button of document.querySelectorAll(".departures .fullscreen")) {
-  button.addEventListener("click", goFullscreen);
+  button.addEventListener("click", () => goFullscreen().catch(() => {}));
 }
 
 document.addEventListener("fullscreenchange", () => {
-  if (!document.fullscreenElement && inPlace) {
-    // Out of full screen after the button: back to the page as it was.
-    inPlace = false;
-    root.classList.remove("tv", "idle");
-    window.history.replaceState(null, "", tvAddress(false));
-    wakeLock?.release();
-  }
+  if (!document.fullscreenElement && inPlace) leaveTv();
   showFullscreenButtons();
 });
 
@@ -450,7 +456,7 @@ for (const event of ["mousemove", "mousedown", "keydown", "touchstart"]) {
   document.addEventListener(event, nudge, { passive: true });
 }
 document.addEventListener("keydown", (event) => {
-  if (onTv() && event.key === "f" && !document.fullscreenElement) goFullscreen();
+  if (onTv() && event.key === "f" && !document.fullscreenElement) goFullscreen().catch(() => {});
 });
 
 if (onTv()) startTv();

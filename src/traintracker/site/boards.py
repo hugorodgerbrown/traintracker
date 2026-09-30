@@ -273,6 +273,20 @@ def _source(source: str) -> str:
     return "Booked times: Network Rail data feeds (OGL v3.0)"
 
 
+def _unavailable(key: BoardKey) -> dict[str, Any]:
+    """A board with no trains, for when it couldn't be fetched."""
+    return {
+        "station": {"name": _name(key.crs), "crs": key.crs},
+        "to": {"name": _name(key.to), "crs": key.to} if key.to else None,
+        "platform": key.platform,
+        "platforms": [],
+        "source": "darwin",
+        "updated": "-",
+        "messages": [],
+        "trains": [],
+    }
+
+
 def _mode(request: Request) -> str:
     """How the board is shown: "embed" in another site's frame, "tv" on a
     screen of its own, or "page" on the site."""
@@ -281,8 +295,11 @@ def _mode(request: Request) -> str:
     return "tv" if request.query_params.get("tv") == "1" else "page"
 
 
-def _figure(key: BoardKey, data: dict[str, Any], site_url: str, embed: bool) -> str:
-    """The board: a table of the trains, which site.js draws as flaps."""
+def _figure(
+    key: BoardKey, data: dict[str, Any], site_url: str, embed: bool, problem: str = ""
+) -> str:
+    """The board: a table of the trains, which site.js draws as flaps.
+    `problem` says why there are no trains in place of the usual message."""
     station = data["station"]
     kind = key.kind()
     now = datetime.now(UK_TZ)
@@ -311,7 +328,7 @@ def _figure(key: BoardKey, data: dict[str, Any], site_url: str, embed: bool) -> 
         </tbody>
       </table>
     </div>
-    <p class="empty"{empty}>{_e(key.empty())}</p>
+    <p class="empty" data-empty="{_e(key.empty())}"{empty}>{_e(problem or key.empty())}</p>
     <p class="stale-note" hidden></p>
     <ul class="notes">{notes}</ul>
     <p class="source"><span class="credit">{_source(data["source"])}</span>{back}
@@ -596,8 +613,19 @@ def routes(fields: dict[str, str], fetch: Fetch, ip_header: str | None = None) -
         try:
             data = await boards.get(key)
         except BoardUnavailable as exc:
-            typed_back = {"station": key.crs, "to": key.to or "", "platform": key.platform or ""}
-            return picker(request, typed_back, str(exc), status=503)
+            mode = _mode(request)
+            if mode == "page":
+                typed_back = {
+                    "station": key.crs,
+                    "to": key.to or "",
+                    "platform": key.platform or "",
+                }
+                return picker(request, typed_back, str(exc), status=503)
+            # A TV or an embed has nobody to read a form: it shows the board
+            # with the reason in it, and recovers by itself when the next
+            # fetch works.
+            content = _figure(key, _unavailable(key), site_url, mode == "embed", str(exc))
+            return page(request, key.path, content, f"{key.title()} · Traintrackr", "", status=503)
         mode = _mode(request)
         content = _figure(key, data, site_url, mode == "embed")
         if mode == "page":

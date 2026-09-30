@@ -26,6 +26,7 @@ ICON = "/static/icon.svg"  # the directory icon, and the favicon for browsers th
 ICON_PNG = "/static/icon-32.png"
 TOUCH_ICON = "/static/icon-180.png"
 LISTING_ICON = "/static/icon-512.png"  # the PNG uploaded to the directory listings
+SHARE_IMAGE_ALT = "Traintrackr icon: a departure board"
 
 # path -> (file, link text, title, description)
 PAGES = {
@@ -100,6 +101,17 @@ def _nav(current: str) -> str:
     return "\n".join(items)
 
 
+def _sharing(path: str, site_url: str) -> dict[str, str]:
+    """The link-preview values for one page. Chat apps and social sites fetch
+    og:url and og:image without the page's address to resolve them against, so
+    both are absolute, built from this server's public URL."""
+    return {
+        "page_url": f"{site_url}{path}",
+        "share_image": f"{site_url}{asset_url(LISTING_ICON)}",
+        "share_image_alt": SHARE_IMAGE_ALT,
+    }
+
+
 def render(path: str, fields: dict[str, str]) -> str:
     """One page as HTML. `fields` fill the {{ name }} places in the page text
     with this server's own values, so a copy deployed elsewhere describes itself."""
@@ -118,7 +130,14 @@ def render(path: str, fields: dict[str, str]) -> str:
             "touch_icon": TOUCH_ICON,
         }.items()
     }
-    for key, text in {"title": title, "description": description, **addresses, **fields}.items():
+    values = {
+        "title": title,
+        "description": description,
+        **addresses,
+        **_sharing(path, fields["site_url"]),
+        **fields,
+    }
+    for key, text in values.items():
         page = page.replace("{{ " + key + " }}", html.escape(text))
     return page
 

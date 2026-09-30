@@ -1,44 +1,51 @@
 <!doctype html>
 <html lang="en-GB">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ title }}</title>
-<meta name="description" content="{{ description }}">
-<meta property="og:title" content="{{ title }}">
-<meta property="og:description" content="{{ description }}">
-<meta property="og:url" content="{{ page_url }}">
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="Traintrackr">
-<meta property="og:image" content="{{ share_image }}">
-<meta property="og:image:alt" content="{{ share_image_alt }}">
-<meta name="twitter:card" content="summary">
-<link rel="icon" href="{{ icon }}" type="image/svg+xml">
-<link rel="icon" href="{{ icon_png }}" sizes="32x32" type="image/png">
-<link rel="apple-touch-icon" href="{{ touch_icon }}">
-<link rel="stylesheet" href="{{ stylesheet }}">
-<script src="{{ script }}" defer></script>
-</head>
-<body>
-<a class="skip" href="#main">Skip to content</a>
-<header>
-<a class="name" href="/" aria-label="Traintrackr home"{{ home_current }}><img src="{{ icon }}" alt="" width="32" height="32">Traintrackr</a>
-<nav aria-label="Site">
-<ul>
-{{ nav }}
-</ul>
-</nav>
-</header>
-<main id="main">
-{{ content }}
-</main>
-<footer>
-<!-- TODO(hugo): add the "Powered by National Rail" logo here once National Rail
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ title }}</title>
+    <meta name="description" content="{{ description }}" />
+    <meta property="og:title" content="{{ title }}" />
+    <meta property="og:description" content="{{ description }}" />
+    <meta property="og:url" content="{{ page_url }}" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Traintrackr" />
+    <meta property="og:image" content="{{ share_image }}" />
+    <meta property="og:image:alt" content="{{ share_image_alt }}" />
+    <meta name="twitter:card" content="summary" />
+    <link rel="icon" href="{{ icon }}" type="image/svg+xml" />
+    <link rel="icon" href="{{ icon_png }}" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="{{ touch_icon }}" />
+    <link rel="stylesheet" href="{{ stylesheet }}" />
+    <script src="{{ script }}" defer></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header>
+      <a class="name" href="/" aria-label="Traintrackr home"{{ home_current }}><img src="{{ icon }}" alt="" width="32" height="32" />Traintrackr</a>
+      <nav aria-label="Site">
+        <ul>
+          {{ nav }}
+        </ul>
+      </nav>
+    </header>
+    <main id="main">{{ content }}</main>
+    <footer>
+      <!-- TODO(hugo): add the "Powered by National Rail" logo here once National Rail
      gives permission (asked 2026-09-30; TRA-9). The developer brand guidelines ask
      for the logo and a link to the NRE website; the download page makes the logo's
      use subject to permission. Blue on the light theme, white on the dark. -->
-<p>Live train times: <a href="https://www.nationalrail.co.uk/">Powered by National Rail Enquiries</a>. <a href="/docs#data">Data sources</a>.</p>
-<p>Traintrackr is not run by, or endorsed by, National Rail Enquiries or Network Rail. Contact: <a href="mailto:support@traintrackr.live">support@traintrackr.live</a>.</p>
-</footer>
-</body>
+      <p>
+        Live train times:
+        <a href="https://www.nationalrail.co.uk/"
+          >Powered by National Rail Enquiries</a
+        >. <a href="/docs#data">Data sources</a>.
+      </p>
+      <p>
+        Traintrackr is not run by, or endorsed by, National Rail Enquiries or
+        Network Rail. Contact:
+        <a href="mailto:support@traintrackr.live">support@traintrackr.live</a>.
+      </p>
+    </footer>
+  </body>
 </html>

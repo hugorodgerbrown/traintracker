@@ -1,90 +1,201 @@
 <h1>Traintrackr docs</h1>
-<p class="lede">What Traintrackr can answer, three worked examples, and its limits.</p>
+<p class="lede">
+  What Traintrackr can answer, three worked examples, and its limits.
+</p>
 
 <h2 id="connect">Connecting</h2>
-<p>The connector address is <code>{{ mcp_url }}</code>. The <a href="/#claude">home page</a> has the steps for Claude and ChatGPT.</p>
-<p>You sign in with an email address. Traintrackr sends a six-digit code that lasts 10 minutes and works once. There is no password, and the address is not kept: the <a href="/privacy">privacy policy</a> says what is.</p>
+<p>
+  The connector address is <code>{{ mcp_url }}</code>. The
+  <a href="/#claude">home page</a> has the steps for Claude and ChatGPT.
+</p>
+<p>
+  You sign in with an email address. Traintrackr sends a six-digit code that
+  lasts 10 minutes and works once. There is no password, and the address is not
+  kept: the <a href="/privacy">privacy policy</a> says what is.
+</p>
 
 <h2 id="examples">Worked examples</h2>
 
 <h3>1. Which platform?</h3>
-<blockquote><p>Which platform is the next train from Cambridge to Kings Cross?</p></blockquote>
+<blockquote>
+  <p>Which platform is the next train from Cambridge to Kings Cross?</p>
+</blockquote>
 <p>The assistant uses <em>Departure platform</em>. The answer contains:</p>
 <ul>
-<li>the train: its booked departure time, destination and operator;</li>
-<li>the platform, and whether it is <strong>live</strong> (announced) or <strong>booked</strong> (from the timetable, and able to change);</li>
-<li>the minutes until it leaves, and the expected time if it is late;</li>
-<li>a note if the train is cancelled or the platform is not yet announced.</li>
+  <li>the train: its booked departure time, destination and operator;</li>
+  <li>
+    the platform, and whether it is <strong>live</strong> (announced) or
+    <strong>booked</strong> (from the timetable, and able to change);
+  </li>
+  <li>the minutes until it leaves, and the expected time if it is late;</li>
+  <li>
+    a note if the train is cancelled or the platform is not yet announced.
+  </li>
 </ul>
-<p>Large stations often announce a platform about 10 minutes before departure. Until then you get the booked platform, marked as such.</p>
+<p>
+  Large stations often announce a platform about 10 minutes before departure.
+  Until then you get the booked platform, marked as such.
+</p>
 
 <h3>2. Live departures</h3>
-<blockquote><p>What are the next trains from Liverpool Street to Colchester, and are they on time?</p></blockquote>
-<p>The assistant uses <em>Live departures</em>. The answer contains, for each train in the next two hours:</p>
+<blockquote>
+  <p>
+    What are the next trains from Liverpool Street to Colchester, and are they
+    on time?
+  </p>
+</blockquote>
+<p>
+  The assistant uses <em>Live departures</em>. The answer contains, for each
+  train in the next two hours:
+</p>
 <ul>
-<li>booked and expected departure times;</li>
-<li>its status: on time, late and by how many minutes, or cancelled;</li>
-<li>the reason for a delay or cancellation, where one is given;</li>
-<li>the platform, the operator and the destination;</li>
-<li>any notices posted for the station.</li>
+  <li>booked and expected departure times;</li>
+  <li>its status: on time, late and by how many minutes, or cancelled;</li>
+  <li>the reason for a delay or cancellation, where one is given;</li>
+  <li>the platform, the operator and the destination;</li>
+  <li>any notices posted for the station.</li>
 </ul>
 
 <h3>3. Planning a journey</h3>
-<blockquote><p>How do I get from Cambridge to Sudbury on Saturday morning?</p></blockquote>
+<blockquote>
+  <p>How do I get from Cambridge to Sudbury on Saturday morning?</p>
+</blockquote>
 <p>The assistant uses <em>Plan a journey</em>. The answer contains:</p>
 <ul>
-<li>three options unless you ask for more, fastest first, and always the one with the fewest changes;</li>
-<li>for each option: departure and arrival times, the time it takes and the number of changes;</li>
-<li>for each leg: the train, where to board and where to get off, and the booked platform where known;</li>
-<li>for trains leaving today within two hours: live times, and a warning if a delay puts a connection at risk.</li>
+  <li>
+    three options unless you ask for more, fastest first, and always the one
+    with the fewest changes;
+  </li>
+  <li>
+    for each option: departure and arrival times, the time it takes and the
+    number of changes;
+  </li>
+  <li>
+    for each leg: the train, where to board and where to get off, and the booked
+    platform where known;
+  </li>
+  <li>
+    for trains leaving today within two hours: live times, and a warning if a
+    delay puts a connection at risk.
+  </li>
 </ul>
-<p>Changes between London terminals are included as estimated walking or Tube links.</p>
+<p>
+  Changes between London terminals are included as estimated walking or Tube
+  links.
+</p>
 
 <h2 id="tools">Tools</h2>
-<p>An assistant chooses the tool; you don't need to name one. Every tool only reads data, and takes station names or three-letter station codes.</p>
+<p>
+  An assistant chooses the tool; you don't need to name one. Every tool only
+  reads data, and takes station names or three-letter station codes.
+</p>
 <dl>
-<dt>Find a station <code>find_station</code></dt>
-<dd>Matches a name, part of a name or a station code to stations. Used when a name fits several, such as Sudbury.</dd>
-<dt>Live departures <code>live_departures</code></dt>
-<dd>The departure board for the next two hours: expected times, platforms, delays and cancellations.</dd>
-<dt>Live arrivals <code>live_arrivals</code></dt>
-<dd>The arrivals board for the next two hours.</dd>
-<dt>Departure platform <code>departure_platform</code></dt>
-<dd>The platform for one train: the next departure, or the one booked at a time you give.</dd>
-<dt>Departures from a platform <code>platform_departures</code></dt>
-<dd>The next trains to leave from one platform.</dd>
-<dt>Timetable <code>timetable</code></dt>
-<dd>Booked departures or arrivals at a station on any date the timetable covers, usually months ahead.</dd>
-<dt>Service details <code>service_details</code></dt>
-<dd>Every stop for one train, with live times where there are any.</dd>
-<dt>Plan a journey <code>plan_journey</code></dt>
-<dd>Journeys between two stations, with changes.</dd>
-<dt>Data status <code>data_status</code></dt>
-<dd>Which data sources are working and how fresh the timetable is.</dd>
-<dt>Privacy policy <code>privacy_policy</code></dt>
-<dd>The <a href="/privacy">privacy policy</a>, so your assistant can answer questions about what is kept about you.</dd>
+  <dt>Find a station <code>find_station</code></dt>
+  <dd>
+    Matches a name, part of a name or a station code to stations. Used when a
+    name fits several, such as Sudbury.
+  </dd>
+  <dt>Live departures <code>live_departures</code></dt>
+  <dd>
+    The departure board for the next two hours: expected times, platforms,
+    delays and cancellations.
+  </dd>
+  <dt>Live arrivals <code>live_arrivals</code></dt>
+  <dd>The arrivals board for the next two hours.</dd>
+  <dt>Departure platform <code>departure_platform</code></dt>
+  <dd>
+    The platform for one train: the next departure, or the one booked at a time
+    you give.
+  </dd>
+  <dt>Departures from a platform <code>platform_departures</code></dt>
+  <dd>The next trains to leave from one platform.</dd>
+  <dt>Timetable <code>timetable</code></dt>
+  <dd>
+    Booked departures or arrivals at a station on any date the timetable covers,
+    usually months ahead.
+  </dd>
+  <dt>Service details <code>service_details</code></dt>
+  <dd>Every stop for one train, with live times where there are any.</dd>
+  <dt>Plan a journey <code>plan_journey</code></dt>
+  <dd>Journeys between two stations, with changes.</dd>
+  <dt>Data status <code>data_status</code></dt>
+  <dd>Which data sources are working and how fresh the timetable is.</dd>
+  <dt>Privacy policy <code>privacy_policy</code></dt>
+  <dd>
+    The <a href="/privacy">privacy policy</a>, so your assistant can answer
+    questions about what is kept about you.
+  </dd>
 </dl>
 
 <h2 id="limits">Limits</h2>
 <ul>
-<li><strong>Live data covers the next two hours.</strong> Beyond that, times are booked times from the timetable.</li>
-<li><strong>No past running times.</strong> Traintrackr can't say whether yesterday's 08:00 was late.</li>
-<li><strong>No fares.</strong></li>
-<li><strong>No Tube, bus or tram</strong>, apart from the estimated links between London terminals.</li>
-<li><strong>Great Britain only:</strong> National Rail services. Northern Ireland is not covered.</li>
-<li><strong>Engineering works</strong> appear in the timetable once Network Rail publishes them, and in live data on the day.</li>
-<li><strong>Bank holidays:</strong> the timetable doesn't yet apply bank-holiday running, so check the live board on the day.</li>
-<li><strong>When live data is unavailable</strong>, the boards show booked times and say so.</li>
-<li><strong>Fair use.</strong> {{ fair_use }}</li>
+  <li>
+    <strong>Live data covers the next two hours.</strong> Beyond that, times are
+    booked times from the timetable.
+  </li>
+  <li>
+    <strong>No past running times.</strong> Traintrackr can't say whether
+    yesterday's 08:00 was late.
+  </li>
+  <li><strong>No fares.</strong></li>
+  <li>
+    <strong>No Tube, bus or tram</strong>, apart from the estimated links
+    between London terminals.
+  </li>
+  <li>
+    <strong>Great Britain only:</strong> National Rail services. Northern
+    Ireland is not covered.
+  </li>
+  <li>
+    <strong>Engineering works</strong> appear in the timetable once Network Rail
+    publishes them, and in live data on the day.
+  </li>
+  <li>
+    <strong>Bank holidays:</strong> the timetable doesn't yet apply bank-holiday
+    running, so check the live board on the day.
+  </li>
+  <li>
+    <strong>When live data is unavailable</strong>, the boards show booked times
+    and say so.
+  </li>
+  <li><strong>Fair use.</strong> {{ fair_use }}</li>
 </ul>
 <p>Check with your train operator before you travel if a journey matters.</p>
 
 <h2 id="data">Where the data comes from</h2>
 <ul>
-<li>Live times, platforms, delays and cancellations come from Darwin, National Rail Enquiries' real-time system, through the Rail Data Marketplace. <a href="https://www.nationalrail.co.uk/">Powered by National Rail Enquiries</a>.</li>
-<li>The timetable comes from Network Rail Infrastructure Limited's SCHEDULE data feed and is refreshed each day. Contains public sector information licensed under the <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/">Open Government Licence v3.0</a>.</li>
-<li>The station list comes from <a href="https://github.com/davwheat/uk-railway-stations">davwheat/uk-railway-stations</a>, under the <a href="https://opendatacommons.org/licenses/odbl/">Open Database License</a>.</li>
+  <li>
+    Live times, platforms, delays and cancellations come from Darwin, National
+    Rail Enquiries' real-time system, through the Rail Data Marketplace.
+    <a href="https://www.nationalrail.co.uk/"
+      >Powered by National Rail Enquiries</a
+    >.
+  </li>
+  <li>
+    The timetable comes from Network Rail Infrastructure Limited's SCHEDULE data
+    feed and is refreshed each day. Contains public sector information licensed
+    under the
+    <a
+      href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/"
+      >Open Government Licence v3.0</a
+    >.
+  </li>
+  <li>
+    The station list comes from
+    <a href="https://github.com/davwheat/uk-railway-stations"
+      >davwheat/uk-railway-stations</a
+    >, under the
+    <a href="https://opendatacommons.org/licenses/odbl/"
+      >Open Database License</a
+    >.
+  </li>
 </ul>
 
 <h2 id="support">Support</h2>
-<p>Email <a href="mailto:support@traintrackr.live">support@traintrackr.live</a>. The code is open source: <a href="https://github.com/hugorodgerbrown/traintracker">hugorodgerbrown/traintracker</a>.</p>
+<p>
+  Email <a href="mailto:support@traintrackr.live">support@traintrackr.live</a>.
+  The code is open source:
+  <a href="https://github.com/hugorodgerbrown/traintracker"
+    >hugorodgerbrown/traintracker</a
+  >.
+</p>

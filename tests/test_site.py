@@ -21,6 +21,11 @@ PROMPTS = (
     "What are the next trains from Liverpool Street to Colchester, and are they on time?",
     "How do I get from Cambridge to Sudbury on Saturday morning?",
 )
+HOME_PROMPTS = (
+    "Which platform is the next train from Cambridge to Kings Cross?",
+    "Does the 13:42 stop at Manningtree?",
+    "How do I get from Cambridge to Huntingdon on Saturday morning?",
+)
 
 
 @pytest.fixture
@@ -66,9 +71,15 @@ async def test_home_is_the_icon_not_a_nav_item(client: httpx.AsyncClient) -> Non
     assert 'aria-current="page"' in (await client.get("/")).text.split("<nav", 1)[0]
 
 
+async def _page(client: httpx.AsyncClient, path: str) -> str:
+    """The page's HTML with each run of whitespace as one space, so a phrase
+    matches however the source wraps it."""
+    return " ".join((await client.get(path)).text.split())
+
+
 def _meta(text: str) -> dict[str, str]:
     """The page's og: and twitter: meta tags, as property or name -> content."""
-    pattern = r'<meta (?:property|name)="((?:og|twitter):[^"]+)" content="([^"]*)">'
+    pattern = r'<meta (?:property|name)="((?:og|twitter):[^"]+)" content="([^"]*)" ?/?>'
     return dict(re.findall(pattern, text))
 
 
@@ -95,12 +106,12 @@ async def test_pages_set_the_link_preview_tags(client: httpx.AsyncClient, path: 
 async def test_the_landing_page_has_the_address_and_the_examples(
     client: httpx.AsyncClient,
 ) -> None:
-    text = (await client.get("/")).text
+    text = await _page(client, "/")
     # This server's own address, not the one the page was written for.
     assert f'<code id="mcp-url">{BASE}/mcp</code>' in text
     assert 'data-copy="#mcp-url"' in text
-    found = [text.index(prompt) for prompt in PROMPTS]
-    assert found == sorted(found), "platforms first, then departures, then journeys"
+    found = [text.index(prompt) for prompt in HOME_PROMPTS]
+    assert found == sorted(found), "platforms first, then stops, then journeys"
     # What it answers comes before how to set it up.
     assert text.index('id="examples"') < text.index('id="url"') < text.index('id="claude"')
     assert "Claude" in text and "ChatGPT" in text
@@ -109,7 +120,7 @@ async def test_the_landing_page_has_the_address_and_the_examples(
 
 
 async def test_the_docs_cover_every_tool_and_the_limits(client: httpx.AsyncClient) -> None:
-    text = (await client.get("/docs")).text
+    text = await _page(client, "/docs")
     async with Client(server.mcp) as mcp:
         tools = (await mcp.list_tools()).tools
     for tool in tools:
@@ -126,7 +137,7 @@ async def test_the_docs_cover_every_tool_and_the_limits(client: httpx.AsyncClien
 
 
 async def test_the_privacy_policy_says_what_the_code_does(client: httpx.AsyncClient) -> None:
-    text = (await client.get("/privacy")).text
+    text = await _page(client, "/privacy")
     for claim in (
         "UK GDPR",
         "keyed hash",
@@ -148,7 +159,7 @@ async def test_the_privacy_policy_says_what_the_code_does(client: httpx.AsyncCli
 
 
 async def test_the_terms_cover_what_the_directories_ask_for(client: httpx.AsyncClient) -> None:
-    text = (await client.get("/terms")).text
+    text = await _page(client, "/terms")
     for claim in (
         "provided as it is",
         "Check with the train operator",

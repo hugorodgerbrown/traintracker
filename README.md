@@ -104,6 +104,8 @@ CREATE DATABASE traintracker OWNER traintracker;
 REVOKE CONNECT ON DATABASE traintracker FROM PUBLIC;
 ```
 
+Put that role in `DATABASE_URL`, not the server's own user. The server's user owns every database on it, so a fault in traintracker would reach the other applications' data; the `traintracker` role reaches its own database only.
+
 The full GB timetable takes about 475 MB (4.3 million stops), and about twice that while a refresh builds the new copy. A refresh takes about 40 seconds plus the download. It builds the new timetable in a staging schema and swaps it in with a rename, so readers never see a half-built timetable, and an advisory lock stops two refreshes running at once.
 
 The tables are `UNLOGGED`: they are rebuilt from the feed every day, so they skip the write-ahead log and don't add to the server's WAL or point-in-time-recovery storage. The cost is that Postgres empties them after a crash; the tools then report "No timetable yet" until the next refresh.
@@ -279,7 +281,7 @@ Logs go to stderr; stdout carries the MCP protocol.
 The web service holds one day's journey network in memory for `plan_journey` (about 200 MB), so it needs at least 512 MB.
 
 1. Create the `traintracker` database and role on your Postgres instance (see [Postgres](#3-postgres)).
-2. In the Render dashboard: **New → Blueprint**, pick this repository, and enter the values Render prompts for. Use the Postgres instance's *internal* URL, with `/traintracker` as the database name.
+2. In the Render dashboard: **New → Blueprint**, pick this repository, and enter the values Render prompts for. Use the Postgres instance's *internal* URL, with the `traintracker` role and its password in place of the instance's own user, and `/traintracker` as the database name.
 3. Run the cron job once by hand (**Trigger Run**) to load the first timetable.
 4. Add the server as a claude.ai connector (below). Use your own service's host: its `onrender.com` name, or a custom domain you have added to the service and listed in `MCP_PUBLIC_HOSTS` (the `render.yaml` value is this repository's deployment, `traintrackr.live`).
 

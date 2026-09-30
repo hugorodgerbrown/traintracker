@@ -101,6 +101,11 @@ nav ul {
   list-style: none;
 }
 
+/* The flex gap spaces the items; the prose list spacing below would drop all but the first. */
+nav li + li {
+  margin-top: 0;
+}
+
 main {
   padding-top: 1rem;
   padding-bottom: 3rem;

@@ -48,12 +48,21 @@ async def test_pages_are_served(client: httpx.AsyncClient, path: str) -> None:
     assert r.text.startswith("<!doctype html>") and '<html lang="en-GB">' in r.text
     assert "{{" not in r.text, "an unfilled field"
     assert len(re.findall(r"<h1[ >]", r.text)) == 1
-    assert 'aria-current="page"' in r.text and 'href="#main"' in r.text
+    assert r.text.count('aria-current="page"') == 1 and 'href="#main"' in r.text
     # Every page credits the data and gives the support address.
     assert "Powered by National Rail Enquiries" in r.text
     assert "Open Government Licence v3.0" in r.text and "Open Database License" in r.text
     assert "mailto:support@traintrackr.live" in r.text
     assert (await client.head(path)).status_code == 200
+
+
+async def test_home_is_the_icon_not_a_nav_item(client: httpx.AsyncClient) -> None:
+    r = await client.get("/docs")
+    home = re.search(r'<a class="name" href="/"[^>]*>(.*?)</a>', r.text)
+    assert home and home.group(1).startswith('<img src="/static/icon.svg?v=')
+    nav = r.text.split("<nav", 1)[1].split("</nav>", 1)[0]
+    assert 'href="/"' not in nav
+    assert 'aria-current="page"' in (await client.get("/")).text.split("<nav", 1)[0]
 
 
 def _meta(text: str) -> dict[str, str]:

@@ -94,8 +94,11 @@ def asset_url(path: str) -> str:
 
 
 def _nav(current: str) -> str:
+    """The header links. Home is the icon and name at the left, not an item here."""
     items = []
     for path, (_, text, _, _) in PAGES.items():
+        if path == "/":
+            continue
         here = ' aria-current="page"' if path == current else ""
         items.append(f'<li><a href="{path}"{here}>{text}</a></li>')
     return "\n".join(items)
@@ -118,7 +121,12 @@ def render(path: str, fields: dict[str, str]) -> str:
     name, _, title, description = PAGES[path]
     page = _read("layout.html")
     # The page goes in first, so that fields are filled in inside it too.
-    for key, markup in {"content": _read(name), "nav": _nav(path)}.items():
+    markup_fields = {
+        "content": _read(name),
+        "nav": _nav(path),
+        "home_current": ' aria-current="page"' if path == "/" else "",
+    }
+    for key, markup in markup_fields.items():
         page = page.replace("{{ " + key + " }}", markup)
     addresses = {
         name: asset_url(path)

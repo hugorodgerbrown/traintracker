@@ -32,6 +32,10 @@ DARWIN_DAILY_LIMIT = 170_000
 # any address typed into it, so this is the most it can be made to send.
 MAIL_MAX_PER_HOUR = 100
 
+# Hosts a client may send the browser back to after sign-in: the callbacks of
+# Claude and ChatGPT. Loopback addresses are always allowed (desktop clients).
+REDIRECT_HOSTS = ("claude.ai", "claude.com", "chatgpt.com", "platform.openai.com")
+
 TRUE = {"1", "true", "yes", "on"}
 
 
@@ -41,6 +45,13 @@ def _public_hosts() -> tuple[str, ...]:
     so every deployment answers on its onrender.com name."""
     names = [*(_env("MCP_PUBLIC_HOSTS") or "").split(","), _env("RENDER_EXTERNAL_HOSTNAME") or ""]
     return tuple(dict.fromkeys(h.strip() for h in names if h.strip()))
+
+
+def _redirect_hosts() -> tuple[str, ...]:
+    names = _env("MCP_REDIRECT_HOSTS")
+    if names is None:
+        return REDIRECT_HOSTS
+    return tuple(h.strip().lower() for h in names.split(",") if h.strip())
 
 
 def default_data_dir() -> Path:
@@ -129,6 +140,7 @@ class Settings:
     openai_apps_challenge: str | None = None
     darwin_daily_limit: int = DARWIN_DAILY_LIMIT
     client_ip_header: str | None = None
+    redirect_hosts: tuple[str, ...] = REDIRECT_HOSTS
 
     @property
     def timetable_db(self) -> TimetableDB:
@@ -225,6 +237,7 @@ class Settings:
             # The header the platform's proxy puts the caller's address in. Only
             # set it where clients can't reach the server except through that proxy.
             client_ip_header=_env("CLIENT_IP_HEADER"),
+            redirect_hosts=_redirect_hosts(),
         )
         if (_env("TRAINTRACKER_DEMO") or "").lower() not in TRUE:
             return settings

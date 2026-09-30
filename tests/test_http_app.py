@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import json
 import os
 import secrets
 from collections.abc import AsyncIterator
@@ -186,6 +187,71 @@ async def test_an_oversized_authorization_request_is_refused(client: httpx.Async
         },
     )
     assert r.status_code == 302 and "error=invalid_request" in r.headers["location"]
+
+
+async def test_a_client_can_only_return_to_a_known_app_or_a_loopback_address(
+    client: httpx.AsyncClient, settings: Settings
+) -> None:
+    async def register(*uris: str) -> httpx.Response:
+        return await client.post("/register", json={**REGISTRATION, "redirect_uris": list(uris)})
+
+    for uri in (
+        "https://evil.example/cb",
+        "http://claude.ai/api/mcp/auth_callback",  # not https
+        "https://claude.ai.evil.example/cb",
+        "javascript:alert(1)",
+    ):
+        refused = await register(CALLBACK, uri)
+        assert refused.status_code == 400, uri
+        assert refused.json()["error"] == "invalid_redirect_uri"
+    for uri in (
+        "https://chatgpt.com/connector_platform_oauth_redirect",
+        "http://127.0.0.1:6274/oauth/callback",
+        "http://localhost:8766/callback",
+        "http://[::1]:9000/callback",
+    ):
+        assert (await register(uri)).status_code == 201, uri
+
+    # A client stored before the rule is not redirected to: not on an error
+    # either, which is how /authorize could be made to send a browser anywhere.
+    stored = {**REGISTRATION, "client_id": "old", "redirect_uris": ["https://evil.example/cb"]}
+    with psycopg.connect(settings.database_url or "", autocommit=True) as con:
+        con.execute(
+            f"INSERT INTO {settings.auth_schema}.clients (client_id, info) VALUES (%s, %s)",
+            ("old", json.dumps(stored)),
+        )
+    r = await client.get(
+        "/authorize",
+        params={
+            "response_type": "code",
+            "client_id": "old",
+            "redirect_uri": "https://evil.example/cb",
+            "code_challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+            "scope": "no-such-scope",
+        },
+    )
+    assert r.status_code == 400 and "location" not in r.headers
+
+
+async def test_the_apps_a_client_can_return_to_are_configurable(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MCP_REDIRECT_HOSTS", "App.Example, other.example")
+    assert Settings.from_env().redirect_hosts == ("app.example", "other.example")
+    transport = httpx.ASGITransport(app=build_app(server.mcp, Settings.from_env()))
+    async with httpx.AsyncClient(transport=transport, base_url=BASE) as c:
+        ok = await c.post(
+            "/register", json={**REGISTRATION, "redirect_uris": ["https://app.example/cb"]}
+        )
+        assert ok.status_code == 201
+        assert (await c.post("/register", json=REGISTRATION)).status_code == 400  # claude.ai
+    monkeypatch.setenv("MCP_REDIRECT_HOSTS", "*")
+    transport = httpx.ASGITransport(app=build_app(server.mcp, Settings.from_env()))
+    async with httpx.AsyncClient(transport=transport, base_url=BASE) as c:
+        anywhere = await c.post(
+            "/register", json={**REGISTRATION, "redirect_uris": ["cursor://anysphere/cb"]}
+        )
+        assert anywhere.status_code == 201
 
 
 async def test_each_address_may_register_at_a_limited_rate(

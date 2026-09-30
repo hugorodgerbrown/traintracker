@@ -50,7 +50,7 @@ from starlette.responses import HTMLResponse, PlainTextResponse, RedirectRespons
 from starlette.routing import Route
 
 from traintracker import site
-from traintracker.config import MAIL_MAX_PER_HOUR, SCHEMA_NAME
+from traintracker.config import MAIL_MAX_PER_HOUR, REDIRECT_HOSTS, SCHEMA_NAME
 from traintracker.mail import CODE_MINUTES, Mailer, MailError
 
 log = logging.getLogger(__name__)
@@ -74,6 +74,7 @@ MAX_CLIENT_BYTES = 4096
 MAX_SIGN_IN_BYTES = 8192
 MAX_CLIENTS = 10_000
 CLIENT_IDLE_DAYS = 7  # a client this old with no tokens and no sign-in under way is deleted
+LOOPBACK = frozenset({"localhost", "127.0.0.1", "::1"})
 OFFLINE_ACCESS = "offline_access"  # the scope that asks for a refresh token
 PASSPHRASE_SUBJECT = "passphrase"  # the account everyone using the passphrase shares
 BLOCKED = "This address can't sign in to this server."
@@ -156,6 +157,7 @@ class TraintrackerOAuthProvider(
         account_secret: str | None = None,
         mailer: Mailer | None = None,
         mail_max_per_hour: int = MAIL_MAX_PER_HOUR,
+        redirect_hosts: tuple[str, ...] = REDIRECT_HOSTS,
     ) -> None:
         if not SCHEMA_NAME.fullmatch(schema):
             raise ValueError(f"Invalid auth schema name {schema!r}.")
@@ -172,6 +174,7 @@ class TraintrackerOAuthProvider(
         self.mailer = mailer if account_secret else None
         self.mail_max_per_hour = mail_max_per_hour
         self._mail_cap_logged = 0.0
+        self.redirect_hosts = redirect_hosts
 
     # -- storage -------------------------------------------------------------
 
@@ -207,6 +210,10 @@ class TraintrackerOAuthProvider(
         if not rows:
             return None
         client = OAuthClientInformationFull.model_validate(rows[0][0])
+        # A client registered before callbacks were checked, or under a looser
+        # MCP_REDIRECT_HOSTS, is unknown rather than redirected to.
+        if not self._may_return_to(client):
+            return None
         # The metadata lists offline_access, so clients ask for it at /authorize.
         # The SDK only lets a client ask for scopes it registered with, and most
         # register with none (every client registered before the scope was
@@ -216,7 +223,31 @@ class TraintrackerOAuthProvider(
             client.scope = " ".join([*scopes, OFFLINE_ACCESS])
         return client
 
+    def _may_return_to(self, client: OAuthClientInformationFull) -> bool:
+        """Whether every callback the client registered is one this server sends
+        a browser to.
+
+        /authorize answers some errors by redirecting to the callback with no
+        one having signed in. If any address could be registered, a link to
+        this server would be a way to send people anywhere.
+        """
+        if "*" in self.redirect_hosts:
+            return True
+        for uri in client.redirect_uris or []:
+            target = urlparse(str(uri))
+            host = (target.hostname or "").lower()
+            if host in LOOPBACK and target.scheme in ("http", "https"):
+                continue
+            if target.scheme != "https" or host not in self.redirect_hosts:
+                return False
+        return True
+
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
+        if not self._may_return_to(client_info):
+            raise RegistrationError(
+                "invalid_redirect_uri",
+                "This server only returns to the apps it is set up for, and to loopback addresses.",
+            )
         info = json.dumps(client_info.model_dump(mode="json"))
         if len(info) > MAX_CLIENT_BYTES:
             raise RegistrationError("invalid_client_metadata", "The registration is too large.")

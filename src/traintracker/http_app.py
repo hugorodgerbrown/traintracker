@@ -161,6 +161,7 @@ def build_provider(settings: Settings) -> TraintrackerOAuthProvider:
         account_secret=settings.account_secret,
         mailer=build_mailer(settings),
         mail_max_per_hour=settings.mail_max_per_hour,
+        redirect_hosts=settings.redirect_hosts,
     )
 
 

@@ -122,8 +122,11 @@ async def test_the_landing_page_has_the_address_and_the_examples(
     assert 'data-copy="#mcp-url"' in text
     found = [text.index(prompt) for prompt in HOME_PROMPTS]
     assert found == sorted(found), "platforms first, then stops, then journeys"
-    # What it answers comes before how to set it up.
-    assert text.index('id="examples"') < text.index('id="url"') < text.index('id="claude"')
+    # What it answers comes before how to set it up. The address sits in the
+    # Claude step that uses it, not above the steps, where it reads as a link.
+    assert text.index('id="examples"') < text.index('id="claude"') < text.index('id="url"')
+    assert text.index('id="url"') < text.index('id="chatgpt"')
+    assert "not a page to open in your browser" in text
     assert "Claude" in text and "ChatGPT" in text
     # ChatGPT adds a server by URL only in developer mode. The page describes
     # how to add it, not where it is listed.

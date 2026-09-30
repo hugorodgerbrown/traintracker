@@ -184,31 +184,44 @@
   </p>
 </figure>
 
-<h2 id="url">Connector address</h2>
-<div class="copy">
-  <code id="mcp-url">{{ mcp_url }}</code>
-  <button type="button" data-copy="#mcp-url" hidden>Copy address</button>
-  <p role="status"></p>
-</div>
-<p>
-  Traintrackr is free to use. You sign in with an email address; there is no
-  password.
-</p>
-
 <h2 id="claude">Add it to Claude</h2>
+<p>
+  Traintrackr is a connector: you add it to Claude once, and Claude uses it
+  when you ask about trains. It is free, and works on every Claude plan.
+</p>
 <ol>
   <li>
-    Open <strong>Settings</strong>, then <strong>Connectors</strong>, and choose
-    <strong>Add custom connector</strong>.
+    On <a href="https://claude.ai">claude.ai</a> or in the Claude desktop app,
+    open <strong>Customize</strong>, then <strong>Connectors</strong>.
   </li>
   <li>
-    Give it the name <em>Traintrackr</em> and paste the connector address. Leave
-    the OAuth fields empty.
+    Choose <strong>+</strong>, then <strong>Add custom connector</strong>.
+  </li>
+  <li>
+    <p>
+      Give it the name <em>Traintrackr</em>, and copy this address into the URL
+      field. It is for Claude to use, not a page to open in your browser.
+    </p>
+    <div class="copy" id="url">
+      <code id="mcp-url">{{ mcp_url }}</code>
+      <button type="button" data-copy="#mcp-url" hidden>Copy address</button>
+      <p role="status"></p>
+    </div>
+  </li>
+  <li>
+    Leave <strong>Advanced settings</strong> empty, and choose
+    <strong>Add</strong>.
   </li>
   <li>
     Choose <strong>Connect</strong>. Claude opens the Traintrackr sign-in page.
+    Enter your email address, then the six-digit code sent to it. There is no
+    password.
   </li>
-  <li>Enter your email address, then the six-digit code sent to it.</li>
+  <li>
+    Start a new chat and ask about a train. If Claude doesn't use Traintrackr,
+    open the <strong>+</strong> menu under the message box, choose
+    <strong>Connectors</strong> and turn Traintrackr on.
+  </li>
 </ol>
 
 <h2 id="chatgpt">Add it to ChatGPT</h2>
@@ -226,7 +239,7 @@
   <li>
     Go to <a href="https://chatgpt.com/plugins">Plugins</a> and choose the
     <strong>+</strong> button. Give it the name <em>Traintrackr</em>, paste the
-    connector address and choose OAuth.
+    <a href="#url">connector address</a> and choose OAuth.
   </li>
   <li>
     ChatGPT opens the Traintrackr sign-in page. Enter your email address, then

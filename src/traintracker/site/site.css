@@ -551,6 +551,11 @@ blockquote p {
   margin: 0;
 }
 
+/* The countdown to the next update keeps its width as the digits change. */
+.departures .next {
+  font-variant-numeric: tabular-nums;
+}
+
 /* A board that has gone this long without an update dims, and says so. */
 .departures.stale .flaps {
   opacity: 0.45;

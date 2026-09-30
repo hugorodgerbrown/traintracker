@@ -332,7 +332,7 @@ def _figure(
     <p class="stale-note" hidden></p>
     <ul class="notes">{notes}</ul>
     <p class="source"><span class="credit">{_source(data["source"])}</span>{back}
-      · <span class="updated">Updated {_e(data["updated"])}</span>
+      · <span class="updated">Updated {_e(data["updated"])}</span><span class="next"></span>
       <span class="status" role="status"></span></p>
     <button type="button" class="fullscreen quiet" hidden>Full screen</button>
   </div>

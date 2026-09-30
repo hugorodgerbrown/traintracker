@@ -240,6 +240,8 @@ async def test_a_board_is_a_page_with_the_trains_in_it(
     assert "<li>Lifts are out of order at &lt;this&gt; station.</li>" in text
     assert "Powered by National Rail Enquiries" in text
     assert re.search(r'<time class="clock" datetime="[^"]+">\d\d:\d\d:\d\d</time>', text)
+    # site.js counts down to the next update here.
+    assert '<span class="updated">Updated ' in text and '<span class="next"></span>' in text
     # The platforms in use, each a board of its own.
     assert '<a href="/board/LST" aria-current="page">All</a>' in text
     assert '<a href="/board/LST/9">9</a>' in text

@@ -25,6 +25,10 @@ const FLAPS = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:.-&'/()"; // the order the 
 const MAX_TURNS = 8;
 const TICK_MS = 45;
 const NARROW_BELOW = 480; // px of panel width
+const STALE_AFTER_MS = 5 * 60 * 1000; // a live board this long without an update says so
+const FETCH_TIMEOUT_MS = 20 * 1000;
+const IDLE_MS = 3000; // on a TV, the cursor hides after this long without moving
+const RELOAD_HOUR = 3; // a TV board reloads itself once a night, in this hour (UK time)
 
 // Each layout is the lines of one train. A field is [key, width]; a number is
 // that many columns of gap. Every line of a layout has the same number of columns.
@@ -64,6 +68,7 @@ function board(figure) {
   let timer = 0;
   let cells = []; // the flaps, in reading order
   let built = ""; // what `cells` was laid out for: the layout and the number of trains
+  let laidOut = WIDE;
 
   const flaps = document.createElement("div");
   flaps.className = "flaps";
@@ -127,10 +132,12 @@ function board(figure) {
 
   /** Turn every flap to the trains' letters, laying the board out first if needed. */
   function draw() {
-    const layout = panel.clientWidth < NARROW_BELOW ? NARROW : WIDE;
+    const layout = onTv() ? tvLayout() : panel.clientWidth < NARROW_BELOW ? NARROW : WIDE;
     const key = `${layout === WIDE ? "wide" : "narrow"}:${trains.length}`;
     if (key !== built) build(layout);
     built = key;
+    laidOut = layout;
+    fit();
     let i = 0;
     trains.forEach((train, row) => {
       const text = { ...train, plat: train.platform && `Plat ${train.platform}` };
@@ -148,6 +155,41 @@ function board(figure) {
         }
       }
     });
+  }
+
+  /** On a TV, size the flaps so that every train fits the screen's width and
+   * height, as large as they can be. Elsewhere the stylesheet sizes them from
+   * the width alone. */
+  function fit() {
+    if (!onTv() || !trains.length) {
+      flaps.style.removeProperty("--pitch");
+      return;
+    }
+    const pitch = pitchFor(laidOut);
+    flaps.style.setProperty("--pitch", `${Math.max(4, Math.floor(pitch * 10) / 10)}px`);
+  }
+
+  /** The layout with the larger flaps on this screen: one line a train on a
+   * wide screen, two on a tall one. */
+  function tvLayout() {
+    return pitchFor(NARROW) > pitchFor(WIDE) ? NARROW : WIDE;
+  }
+
+  /** The largest pitch at which every train fits the flaps' box in `layout`. */
+  function pitchFor(layout) {
+    const style = getComputedStyle(flaps);
+    const across = flaps.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    const down = flaps.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+    const cols = layout[0].reduce((n, part) => n + (Array.isArray(part) ? part[1] : part), 0);
+    // In units of the pitch (see site.css): a line of flaps is 1.6 high, with
+    // 2px of margin; trains are 0.45 apart; the headings take 0.6 and 2px.
+    const count = Math.max(1, trains.length);
+    const lines = count * layout.length;
+    const heads = layout === WIDE ? 1 : 0;
+    const units = lines * 1.6 + (count - 1) * 0.45 + heads * 0.6;
+    const fixed = lines * 2 + heads * 2;
+    // Each flap has 1px of margin on either side.
+    return Math.min(across / cols - 2, (down - fixed) / units);
   }
 
   /** Turn one flap to `character`, starting after `wait` ticks. */
@@ -187,8 +229,11 @@ function board(figure) {
     }
   }
 
-  // A board laid out for the other width is drawn again at this one.
-  new ResizeObserver(draw).observe(panel);
+  // A board laid out for the other width is drawn again at this one. On a TV,
+  // the space left for the flaps changes with the notes as well.
+  const resized = new ResizeObserver(draw);
+  resized.observe(panel);
+  resized.observe(flaps);
   draw();
 
   const clock = figure.querySelector(".clock");
@@ -220,7 +265,10 @@ function follow(figure, seconds, show) {
   const credit = figure.querySelector(".credit");
   const updated = figure.querySelector(".updated");
   const status = figure.querySelector(".status");
+  const stale = figure.querySelector(".stale-note");
   let last = Date.now();
+  let good = Date.now(); // when the board last updated
+  let goodAt = updated.textContent.replace("Updated ", "");
   let busy = false;
 
   async function update() {
@@ -228,7 +276,10 @@ function follow(figure, seconds, show) {
     busy = true;
     last = Date.now();
     try {
-      const response = await fetch(figure.dataset.feed, { headers: { Accept: "application/json" } });
+      const response = await fetch(figure.dataset.feed, {
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout?.(FETCH_TIMEOUT_MS),
+      });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "The board couldn't be fetched.");
       rows(table, data.trains);
@@ -243,11 +294,18 @@ function follow(figure, seconds, show) {
       sourceCredit(credit, data.source);
       updated.textContent = `Updated ${data.updated}`;
       status.textContent = "";
+      good = Date.now();
+      goodAt = data.updated;
       show(data);
     } catch (error) {
       status.textContent = ` · Couldn't update: ${error.message}`;
     } finally {
       busy = false;
+      // Old times on a board nobody is watching closely look as good as new ones.
+      const old = Date.now() - good >= STALE_AFTER_MS;
+      figure.classList.toggle("stale", old);
+      stale.hidden = !old;
+      stale.textContent = old ? `Not updated since ${goodAt}. These times may be out of date.` : "";
     }
   }
 
@@ -287,6 +345,115 @@ function sourceCredit(credit, source) {
   link.textContent = "Powered by National Rail Enquiries";
   credit.replaceChildren(link);
 }
+
+// ---------------------------------------------------------------- TV mode
+
+// A board on a TV: ?tv=1, or the board page's "Show on TV" button, which
+// switches the page to the same view in place and goes full screen; leaving
+// full screen goes back. On a TV the board fills the screen (fit, above), the
+// screen is kept awake, the cursor hides when the mouse is still, and the page
+// reloads itself once a night, at a minute of its own so that every TV in the
+// country doesn't ask at once.
+const root = document.documentElement;
+const loadedAt = Date.now();
+const reloadMinute = 10 + Math.floor(Math.random() * 40);
+let inPlace = false; // TV mode came from the button, not the address
+let wakeLock = null;
+let idle = 0;
+let nightly = 0;
+
+// Called while the boards are first drawn, before `root` above is set.
+function onTv() {
+  return document.documentElement.classList.contains("tv");
+}
+
+function startTv() {
+  stayAwake();
+  nudge();
+  if (!nightly) nightly = window.setInterval(reloadAtNight, 60 * 1000);
+  showFullscreenButtons();
+}
+
+async function stayAwake() {
+  if (!onTv() || document.hidden || wakeLock) return;
+  try {
+    wakeLock = await navigator.wakeLock.request("screen");
+    wakeLock.addEventListener("release", () => {
+      wakeLock = null;
+    });
+  } catch {
+    // No wake lock here (an older browser, or refused): the screen may sleep.
+  }
+}
+
+/** The mouse moved: show the cursor, and hide it again when it stops. */
+function nudge() {
+  root.classList.remove("idle");
+  window.clearTimeout(idle);
+  if (onTv()) idle = window.setTimeout(() => root.classList.add("idle"), IDLE_MS);
+}
+
+function reloadAtNight() {
+  if (!onTv()) return;
+  const [hour, minute] = UK_TIME.format(new Date()).split(":").map(Number);
+  if (hour === RELOAD_HOUR && minute === reloadMinute && Date.now() - loadedAt > 60 * 60 * 1000) {
+    window.location.reload();
+  }
+}
+
+function goFullscreen() {
+  root.requestFullscreen?.().catch(() => {});
+}
+
+function showFullscreenButtons() {
+  for (const button of document.querySelectorAll(".departures .fullscreen")) {
+    button.hidden = !onTv() || Boolean(document.fullscreenElement) || !root.requestFullscreen;
+  }
+}
+
+/** The page's address with ?tv=1 set, or taken out. */
+function tvAddress(on) {
+  const url = new URL(window.location.href);
+  if (on) url.searchParams.set("tv", "1");
+  else url.searchParams.delete("tv");
+  return url.href;
+}
+
+for (const button of document.querySelectorAll("button[data-tv]")) {
+  button.hidden = false;
+  button.addEventListener("click", () => {
+    inPlace = true;
+    root.classList.add("tv");
+    window.history.replaceState(null, "", tvAddress(true));
+    goFullscreen();
+    startTv();
+  });
+}
+
+for (const button of document.querySelectorAll(".departures .fullscreen")) {
+  button.addEventListener("click", goFullscreen);
+}
+
+document.addEventListener("fullscreenchange", () => {
+  if (!document.fullscreenElement && inPlace) {
+    // Out of full screen after the button: back to the page as it was.
+    inPlace = false;
+    root.classList.remove("tv", "idle");
+    window.history.replaceState(null, "", tvAddress(false));
+    wakeLock?.release();
+  }
+  showFullscreenButtons();
+});
+
+document.addEventListener("visibilitychange", stayAwake);
+for (const event of ["mousemove", "mousedown", "keydown", "touchstart"]) {
+  document.addEventListener(event, nudge, { passive: true });
+}
+document.addEventListener("keydown", (event) => {
+  if (onTv() && event.key === "f" && !document.fullscreenElement) goFullscreen();
+});
+
+if (onTv()) startTv();
 
 // --------------------------------------------------------- station picker
 

@@ -298,6 +298,32 @@ async def test_an_embedded_board_is_the_board_alone_and_may_be_framed(
     assert f'<a href="{BASE}/board/LST/9" target="_blank" rel="noopener">Traintrackr</a>' in text
 
 
+async def test_a_board_on_a_tv_is_the_board_alone(client: httpx.AsyncClient) -> None:
+    r = await client.get("/board/LST/COL", params={"tv": "1"})
+    assert r.status_code == 200
+    text = _flat(r.text)
+    # The board fills the screen: site.js sizes it and keeps the screen awake.
+    assert '<html lang="en-GB" class="tv">' in text
+    assert "<nav" not in text and "Share this board" not in text
+    assert '<figure class="departures live" data-feed="/api/board/LST/COL"' in text
+    assert '<p class="stale-note" hidden></p>' in text
+    assert '<button type="button" class="fullscreen quiet" hidden>Full screen</button>' in text
+    assert f'<link rel="canonical" href="{BASE}/board/LST/COL" />' in text
+    # Unlike an embed, it is not for other sites to frame.
+    assert "frame-ancestors 'none'" in r.headers["content-security-policy"]
+    # A loose address keeps ?tv=1 on its way to the board's own.
+    r = await client.get("/board/lst/colchester", params={"tv": "1"})
+    assert r.status_code == 308 and r.headers["location"] == "/board/LST/COL?tv=1"
+
+
+async def test_the_board_page_offers_the_tv_view(client: httpx.AsyncClient) -> None:
+    text = _flat((await client.get("/board/LST")).text)
+    assert '<h2 id="tv">Show it on a TV</h2>' in text
+    # The button needs JavaScript, so it starts hidden; the link works without.
+    assert '<button type="button" data-tv hidden>Show on TV</button>' in text
+    assert f'<code id="tv-link">{BASE}/board/LST?tv=1</code>' in text
+
+
 async def test_a_platform_with_no_trains_says_so(client: httpx.AsyncClient) -> None:
     r = await client.get("/api/board/LST/4")
     assert r.json()["trains"] == []

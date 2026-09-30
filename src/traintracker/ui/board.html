@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Departure board</title>
     <!-- An MCP App (SEP-1865). The host shows this page in a sandboxed iframe
-         next to the result of live_departures or live_arrivals and sends it
-         that result over postMessage; the page draws it as a split-flap board.
+         next to the result of show_board and sends it that result over
+         postMessage; the page draws it as a split-flap board.
          It loads nothing and sends nothing anywhere else: the host's default
          policy for a ui:// resource allows inline script and style only. -->
     <style>
@@ -223,6 +223,7 @@
       "use strict";
 
       const PROTOCOL = "2026-01-26";
+      const TOOL = "show_board"; // the tool this page is shown with; Refresh calls it again
       const MAX_SERVICES = 12;
       // The order the flaps turn in. A character outside it is shown without turning.
       const FLAPS = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:.-&'/()";
@@ -574,13 +575,10 @@
       /** Ask the server for the same board again, through the host. */
       async function refresh() {
         const button = $("refresh");
-        const name =
-          host?.hostContext?.toolInfo?.tool?.name ||
-          (shown?.board === "arrivals" ? "live_arrivals" : "live_departures");
         button.disabled = true;
         say("");
         try {
-          const result = await request("tools/call", { name, arguments: toolArguments });
+          const result = await request("tools/call", { name: TOOL, arguments: toolArguments });
           if (!showResult(result)) {
             const block = (result.content || []).find((c) => c.type === "text");
             say(block ? block.text : "Couldn't refresh.");

@@ -41,6 +41,7 @@ flowchart LR
 | `departure_platform` | "Which platform is the 13:00 to Colchester?" One train's platform, flagged `live` or `booked` | Darwin (paged); booked platform from the timetable until the live one is announced |
 | `platform_departures` | "What are the next three trains from platform 7?" | Same as `departure_platform` |
 | `live_arrivals` | Trains arriving in the next ~2 hours | Darwin arrivals; if not set up, booked times; if offline, booked times with a note saying so |
+| `show_board` | "Show me the departures board for Liverpool Street." The same live departures or arrivals, drawn as a [departure board](#departure-board) | Same as `live_departures` and `live_arrivals` |
 | `timetable` | Booked departures/arrivals at a station on any date | Local timetable |
 | `service_details` | Every stop for one train | Whichever source issued the ID |
 | `plan_journey` | A to B with changes (up to `max_changes`, default 4), incl. cross-London links | Local timetable + Darwin live overlay |
@@ -51,9 +52,9 @@ Every tool accepts station names or CRS codes. Ambiguous names ("Sudbury", "Harr
 
 ### Departure board
 
-`live_departures` and `live_arrivals` come with an [MCP App](https://modelcontextprotocol.io/specification/draft/extensions/apps): a client that supports MCP Apps shows the result as a split-flap departure board next to the answer. The tools' results are unchanged, and a client without MCP Apps ignores the board.
+`show_board` comes with an [MCP App](https://modelcontextprotocol.io/specification/draft/extensions/apps): a client that supports MCP Apps draws its result as a split-flap departure board next to the answer. A client draws the board for every call of a tool that has one, so it is on a tool of its own, which the assistant is told to use only when someone asks to see a board. `live_departures` and `live_arrivals` return the same trains and draw nothing. A client without MCP Apps gets `show_board`'s result as it would theirs.
 
-The board is one page, [`src/traintracker/ui/board.html`](src/traintracker/ui/board.html), served as the resource `ui://traintracker/board.html`. Its style and script are inline and it loads nothing from anywhere. The client hands it the tool's result; it shows up to 12 trains, the station's notices and the data credit. **Refresh** asks the client to call the same tool again with the same arguments, which counts against the rate limit like any other call. The flaps don't turn for someone who has asked their system for reduced motion, and a screen reader gets the trains as a table.
+The board is one page, [`src/traintracker/ui/board.html`](src/traintracker/ui/board.html), served as the resource `ui://traintracker/board.html`. Its style and script are inline and it loads nothing from anywhere. The client hands it the tool's result; it shows up to 12 trains, the station's notices and the data credit. **Refresh** asks the client to call `show_board` again with the same arguments, which counts against the rate limit like any other call. The flaps don't turn for someone who has asked their system for reduced motion, and a screen reader gets the trains as a table.
 
 ## Run your own copy
 

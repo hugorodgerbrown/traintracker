@@ -65,6 +65,7 @@ async def test_lists_all_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
             "find_station",
             "live_departures",
             "live_arrivals",
+            "show_board",
             "departure_platform",
             "platform_departures",
             "timetable",
@@ -75,14 +76,16 @@ async def test_lists_all_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         }
 
 
-async def test_the_live_boards_come_with_the_departure_board_app(
+async def test_show_board_comes_with_the_departure_board_app(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # MCP Apps: a tool names a ui:// page, and the client reads that page as a resource.
     async with connect(tmp_path, monkeypatch) as client:
         tools = (await client.list_tools()).tools
         pages = {t.name: t.meta["ui"]["resourceUri"] for t in tools if t.meta}
-        assert pages == {"live_departures": ui.BOARD_URI, "live_arrivals": ui.BOARD_URI}
+        # A client draws the page on every call of a tool that names it, so the
+        # tools that answer ordinary questions don't.
+        assert pages == {"show_board": ui.BOARD_URI}
         listed = {r.uri: r.mime_type for r in (await client.list_resources()).resources}
         page = (await client.read_resource(ui.BOARD_URI)).contents[0]
     # A client shows a ui:// page only under this type.
@@ -104,7 +107,7 @@ def test_the_departure_board_reads_fields_the_board_has() -> None:
     for name in ("scheduled", "expected", "platform", "status", "origin", "destination"):
         assert name in BoardService.model_fields and f"service.{name}" in page, name
     # Refresh calls the tool again by name.
-    assert '"live_departures"' in page and '"live_arrivals"' in page
+    assert 'TOOL = "show_board"' in page
 
 
 def test_registry_metadata_matches_the_package() -> None:
@@ -156,6 +159,7 @@ async def test_every_tool_is_annotated(tmp_path: Path, monkeypatch: pytest.Monke
     assert open_world == {
         "live_departures",
         "live_arrivals",
+        "show_board",
         "departure_platform",
         "platform_departures",
         "service_details",
@@ -188,6 +192,23 @@ async def test_live_departures_via_darwin(tmp_path: Path, monkeypatch: pytest.Mo
         assert out["source"] == "darwin"
         assert len(out["services"]) == 3
         assert all(s["calling_points"] is None for s in out["services"])
+
+
+@respx.mock
+async def test_show_board_has_the_trains_the_live_boards_have(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with connect(tmp_path, monkeypatch) as client:
+        respx.get(f"{DARWIN_DEPARTURES_URL}/GetDepBoardWithDetails/LST").mock(
+            return_value=httpx.Response(200, json=load("darwin_departures_LST.json"))
+        )
+        live = await call(client, "live_departures", station="Liverpool Street", to="Marks Tey")
+        shown = await call(client, "show_board", station="Liverpool Street", calling_at="Marks Tey")
+        assert shown == live and shown["source"] == "darwin"
+        # No arrivals feed in this set-up: both fall back to booked times.
+        arrivals = await call(client, "show_board", station="Marks Tey", board="arrivals")
+        assert arrivals == await call(client, "live_arrivals", station="Marks Tey")
+        assert arrivals["board"] == "arrivals"
 
 
 async def test_timetable_board(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

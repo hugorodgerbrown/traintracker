@@ -2,8 +2,12 @@
 
 A client that supports MCP Apps (SEP-1865) shows board.html in a sandboxed
 frame next to the result of a tool that names it, and hands the page that
-result. A client that doesn't ignores it and the tool answers as it always
-has, so the board is an extra, never the only form of the answer.
+result. A client that doesn't ignores it and the tool answers in text, so the
+board is an extra, never the only form of the answer.
+
+A client draws the page for every call of a tool that names it, so only
+show_board does: the assistant calls it when someone asks to see a board, and
+live_departures and live_arrivals answer everything else without one.
 
 board.html is one file with its style and script inline and no build step. It
 loads nothing from anywhere, which is what a client allows a ui:// resource by

@@ -111,7 +111,7 @@ async def test_a_limited_call_is_a_tool_error_the_model_can_read(settings: Setti
         http,
         Client(streamable_http_client(f"{BASE}/mcp", http_client=http)) as client,
     ):
-        assert len((await client.list_tools()).tools) == 10  # listing is not limited
+        assert len((await client.list_tools()).tools) == 11  # listing is not limited
         results = [await client.call_tool("find_station", {"query": "sudbury"}) for _ in range(3)]
     assert [r.is_error for r in results] == [False, False, True]
     text = " ".join(getattr(c, "text", "") for c in results[2].content)

@@ -65,6 +65,10 @@ SIGN_IN_TTL = 10 * 60  # seconds to complete the sign-in page
 CODE_TTL = 5 * 60
 ACCESS_TTL = 60 * 60
 REFRESH_TTL = 90 * 24 * 60 * 60
+# A refresh token used again within this many seconds of being replaced is a
+# client repeating a request whose answer it lost. Later than that, two parties
+# hold the token, and the connection is signed out.
+REUSE_GRACE = 60
 MAX_ATTEMPTS = 5  # wrong passphrases (or wrong codes) before a sign-in is discarded
 # A sign-in costs nothing to start, so the limit on each one doesn't limit
 # guessing. After this many wrong passphrases in an hour, over all sign-ins, the
@@ -382,16 +386,21 @@ class TraintrackerOAuthProvider(
     # -- tokens --------------------------------------------------------------
 
     def _issue(
-        self, client_id: str, scopes: list[str], subject: str | None = None
+        self,
+        client_id: str,
+        scopes: list[str],
+        subject: str | None = None,
+        family: str | None = None,
     ) -> tuple[list[Statement], OAuthToken]:
         """Statements that store a new access/refresh pair, and the token to return.
 
         The caller runs them in the same transaction as whatever the pair replaces.
         `subject` is the account that signed in; it stays with the pair through
-        every refresh, so requests can be counted per account.
+        every refresh, so requests can be counted per account. So does `family`:
+        one sign-in is one family, whose tokens are revoked together.
         """
         now = time.time()
-        family = secrets.token_hex(16)
+        family = family or secrets.token_hex(16)
         access, refresh = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
         access_data = AccessToken(
             token="",  # the stored copy never holds the token itself
@@ -471,9 +480,33 @@ class TraintrackerOAuthProvider(
         self, client: OAuthClientInformationFull, refresh_token: str
     ) -> RefreshToken | None:
         found = await self._load(refresh_token, "refresh")
-        if not found or found[0]["client_id"] != client.client_id:
+        if not found:
+            await self._revoke_if_reused(refresh_token)
+            return None
+        if found[0]["client_id"] != client.client_id:
             return None
         return RefreshToken.model_validate({**found[0], "token": refresh_token})
+
+    async def _revoke_if_reused(self, refresh_token: str) -> None:
+        """Sign a connection out when a refresh token it has replaced turns up again.
+
+        The client was given the replacement and has no reason to send the old
+        one, so somebody else holds a copy of one of them. Which of the two is
+        the client can't be told, so neither keeps access.
+        """
+        if not _TOKEN.fullmatch(refresh_token):
+            return
+        rows = await self._db(
+            (
+                f"SELECT family, (data->>'rotated_at')::float FROM {self.schema}.tokens "
+                "WHERE token_hash = %s AND kind = 'rotated'",
+                (_hash(refresh_token),),
+            ),
+            fetch=True,
+        )
+        if rows and time.time() - rows[0][1] > REUSE_GRACE:
+            await self._db((f"DELETE FROM {self.schema}.tokens WHERE family = %s", (rows[0][0],)))
+            log.warning("A replaced refresh token was used again; its connection is signed out.")
 
     async def exchange_refresh_token(
         self,
@@ -484,16 +517,49 @@ class TraintrackerOAuthProvider(
         # Rotate: the old refresh token and its access token stop working. Retiring
         # the old pair and storing the new one is one transaction, so a failure
         # leaves the client's current tokens in place.
-        issue, token = self._issue(
-            client.client_id, scopes or refresh_token.scopes, refresh_token.subject
+        old_hash = _hash(refresh_token.token)
+        found = await self._db(
+            (
+                f"SELECT family FROM {self.schema}.tokens "
+                "WHERE token_hash = %s AND kind = 'refresh'",
+                (old_hash,),
+            ),
+            fetch=True,
         )
+        if not found:
+            raise TokenError("invalid_grant", "Refresh token already used.")
+        family = found[0][0]
+        issue, token = self._issue(
+            client.client_id, scopes or refresh_token.scopes, refresh_token.subject, family
+        )
+        now = time.time()
         retire: Statement = (
-            f"DELETE FROM {self.schema}.tokens WHERE family = ("
-            f"SELECT family FROM {self.schema}.tokens "
-            "WHERE token_hash = %s AND kind = 'refresh'"
-            ") RETURNING family",
-            (_hash(refresh_token.token),),
+            f"DELETE FROM {self.schema}.tokens WHERE family = %s AND token_hash = %s "
+            "RETURNING family",
+            (family, old_hash),
             True,
+        )
+        retire_access: Statement = (
+            f"DELETE FROM {self.schema}.tokens WHERE family = %s AND kind = 'access'",
+            (family,),
+        )
+        # What is kept of the old refresh token: enough to know it if it comes
+        # back (see _revoke_if_reused), for as long as it would have lasted.
+        remember: Statement = (
+            f"INSERT INTO {self.schema}.tokens (token_hash, kind, family, data, expires_at) "
+            "VALUES (%s, 'rotated', %s, %s, %s)",
+            (
+                old_hash,
+                family,
+                json.dumps(
+                    {
+                        "client_id": client.client_id,
+                        "subject": refresh_token.subject,
+                        "rotated_at": now,
+                    }
+                ),
+                refresh_token.expires_at or now + REFRESH_TTL,
+            ),
         )
         # A refresh counts as use, so an account in use is never deleted as idle.
         seen: Statement = (
@@ -502,7 +568,7 @@ class TraintrackerOAuthProvider(
         )
         await self._purge_expired_tokens()
         try:
-            await self._db(retire, *issue, seen)
+            await self._db(retire, retire_access, remember, *issue, seen)
         except _Missing:
             raise TokenError("invalid_grant", "Refresh token already used.") from None
         return token

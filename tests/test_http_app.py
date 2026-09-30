@@ -448,6 +448,49 @@ async def test_sign_in_issues_tokens_that_rotate_and_revoke(
     assert await provider.load_access_token(new_access) is None
 
 
+async def test_a_replaced_refresh_token_used_again_signs_the_connection_out(
+    client: httpx.AsyncClient,
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    provider = _provider(settings)
+    client_id = await _register(client)
+    sign_in, verifier = await _start_sign_in(client, client_id)
+    ok = await client.post("/sign-in", data={"request": sign_in, "passphrase": PASSPHRASE})
+    first = (
+        await _token(
+            client,
+            grant_type="authorization_code",
+            code=parse_qs(urlparse(ok.headers["location"]).query)["code"][0],
+            redirect_uri=CALLBACK,
+            client_id=client_id,
+            code_verifier=verifier,
+        )
+    ).json()
+
+    async def refresh(token: str) -> httpx.Response:
+        return await _token(
+            client, grant_type="refresh_token", refresh_token=token, client_id=client_id
+        )
+
+    second = (await refresh(first["refresh_token"])).json()
+    # Straight away it is a client repeating a request: refused, nothing else.
+    assert (await refresh(first["refresh_token"])).status_code == 400
+    assert await provider.load_access_token(second["access_token"]) is not None
+    third = (await refresh(second["refresh_token"])).json()
+
+    # Later, it is a second holder of the token. Every token of the sign-in
+    # goes, however many times it has been refreshed since.
+    monkeypatch.setattr(oauth, "REUSE_GRACE", -1)
+    assert (await refresh(first["refresh_token"])).status_code == 400
+    assert "used again" in caplog.text
+    assert await provider.load_access_token(third["access_token"]) is None
+    assert (await refresh(third["refresh_token"])).status_code == 400
+    with psycopg.connect(settings.database_url or "") as con:
+        assert con.execute(f"SELECT count(*) FROM {settings.auth_schema}.tokens").fetchone() == (0,)
+
+
 async def test_wrong_passphrases_end_the_sign_in(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

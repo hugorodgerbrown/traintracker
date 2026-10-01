@@ -67,7 +67,14 @@ function running(time, expected, width = 9) {
   const shows = [`${expected} +${late}`, `${expected}+${late}`, expected].find(
     (text) => text.length <= width,
   );
-  return { state: "late", shows };
+  return { state: "late", shows, late };
+}
+
+/** Expected as a table says it: with how late the train is, as the flaps
+ * show it ("15:44, 4 minutes late" for "15:44 +4"). */
+function said(time, expected) {
+  const { late } = running(time, expected);
+  return late ? `${expected}, ${late} minute${late === 1 ? "" : "s"} late` : expected;
 }
 
 /** The column where Expected starts in `layout`, on whichever line it is. */
@@ -549,7 +556,7 @@ function rows(table, trains) {
       ["time", "place", "platform", "expected"].forEach((key, n) => {
         const cell = row.insertCell();
         if (labels[n]) cell.dataset.label = labels[n];
-        cell.textContent = train[key];
+        cell.textContent = key === "expected" ? said(train.time, train.expected) : train[key];
       });
       return row;
     }),

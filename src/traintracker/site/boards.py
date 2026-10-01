@@ -192,9 +192,10 @@ def _train(service: BoardService) -> dict[str, str]:
     }
 
 
-def until_next_minute() -> float:
-    """Seconds until the clock next turns to :00. UK minutes start when UTC's do."""
-    return 60.0 - (time.time() + EARLY) % 60.0
+def minute_left(minute: int) -> float:
+    """Seconds until the clock turns from `minute` to the next, 0 once it has.
+    UK minutes start when UTC's do."""
+    return max(0.0, (minute + 1) * 60 - EARLY - time.time())
 
 
 def payload(board: Board, platforms: list[str], key: BoardKey, updated: datetime) -> dict[str, Any]:
@@ -238,6 +239,10 @@ class SharedBoards:
         ] = {}
 
     async def get(self, key: BoardKey) -> dict[str, Any]:
+        return (await self.get_for_minute(key))[1]
+
+    async def get_for_minute(self, key: BoardKey) -> tuple[int, dict[str, Any]]:
+        """The board, and the minute it is for."""
         now = time.time()
         minute = int((now + EARLY) // 60)
         kept = self._kept.get(key)
@@ -252,7 +257,7 @@ class SharedBoards:
             found = (await asyncio.shield(self._pending[ask]))[1]
         if isinstance(found, _Failed):
             raise BoardUnavailable(found.message)
-        return cast(dict[str, Any], found)
+        return minute, cast(dict[str, Any], found)
 
     async def _fetch(
         self, key: BoardKey, minute: int, now: float
@@ -276,6 +281,25 @@ def _e(text: str) -> str:
     return html.escape(text, quote=True)
 
 
+def _minutes(hhmm: str) -> int | None:
+    match = re.fullmatch(r"(\d\d):(\d\d)", hhmm)
+    return int(match[1]) * 60 + int(match[2]) if match else None
+
+
+def said(booked_at: str, expected: str) -> str:
+    """Expected as a table says it: with how late the train is where Expected
+    is a later time than booked ("15:44, 4 minutes late"), as the flaps show
+    it ("15:44 +4", site.js running()). Past midnight counts forward; half a
+    day or more the other way is early, and said as it is."""
+    booked, due = _minutes(booked_at), _minutes(expected)
+    if booked is None or due is None:
+        return expected
+    late = (due - booked) % 1440
+    if late == 0 or late >= 720:
+        return expected
+    return f"{expected}, {late} minute{'' if late == 1 else 's'} late"
+
+
 def _rows(trains: list[dict[str, str]]) -> str:
     rows = []
     for t in trains:
@@ -284,7 +308,7 @@ def _rows(trains: list[dict[str, str]]) -> str:
             f"<td>{_e(t['time'])}</td>"
             f'<td data-label="Destination">{_e(t["place"])}</td>'
             f'<td data-label="Platform">{_e(t["platform"])}</td>'
-            f'<td data-label="Expected">{_e(t["expected"])}</td>'
+            f'<td data-label="Expected">{_e(said(t["time"], t["expected"]))}</td>'
             "</tr>"
         )
     return "\n".join(rows)
@@ -673,9 +697,10 @@ def routes(fields: dict[str, str], fetch: Fetch, ip_header: str | None = None) -
                 {"error": limited(wait)}, 429, headers={**FEED_HEADERS, **_refused(wait)}
             )
         try:
-            board = await boards.get(key)
-            # No cache keeps it past the minute either.
-            fresh = f"public, max-age={int(until_next_minute())}"
+            minute, board = await boards.get_for_minute(key)
+            # No cache keeps it past its minute either, even when the fetch
+            # ended after the minute did.
+            fresh = f"public, max-age={int(minute_left(minute))}"
             return JSONResponse(board, headers={**FEED_HEADERS, "Cache-Control": fresh})
         except BoardUnavailable as exc:
             return JSONResponse({"error": str(exc)}, 503, headers=FEED_HEADERS)

@@ -375,7 +375,14 @@
         const shows = [`${expected} +${late}`, `${expected}+${late}`, expected].find(
           (text) => text.length <= width,
         );
-        return { state: "late", shows };
+        return { state: "late", shows, late };
+      }
+
+      /** Expected as the table says it: with how late the train is, as the
+       * flaps show it ("15:44, 4 minutes late" for "15:44 +4"). */
+      function said(time, expected) {
+        const { late } = running(time, expected);
+        return late ? `${expected}, ${late} minute${late === 1 ? "" : "s"} late` : expected;
       }
 
       function columns(line) {
@@ -561,6 +568,7 @@
         const body = table.createTBody();
         for (const service of services) {
           const text = fields(service, arrivals);
+          text.expected = said(text.time, text.expected);
           const row = body.insertRow();
           for (const name of ["time", "place", "platform", "expected"]) {
             row.insertCell().textContent = text[name];

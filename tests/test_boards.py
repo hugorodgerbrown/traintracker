@@ -236,7 +236,7 @@ async def test_a_board_is_a_page_with_the_trains_in_it(
     # As the chat's board shows them: every destination, no forecast mark, and
     # a cancelled train says so.
     assert '<td data-label="Destination">Norwich &amp; Clacton-on-Sea</td>' in text
-    assert '<td data-label="Expected">15:44</td>' in text
+    assert '<td data-label="Expected">15:44, 4 minutes late</td>' in text
     assert '<td data-label="Expected">Cancelled</td>' in text
     assert "<li>Lifts are out of order at &lt;this&gt; station.</li>" in text
     assert "Powered by National Rail Enquiries" in text
@@ -409,6 +409,39 @@ async def test_a_board_is_kept_for_its_minute(
     # The rest of that minute shares it.
     await shared.get(boards.BoardKey("LST"))
     assert len(fetch.calls) == 1
+
+
+async def test_a_board_fetched_across_the_minute_is_not_cached_into_the_next(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Asked for at 23:22:50; the fetch ends at 23:23:05, in the next minute.
+    clock = [datetime(2026, 9, 30, 23, 22, 50, tzinfo=UK_TZ).timestamp()]
+    monkeypatch.setattr(boards.time, "time", lambda: clock[0])
+    fetch = FakeFetch()
+
+    async def slow(crs: str, to: str | None, platform: str | None) -> tuple[Board, list[str]]:
+        clock[0] += 15
+        return await fetch(crs, to, platform)
+
+    minute, data = await boards.SharedBoards(slow).get_for_minute(boards.BoardKey("LST"))
+    assert data["updated"] == "23:22:50"
+    assert boards.minute_left(minute) == 0
+
+
+@pytest.mark.parametrize(
+    ("time", "expected", "says"),
+    [
+        ("15:40", "15:44", "15:44, 4 minutes late"),
+        ("15:40", "15:41", "15:41, 1 minute late"),
+        ("23:58", "00:03", "00:03, 5 minutes late"),
+        ("15:40", "15:40", "15:40"),
+        ("15:40", "15:38", "15:38"),
+        ("15:40", "On time", "On time"),
+        ("15:40", "Cancelled", "Cancelled"),
+    ],
+)
+def test_the_table_says_how_late_a_train_is(time: str, expected: str, says: str) -> None:
+    assert boards.said(time, expected) == says
 
 
 async def test_a_failure_is_shared_too(client: httpx.AsyncClient, fetch: FakeFetch) -> None:

@@ -290,6 +290,7 @@ blockquote p {
   --pale: #cfe3d6;
   --well: #0a2a1c;
   --amber: #ffb020;
+  --cancelled: #c62828;
   padding: 0.875rem;
   border-radius: 0.75rem;
   background: #0b5d3b;
@@ -393,6 +394,17 @@ blockquote p {
   color: var(--amber);
   font: 600 calc(var(--pitch) * 1.05) / 1 ui-monospace, "SF Mono", Menlo, Consolas,
     "Liberation Mono", monospace;
+}
+
+/* A late train's Expected is white, and a cancelled one's is on red flaps
+   (white on red, 5.6:1). The words say it too: colour is never all of it. */
+.departures .cell.late {
+  color: #ffffff;
+}
+
+.departures .cell.cancelled {
+  background: var(--cancelled);
+  color: #ffffff;
 }
 
 /* The seam where a flap folds. */
@@ -602,12 +614,51 @@ blockquote p {
   margin: 0;
 }
 
+/* The station's name at the top left, the Full screen button at the top
+   right, the flaps below, and the notes and credit at the bottom left beside
+   the clock. */
 .tv .departures .panel {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
+  column-gap: 2.5vw;
   height: 100vh;
   padding: 2.5vh 2.5vw;
   border-radius: 0;
+}
+
+.tv .departures .station {
+  display: contents;
+}
+
+.tv .departures.live .station h1 {
+  grid-area: 1 / 1;
+}
+
+.tv .departures.live .station span {
+  grid-area: 2 / 1;
+}
+
+.tv .departures .flaps,
+.tv .departures .empty {
+  grid-area: 3 / 1 / 4 / -1;
+}
+
+.tv .departures .empty {
+  align-self: start;
+}
+
+.tv .departures .stale-note {
+  grid-area: 4 / 1;
+}
+
+.tv .departures .notes {
+  grid-area: 5 / 1;
+}
+
+.tv .departures .source {
+  grid-area: 6 / 1;
+  align-self: end;
 }
 
 .tv .departures.live .station h1 {
@@ -618,8 +669,35 @@ blockquote p {
   font-size: clamp(0.75rem, 1.3vw, 2rem);
 }
 
+/* Without its flaps (an empty board) the clock is text, at the bottom right. */
 .tv .departures .clock {
+  grid-area: 4 / 2 / 7 / 3;
+  align-self: end;
   font-size: clamp(1.25rem, 3.4vw, 5rem);
+}
+
+/* With them, the clock is a line of the board's own flaps (site.js), under
+   the Expected column and the same size as the trains, in white. */
+.tv .departures.flap-clock .clock {
+  display: none;
+}
+
+.tv .departures .clock-flaps {
+  grid-area: 4 / 1 / 7 / -1;
+  align-self: end;
+  margin-top: 1.5vh;
+  padding: 0 0.5rem;
+}
+
+.tv .departures .clock-flaps .cell {
+  color: #ffffff;
+}
+
+/* The notices and the credit stop short of the clock. */
+.tv .departures.flap-clock .stale-note,
+.tv .departures.flap-clock .notes,
+.tv .departures.flap-clock .source {
+  padding-right: var(--clock-clear, 0px);
 }
 
 /* The flaps take the space the rest leaves; their lines are as wide as the
@@ -660,9 +738,10 @@ blockquote p {
 }
 
 .tv .departures .fullscreen {
-  position: fixed;
-  right: 2.5vw;
-  bottom: 2.5vh;
+  grid-area: 1 / 2 / 3 / 3;
+  align-self: start;
+  justify-self: end;
+  margin: 0;
 }
 
 .tv.idle,

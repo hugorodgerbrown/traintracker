@@ -19,11 +19,13 @@ for (const button of document.querySelectorAll("button[data-copy]")) {
 // The trains are a table in the page. Without JavaScript the table shows in
 // the board's colours; here it is left to screen readers and each letter
 // becomes a flap that turns to it. A board with data-feed (the shareable
-// boards, site/boards.py) fetches its trains again every data-refresh seconds
-// while the page is visible, and the flaps turn from the old letters to the new.
-const FLAPS = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:.-&'/()"; // the order the flaps turn in
+// boards, site/boards.py) fetches its trains again on each minute while the
+// page is visible, and the flaps turn from the old letters to the new.
+const FLAPS = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:.-&'/()+"; // the order the flaps turn in
 const MAX_TURNS = 8;
 const TICK_MS = 45;
+const CLOCK_TURN_MS = 180; // a clock's flap falls more slowly than a board's riffle
+const CLOCK_WIDTH = 8; // flaps: HH:MM:SS, the colons flaps too
 const NARROW_BELOW = 480; // px of panel width
 const STALE_AFTER_MS = 5 * 60 * 1000; // a live board this long without an update says so
 const FETCH_TIMEOUT_MS = 20 * 1000;
@@ -42,6 +44,49 @@ const NARROW = [
 /** How many columns one line of a layout takes. */
 function columns(parts) {
   return parts.reduce((n, part) => n + (Array.isArray(part) ? part[1] : part), 0);
+}
+
+/** How a train is running, from its booked time and what Expected says:
+ * "cancelled", "late", or "" (on time, early, or no report). A late train
+ * with an expected time shows how late too, as far as the column allows:
+ * "15:41 +5". */
+function running(time, expected, width = 9) {
+  if (/^cancelled$/i.test(expected)) return { state: "cancelled", shows: expected };
+  if (/^delayed$/i.test(expected)) return { state: "late", shows: expected };
+  const minutes = (hhmm) => {
+    const match = /^(\d\d):(\d\d)$/.exec(hhmm);
+    return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+  };
+  const booked = minutes(time);
+  const due = minutes(expected);
+  if (booked === null || due === null) return { state: "", shows: expected };
+  // Past midnight 23:58 is due at 00:03, five minutes late. Half a day or more
+  // the other way is early, and an early train is shown as it is.
+  const late = (due - booked + 1440) % 1440;
+  if (late === 0 || late >= 720) return { state: "", shows: expected };
+  const shows = [`${expected} +${late}`, `${expected}+${late}`, expected].find(
+    (text) => text.length <= width,
+  );
+  return { state: "late", shows, late };
+}
+
+/** Expected as a table says it: with how late the train is, as the flaps
+ * show it ("15:44, 4 minutes late" for "15:44 +4"). */
+function said(time, expected) {
+  const { late } = running(time, expected);
+  return late ? `${expected}, ${late} minute${late === 1 ? "" : "s"} late` : expected;
+}
+
+/** The column where Expected starts in `layout`, on whichever line it is. */
+function expectedColumn(layout) {
+  for (const parts of layout) {
+    let column = 1;
+    for (const part of parts) {
+      if (Array.isArray(part) && part[0] === "expected") return column;
+      column += Array.isArray(part) ? part[1] : part;
+    }
+  }
+  return 1;
 }
 
 /** `layout` with `extra` more columns for the destination. On a second line,
@@ -95,6 +140,20 @@ function board(figure) {
   flaps.setAttribute("aria-hidden", "true");
   table.parentElement.before(flaps);
   figure.classList.add("drawn");
+
+  // On a TV the clock is a line of flaps too, below the board, under the
+  // Expected column (layClock). Elsewhere it is text.
+  const clock = figure.querySelector(".clock");
+  const clockFlaps = clock && document.createElement("div");
+  let clockCells = [];
+  let clockBuilt = ""; // what `clockCells` was laid out for: columns and the first one
+  let clockTime = "";
+  if (clockFlaps) {
+    clockFlaps.className = "clock-flaps";
+    clockFlaps.setAttribute("aria-hidden", "true");
+    clockFlaps.hidden = true;
+    panel.append(clockFlaps);
+  }
 
   /** One line of the board: `make` adds what each field of `parts` shows. */
   function line(parts, className, make) {
@@ -156,9 +215,16 @@ function board(figure) {
     built = key;
     laidOut = layout;
     fit();
+    layClock();
     let i = 0;
     trains.forEach((train, row) => {
-      const text = { ...train, plat: train.platform && `Plat ${train.platform}` };
+      // A late train's Expected is white, a cancelled one's on red flaps.
+      const run = running(train.time, train.expected);
+      const text = {
+        ...train,
+        plat: train.platform && `Plat ${train.platform}`,
+        expected: run.shows,
+      };
       for (const parts of layout) {
         let column = 0;
         for (const part of parts) {
@@ -168,7 +234,10 @@ function board(figure) {
           }
           const [key, width] = part;
           for (const character of text[key].toUpperCase().slice(0, width).padEnd(width)) {
-            turn(cells[i++], character, row * 2 + (column++ >> 2));
+            const cell = cells[i++];
+            cell.classList.toggle("late", key === "expected" && run.state === "late");
+            cell.classList.toggle("cancelled", key === "expected" && run.state === "cancelled");
+            turn(cell, character, row * 2 + (column++ >> 2));
           }
         }
       }
@@ -184,6 +253,58 @@ function board(figure) {
       return;
     }
     flaps.style.setProperty("--pitch", `${drawnPitch(laidOut)}px`);
+  }
+
+  /** On a TV, the clock's flaps: the board's size, in the board's columns,
+   * starting under Expected where a train is one line. Where it is two,
+   * Expected is on the left under the destination, so the clock ends where
+   * the lines do instead. */
+  function layClock() {
+    const on = Boolean(clockFlaps) && onTv() && trains.length > 0;
+    figure.classList.toggle("flap-clock", on);
+    if (!clockFlaps) return;
+    clockFlaps.hidden = !on;
+    if (!on) {
+      panel.style.removeProperty("--clock-clear");
+      return;
+    }
+    const cols = columns(laidOut[0]);
+    const last = cols - CLOCK_WIDTH + 1;
+    const first = Math.max(1, laidOut.length > 1 ? last : Math.min(expectedColumn(laidOut), last));
+    clockFlaps.style.setProperty("--cols", cols);
+    clockFlaps.style.setProperty("--pitch", flaps.style.getPropertyValue("--pitch"));
+    if (`${cols}:${first}` !== clockBuilt) {
+      clockBuilt = `${cols}:${first}`;
+      const line = document.createElement("div");
+      line.className = "line";
+      clockCells = Array.from({ length: CLOCK_WIDTH }, (_, k) => {
+        const cell = document.createElement("span");
+        cell.className = "cell";
+        cell.style.gridColumn = first + k;
+        cell.now = cell.textContent = clockTime[k] || " ";
+        line.append(cell);
+        return cell;
+      });
+      clockFlaps.replaceChildren(line);
+    }
+    // The notices and the credit stop a gap short of the clock's first flap.
+    const style = getComputedStyle(panel);
+    const right = panel.getBoundingClientRect().right - parseFloat(style.paddingRight);
+    const clear = right - clockCells[0].getBoundingClientRect().left + parseFloat(style.columnGap);
+    panel.style.setProperty("--clock-clear", `${Math.ceil(clear)}px`);
+  }
+
+  /** Show `time` on the clock's flaps, turning those that change. */
+  function showClock(time) {
+    clockTime = time;
+    if (!clockFlaps || clockFlaps.hidden) return;
+    Array.from(time).forEach((character, k) => {
+      const cell = clockCells[k];
+      if (cell && cell.now !== character) {
+        cell.now = character;
+        flipDigit(cell, character);
+      }
+    });
   }
 
   /** The layout with the larger flaps on this screen, one line a train on a
@@ -213,6 +334,26 @@ function board(figure) {
     };
   }
 
+  /** On a TV: the room for the flaps and the lines below them (the notices,
+   * the credit and the clock), and the height of those lines of text. */
+  function below() {
+    const style = getComputedStyle(flaps);
+    const floor =
+      panel.getBoundingClientRect().bottom - parseFloat(getComputedStyle(panel).paddingBottom);
+    const room =
+      floor -
+      flaps.getBoundingClientRect().top -
+      parseFloat(style.paddingTop) -
+      parseFloat(style.paddingBottom);
+    let text = 0;
+    for (const element of figure.querySelectorAll(".stale-note, .notes, .source")) {
+      if (!element.getClientRects().length) continue; // hidden, or empty
+      const margins = getComputedStyle(element);
+      text += element.offsetHeight + parseFloat(margins.marginTop) + parseFloat(margins.marginBottom);
+    }
+    return { room, text, gap: parseFloat(getComputedStyle(clockFlaps).marginTop) };
+  }
+
   /** The largest pitch at which every train fits the flaps' box in `layout`. */
   function pitchFor(layout) {
     const { across, down } = inner();
@@ -225,7 +366,14 @@ function board(figure) {
     const units = lines * 1.6 + (count - 1) * 0.45 + heads * 0.6;
     const fixed = lines * 2 + heads * 2;
     // Each flap has 1px of margin on either side.
-    return Math.min(across / cols - 2, (down - fixed) / units);
+    const widest = across / cols - 2;
+    if (!clockFlaps || !onTv()) return Math.min(widest, (down - fixed) / units);
+    // On a TV the clock is one more line of flaps, beside the notices and the
+    // credit: it takes room from the trains only where it is taller than they are.
+    const { room, text, gap } = below();
+    let pitch = (room - text - fixed) / units;
+    if (pitch * 1.6 + 2 + gap > text) pitch = (room - fixed - 2 - gap) / (units + 1.6);
+    return Math.min(widest, pitch);
   }
 
   /** Turn one flap to `character`, starting after `wait` ticks. */
@@ -272,8 +420,7 @@ function board(figure) {
   resized.observe(flaps);
   draw();
 
-  const clock = figure.querySelector(".clock");
-  if (clock) tickClock(clock);
+  if (clock) tickClock(clock, showClock);
   if (figure.dataset.feed) {
     follow(figure, Number(figure.dataset.refresh) || 60, (data) => {
       trains = data.trains;
@@ -284,16 +431,46 @@ function board(figure) {
 
 // ------------------------------------------------------------ live boards
 
-/** Show the time in the UK, as the station's own clock would. */
-function tickClock(clock) {
+/** Show the time in the UK, as the station's own clock would, and hand it to
+ * `tick` each second as well. */
+function tickClock(clock, tick) {
   const show = () => {
-    clock.textContent = UK_TIME.format(new Date());
+    const time = UK_TIME.format(new Date());
+    clock.textContent = time;
+    tick(time);
   };
-  show();
-  window.setInterval(show, 1000);
+  everySecond(show);
 }
 
-/** Fetch the board every `seconds` while the page is visible, and hand each answer to `show`. */
+/** Call `task` now, and then as each second starts, so that everything that
+ * ticks (the clock, the countdown, the fetch on the minute) turns together. */
+function everySecond(task) {
+  const next = () => {
+    task();
+    window.setTimeout(next, 1000 - (Date.now() % 1000));
+  };
+  next();
+}
+
+/** When the clock next turns to :00, in ms. UK minutes start when UTC's do. */
+function nextMinute() {
+  return (Math.floor(Date.now() / 60000) + 1) * 60000;
+}
+
+/** Turn one of the clock's flaps to `digit`: one turn, as a clock's flaps go
+ * straight to the next number, where a board's riffle through the letters. */
+function flipDigit(flap, digit) {
+  flap.textContent = digit;
+  if (still.matches) return;
+  flap.animate(
+    [{ transform: "perspective(12em) rotateX(-75deg)", filter: "brightness(0.6)" }, {}],
+    { duration: CLOCK_TURN_MS, easing: "ease-out" },
+  );
+}
+
+/** Fetch the board on each minute while the page is visible, as the clock
+ * turns to :00, and hand each answer to `show`. The server fetches it then
+ * too, so it says "Updated 23:23:00" as the clock does. */
 function follow(figure, seconds, show) {
   const table = figure.querySelector("table");
   const empty = figure.querySelector(".empty");
@@ -348,22 +525,22 @@ function follow(figure, seconds, show) {
     }
   }
 
-  // Each second: count down to the next fetch beside "Updated", and make it
-  // when it is due.
-  let due = Date.now() + seconds * 1000;
+  // Each second: count down to the next minute beside "Updated", and fetch
+  // when it comes. At 23:23:00 that reads "Next update in 59s", at 23:23:58
+  // "in 1s", and at 23:23:59 still "in 1s".
+  let due = nextMinute();
   async function countdown() {
-    const left = Math.ceil((due - Date.now()) / 1000);
-    if (left <= 0) {
-      due = Date.now() + seconds * 1000;
+    if (Date.now() >= due) {
+      due = nextMinute();
       next.textContent = " · Updating…";
       await update();
     }
     if (!busy) {
-      next.textContent = ` · Next update in ${Math.max(1, Math.ceil((due - Date.now()) / 1000))}s`;
+      const second = Math.floor((Date.now() % 60000) / 1000);
+      next.textContent = ` · Next update in ${Math.max(1, 59 - second)}s`;
     }
   }
-  countdown();
-  window.setInterval(countdown, 1000);
+  everySecond(countdown);
   // A page that comes back into view after a while catches up at once.
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && Date.now() - last >= seconds * 1000) due = 0;
@@ -379,7 +556,7 @@ function rows(table, trains) {
       ["time", "place", "platform", "expected"].forEach((key, n) => {
         const cell = row.insertCell();
         if (labels[n]) cell.dataset.label = labels[n];
-        cell.textContent = train[key];
+        cell.textContent = key === "expected" ? said(train.time, train.expected) : train[key];
       });
       return row;
     }),

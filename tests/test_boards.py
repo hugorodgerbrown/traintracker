@@ -241,8 +241,8 @@ async def test_a_board_is_a_page_with_the_trains_in_it(
     # As the chat's board shows them: every destination, no forecast mark, and
     # a cancelled train says so.
     assert '<td data-label="Destination">Norwich &amp; Clacton-on-Sea</td>' in text
-    assert '<td data-label="Expected">15:44, 4 minutes late</td>' in text
-    assert '<td data-label="Expected">Cancelled</td>' in text
+    assert '<td data-label="Expected" data-expected="15:44">15:44, 4 minutes late</td>' in text
+    assert '<td data-label="Expected" data-expected="Cancelled">Cancelled</td>' in text
     assert "<li>Lifts are out of order at &lt;this&gt; station.</li>" in text
     assert "Powered by National Rail Enquiries" in text
     assert re.search(r'<time class="clock" datetime="[^"]+">\d\d:\d\d:\d\d</time>', text)

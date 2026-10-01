@@ -123,9 +123,11 @@ function board(figure) {
     (cell) => cell.textContent,
   );
   const headings = { time, place, platform, expected };
+  // The table says Expected in words ("15:44, 4 minutes late"); the flaps
+  // want the time itself, which the cell carries in data-expected.
   let trains = Array.from(table.tBodies[0].rows, (row) => {
     const [time, place, platform, expected] = Array.from(row.cells, (cell) =>
-      cell.textContent.trim(),
+      (cell.dataset.expected ?? cell.textContent).trim(),
     );
     return { time, place, platform, expected };
   });
@@ -556,6 +558,7 @@ function rows(table, trains) {
       ["time", "place", "platform", "expected"].forEach((key, n) => {
         const cell = row.insertCell();
         if (labels[n]) cell.dataset.label = labels[n];
+        if (key === "expected") cell.dataset.expected = train.expected;
         cell.textContent = key === "expected" ? said(train.time, train.expected) : train[key];
       });
       return row;

@@ -315,7 +315,8 @@ def _rows(trains: list[dict[str, str]]) -> str:
             f"<td>{_e(t['time'])}</td>"
             f'<td data-label="Destination">{_e(t["place"])}</td>'
             f'<td data-label="Platform">{_e(t["platform"])}</td>'
-            f'<td data-label="Expected">{_e(said(t["time"], t["expected"]))}</td>'
+            f'<td data-label="Expected" data-expected="{_e(t["expected"])}">'
+            f"{_e(said(t['time'], t['expected']))}</td>"
             "</tr>"
         )
     return "\n".join(rows)

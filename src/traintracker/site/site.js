@@ -690,6 +690,24 @@ document.addEventListener("keydown", (event) => {
 
 if (onTv()) startTv();
 
+// ------------------------------------------------------------ visitor counts
+
+// fivebar's script (in the page's head) counts the pages by itself. A board
+// made with the picker arrives at #new (site/boards.py), which counts it once
+// as a "New board" and is then taken out of the address, so that a reload, a
+// bookmark or a copied link doesn't count it again. The script loads async:
+// if it has loaded, tally is its function; if not, the event waits in a queue
+// that the script sends once it has.
+if (window.location.hash === "#new") {
+  window.history.replaceState(null, "", window.location.pathname + window.location.search);
+  const figure = document.querySelector(".departures[data-station]");
+  if (figure) {
+    const event = ["New board", { station: figure.dataset.station, by: figure.dataset.by }];
+    if (typeof window.tally === "function") window.tally(...event);
+    else (window.tally = window.tally || []).push(event);
+  }
+}
+
 // --------------------------------------------------------- station picker
 
 // The picker's station field suggests stations as you type. A suggestion

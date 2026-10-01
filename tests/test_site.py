@@ -16,6 +16,7 @@ from traintracker.config import Settings
 from traintracker.http_app import build_app
 
 BASE = "https://tt.test"
+TALLY = '<script async data-domain="traintrackr.live" src="https://fiveb.ar/js/tally.js"></script>'
 PROMPTS = (
     "Which platform is the next train from Cambridge to Kings Cross?",
     "What are the next trains from Liverpool Street to Colchester, and are they on time?",
@@ -46,9 +47,13 @@ async def test_pages_are_served(client: httpx.AsyncClient, path: str) -> None:
     r = await client.get(path)
     assert r.status_code == 200
     assert r.headers["content-type"] == "text/html; charset=utf-8"
-    # Nothing inline and nothing from another origin can run or load.
+    # Nothing inline runs, and nothing from another origin but fivebar's
+    # counting script, which sends its counts back to fivebar.
     policy = r.headers["content-security-policy"]
     assert "default-src 'none'" in policy and "unsafe-inline" not in policy
+    assert "script-src 'self' https://fiveb.ar;" in policy
+    assert "connect-src https://fiveb.ar;" in policy
+    assert TALLY in r.text
     assert r.headers["strict-transport-security"] == "max-age=31536000"
     assert r.headers["x-content-type-options"] == "nosniff"
     assert "set-cookie" not in r.headers
@@ -187,7 +192,8 @@ async def test_the_privacy_policy_says_what_the_code_does(client: httpx.AsyncCli
         "Google",
         "Data Privacy Framework",
         "no cookies",
-        "no analytics",
+        "fivebar",
+        "no advertising",
         "ico.org.uk",
     ):
         assert claim.lower() in text.lower(), claim
@@ -262,6 +268,8 @@ async def test_the_sign_in_page_uses_the_site_stylesheet(client: httpx.AsyncClie
     page = await client.get("/sign-in", params={"request": "made-up"})
     assert f'href="{site.asset_url(site.STYLESHEET)}"' in page.text
     assert "<style" not in page.text
+    # A one-time address, not counted.
+    assert "fiveb.ar" not in page.text
     assert f'href="{site.asset_url(site.ICON)}"' in page.text
     assert page.headers["content-security-policy"] == (
         "default-src 'none'; style-src 'self'; img-src 'self'"

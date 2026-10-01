@@ -80,10 +80,15 @@ FAVICON = "/favicon.ico"
 # (a server run on localhost).
 HSTS = "max-age=31536000"
 
-# Nothing is loaded from anywhere else, and nothing inline runs.
+# The visitor counts: fivebar's script (layout.html), and where it sends them.
+ANALYTICS = "https://fiveb.ar"
+
+# Nothing is loaded from anywhere else but the counting script, and nothing
+# inline runs.
 HEADERS = {
     "Content-Security-Policy": (
-        "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; "
+        f"default-src 'none'; style-src 'self'; script-src 'self' {ANALYTICS}; "
+        f"connect-src {ANALYTICS}; img-src 'self'; "
         "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
     ),
     "Strict-Transport-Security": HSTS,

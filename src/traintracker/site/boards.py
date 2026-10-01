@@ -52,11 +52,12 @@ from traintracker.errors import StationNotFound
 from traintracker.http import TTLCache
 from traintracker.models import Board, BoardService
 from traintracker.ratelimit import RateLimiter, client_address, limited
-from traintracker.site import HEADERS, HSTS, render_page
+from traintracker.site import ANALYTICS, HEADERS, HSTS, render_page
 
 PICKER_PATH = "/board"
 FEED_PREFIX = "/api/board"
 SUGGEST_PATH = "/api/stations"
+NEW_BOARD = "#new"  # on the picker's redirect to a board: see site.js
 
 TTL = 60.0  # seconds one fetched board is shared for at most: until the minute is up
 EARLY = 2.0  # seconds before the minute a page's clock may turn to it
@@ -79,8 +80,9 @@ CLOSE_ENOUGH = 70
 Fetch = Callable[[str, str | None, str | None], Awaitable[tuple[Board, list[str]]]]
 
 _POLICY = (
-    "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; "
-    "connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors {frame}"
+    f"default-src 'none'; style-src 'self'; script-src 'self' {ANALYTICS}; img-src 'self'; "
+    f"connect-src 'self' {ANALYTICS}; base-uri 'none'; form-action 'self'; "
+    "frame-ancestors {frame}"
 )
 PAGE_HEADERS = {**HEADERS, "Content-Security-Policy": _POLICY.format(frame="'none'")}
 # An embedded board is meant to be framed by any site.
@@ -143,6 +145,11 @@ class BoardKey:
         where = f" from platform {self.platform}" if self.platform else ""
         where += f" calling at {_name(self.to)}" if self.to else ""
         return f"No departures{where} in the next two hours."
+
+    @property
+    def by(self) -> str:
+        """Which trains the board picks: "all", "platform" or "destination"."""
+        return "destination" if self.to else "platform" if self.platform else "all"
 
     def kind(self) -> str:
         """What the board shows, under the station's name: "Platform 9
@@ -362,7 +369,8 @@ def _figure(
     )
     feed = _e(key.feed)
     empty = "" if not data["trains"] else " hidden"
-    return f"""<figure class="departures live" data-feed="{feed}" data-refresh="{REFRESH}">
+    return f"""<figure class="departures live" data-feed="{feed}" data-refresh="{REFRESH}"
+  data-station="{key.crs}" data-by="{key.by}">
   <div class="panel">
     <div class="station">
       <h1>{_e(station["name"])}</h1>
@@ -639,7 +647,9 @@ def routes(fields: dict[str, str], fetch: Fetch, ip_header: str | None = None) -
             return picker(request, typed, choices=_choices(heading, match, field, typed))
         crs = found["station"].crs
         to = found["to"].crs if "to" in found and found["to"].crs != crs else None
-        return RedirectResponse(BoardKey(crs, to, platform).path, 303)
+        # #new tells site.js the board was made here, to count it, and is taken
+        # out of the address again so that a reload or a copy doesn't count twice.
+        return RedirectResponse(BoardKey(crs, to, platform).path + NEW_BOARD, 303)
 
     async def show(request: Request) -> Response:
         given = request.path_params["station"][: stations.MAX_QUERY]

@@ -22,6 +22,7 @@ from traintracker.models import Board, BoardService, StationRef
 from traintracker.site import boards
 
 BASE = "https://tt.test"
+TALLY = '<script async data-domain="traintrackr.live" src="https://fiveb.ar/js/tally.js"></script>'
 FIELDS = {"site_url": BASE, "mcp_url": f"{BASE}/mcp", "fair_use": "Be kind."}
 
 
@@ -170,7 +171,8 @@ async def test_the_picker_goes_to_the_board(
 ) -> None:
     r = await client.get("/board", params=query)
     assert r.status_code == 303
-    assert r.headers["location"] == target
+    # #new tells site.js to count a new board.
+    assert r.headers["location"] == target + "#new"
 
 
 async def test_the_picker_asks_which_station(client: httpx.AsyncClient) -> None:
@@ -230,7 +232,10 @@ async def test_a_board_is_a_page_with_the_trains_in_it(
     assert r.status_code == 200
     text = _flat(r.text)
     # It reads without JavaScript: the trains are a table; site.js draws the flaps.
-    assert '<figure class="departures live" data-feed="/api/board/LST" data-refresh="60">' in text
+    assert (
+        '<figure class="departures live" data-feed="/api/board/LST" data-refresh="60" '
+        'data-station="LST" data-by="all">'
+    ) in text
     assert "<h1>London Liverpool Street</h1>" in text
     assert '<td data-label="Destination">Colchester Town</td>' in text
     # As the chat's board shows them: every destination, no forecast mark, and
@@ -284,7 +289,9 @@ async def test_a_board_can_be_shared_and_embedded(client: httpx.AsyncClient) -> 
     assert "<title>London Liverpool Street platform 9 departures · Traintrackr</title>" in r.text
     policy = r.headers["content-security-policy"]
     assert "frame-ancestors 'none'" in policy
-    assert "connect-src 'self'" in policy and "unsafe-inline" not in policy
+    assert "connect-src 'self' https://fiveb.ar;" in policy and "unsafe-inline" not in policy
+    assert "script-src 'self' https://fiveb.ar;" in policy
+    assert TALLY in r.text
 
 
 async def test_an_embedded_board_is_the_board_alone_and_may_be_framed(
@@ -293,6 +300,8 @@ async def test_an_embedded_board_is_the_board_alone_and_may_be_framed(
     r = await client.get("/board/LST/9", params={"embed": "1"})
     assert r.status_code == 200
     assert "frame-ancestors *" in r.headers["content-security-policy"]
+    assert "connect-src 'self' https://fiveb.ar;" in r.headers["content-security-policy"]
+    assert TALLY in r.text
     text = _flat(r.text)
     assert '<html lang="en-GB" class="embed">' in text
     assert "<nav" not in text and "Share this board" not in text
@@ -310,6 +319,8 @@ async def test_a_board_on_a_tv_is_the_board_alone(client: httpx.AsyncClient) -> 
     assert '<html lang="en-GB" class="tv">' in text
     assert "<nav" not in text and "Share this board" not in text
     assert '<figure class="departures live" data-feed="/api/board/LST/COL"' in text
+    assert 'data-station="LST" data-by="destination"' in text
+    assert TALLY in r.text
     assert '<p class="stale-note" hidden></p>' in text
     assert '<button type="button" class="fullscreen quiet" hidden>Full screen</button>' in text
     assert f'<link rel="canonical" href="{BASE}/board/LST/COL" />' in text

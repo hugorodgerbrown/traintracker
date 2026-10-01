@@ -695,14 +695,16 @@ if (onTv()) startTv();
 // fivebar's script (in the page's head) counts the pages by itself. A board
 // made with the picker arrives at #new (site/boards.py), which counts it once
 // as a "New board" and is then taken out of the address, so that a reload, a
-// bookmark or a copied link doesn't count it again. The script loads async, so
-// the event waits in its queue until it has.
+// bookmark or a copied link doesn't count it again. The script loads async:
+// if it has loaded, tally is its function; if not, the event waits in a queue
+// that the script sends once it has.
 if (window.location.hash === "#new") {
   window.history.replaceState(null, "", window.location.pathname + window.location.search);
   const figure = document.querySelector(".departures[data-station]");
   if (figure) {
-    window.tally = window.tally || [];
-    window.tally.push(["New board", { station: figure.dataset.station, by: figure.dataset.by }]);
+    const event = ["New board", { station: figure.dataset.station, by: figure.dataset.by }];
+    if (typeof window.tally === "function") window.tally(...event);
+    else (window.tally = window.tally || []).push(event);
   }
 }
 

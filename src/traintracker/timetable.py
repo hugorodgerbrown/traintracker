@@ -26,12 +26,12 @@ import gzip
 import json
 import logging
 import os
+import sys
 import tempfile
 import threading
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -476,7 +476,6 @@ class Timetable:
         with _cache_lock:
             cls._instances.clear()
             _active_cache.clear()
-            _day_trips.cache_clear()
         with _readers_lock:
             for reader in _readers.values():
                 reader.close()
@@ -523,7 +522,11 @@ class Timetable:
             "WHERE schedule_id = ANY(%s) ORDER BY schedule_id, seq",
             (ids,),
         ):
-            stops.setdefault(sid, []).append(Stop(seq, crs, arr, dep, plat))
+            # Interned: a day has a few hundred thousand stops but only a few
+            # thousand stations and platforms, so each name is held once.
+            stops.setdefault(sid, []).append(
+                Stop(seq, sys.intern(crs), arr, dep, plat and sys.intern(plat))
+            )
         return [
             Trip(sid, m[1], run_date, m[2], m[3], m[4], tuple(stops.get(sid, ())))
             for sid, m in meta.items()
@@ -565,8 +568,11 @@ class Timetable:
         return out
 
     def day_trips(self, day: date) -> list[Trip]:
-        """All public trips running on `day`, plus the previous day's late runners."""
-        return _day_trips(self, self.meta.get("built_at"), day)
+        """All public trips running on `day`, plus the previous day's late runners.
+
+        Not cached: the planner keeps each day's network, which holds these trips.
+        """
+        return _day_trips(self, day)
 
     def trip(self, uid: str, run_date: date) -> Trip | None:
         for sid, u in self.active_ids(run_date).items():
@@ -580,12 +586,20 @@ _active_cache: dict[tuple[Any, ...], dict[int, str]] = {}
 _cache_lock = threading.Lock()
 
 
-# Two days, as in planner._network: a day's trips are tens of megabytes.
-@lru_cache(maxsize=2)
-def _day_trips(tt: Timetable, _built_at: str | None, day: date) -> list[Trip]:
+def _day_trips(tt: Timetable, day: date) -> list[Trip]:
     trips = tt._load_trips(tt.active_ids(day).keys(), day)
     prev = day - timedelta(days=1)
-    for trip in tt._load_trips(tt.active_ids(prev).keys(), prev):
+    # Only the previous day's trains still running after midnight are wanted:
+    # pick them out in the query rather than loading the whole day to keep a few.
+    late = [
+        sid
+        for (sid,) in tt.query(
+            "SELECT DISTINCT schedule_id FROM stops "
+            "WHERE schedule_id = ANY(%s) AND COALESCE(arr, dep) > %s",
+            (list(tt.active_ids(prev)), DAY),
+        )
+    ]
+    for trip in tt._load_trips(late, prev):
         last = trip.stops[-1]
         if (last.arr or last.dep or 0) > DAY:  # still running after midnight
             trips.append(trip)

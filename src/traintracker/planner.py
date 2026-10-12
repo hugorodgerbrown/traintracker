@@ -17,7 +17,7 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime
 from functools import lru_cache
 from itertools import pairwise
-from typing import Literal
+from typing import Any, Literal
 
 from traintracker import stations
 from traintracker.config import UK_TZ
@@ -93,18 +93,34 @@ class Network:
 
 
 _network_lock = threading.Lock()
+# Days kept, newest last, keyed by (timetable, built_at, day). A day's network
+# and its trips come to about 150 MB, and the hosted server has 512 MB.
+_networks: dict[tuple[Any, str | None, date], Network] = {}
+NETWORKS_KEPT = 2
 
 
 def network(tt: Timetable, built_at: str | None, day: date) -> Network:
-    """The day's connections, built once and shared (prewarm and tools race)."""
+    """The day's connections, built once and shared (prewarm and tools race).
+
+    A day that isn't kept makes room before it is built, not after: building
+    one while two are held is what ran the server out of memory. Days from an
+    older timetable go as soon as a new one is read, rather than sitting in
+    the cache beside today's rebuild until something pushes them out.
+    """
+    key = (tt.db, built_at, day)
     with _network_lock:
-        return _network(tt, built_at, day)
+        net = _networks.pop(key, None)
+        if net is None:
+            for old in [k for k in _networks if k[:2] != key[:2]]:
+                del _networks[old]
+            while len(_networks) >= NETWORKS_KEPT:
+                del _networks[next(iter(_networks))]
+            net = _build_network(tt, day)
+        _networks[key] = net  # newest last
+        return net
 
 
-# A day's network is over a hundred megabytes, and the hosted server has 512 MB:
-# today and one other date are kept, and a third replaces the older of them.
-@lru_cache(maxsize=2)
-def _network(tt: Timetable, _built_at: str | None, day: date) -> Network:
+def _build_network(tt: Timetable, day: date) -> Network:
     trips = tuple(tt.day_trips(day))
     conns: list[Conn] = []
     for ti, trip in enumerate(trips):

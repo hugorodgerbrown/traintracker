@@ -287,3 +287,38 @@ def test_unreachable_database_is_explained() -> None:
         Timetable.open(db)
     # Where the database is, and as whom, is not for whoever made the call.
     assert "127.0.0.1" not in str(raised.value) and "nobody" not in str(raised.value)
+
+
+def test_network_cache_makes_room_before_building(
+    tt: Timetable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Building a day while two are held is what ran the server out of memory:
+    # never more than NETWORKS_KEPT days may exist while one is being built.
+    held_during_build: list[int] = []
+    build_network = planner._build_network
+
+    def counting(tt: Timetable, day: date) -> planner.Network:
+        held_during_build.append(len(planner._networks))
+        return build_network(tt, day)
+
+    monkeypatch.setattr(planner, "_build_network", counting)
+    built_at = tt.meta.get("built_at")
+    days = [date(2026, 10, d) for d in (1, 2, 3, 1)]
+    nets = [planner.network(tt, built_at, day) for day in days]
+    assert all(held < planner.NETWORKS_KEPT for held in held_during_build)
+    assert [k[2] for k in planner._networks] == [date(2026, 10, 3), date(2026, 10, 1)]
+    assert planner.network(tt, built_at, date(2026, 10, 3)) is nets[2]  # still kept
+    assert len(held_during_build) == 4
+
+
+def test_network_cache_drops_an_older_timetable(tt: Timetable) -> None:
+    planner.network(tt, "2026-10-01T06:30:00+01:00", DAY)
+    planner.network(tt, "2026-10-02T06:30:00+01:00", DAY)
+    assert [k[1] for k in planner._networks] == ["2026-10-02T06:30:00+01:00"]
+
+
+def test_previous_day_late_runners_only(tt: Timetable) -> None:
+    trips = tt.day_trips(DAY)
+    earlier = [t for t in trips if t.run_date != DAY]
+    assert earlier  # the fixture has a train running past midnight
+    assert all((t.stops[-1].arr or t.stops[-1].dep or 0) > 24 * 60 for t in earlier)

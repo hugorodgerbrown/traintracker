@@ -217,7 +217,7 @@ class DarwinUsage:
                     ).format(s=self.schema),
                     (day,),
                 ).fetchone()
-        except (psycopg.errors.UndefinedTable, psycopg.errors.InvalidSchemaName):
+        except psycopg.errors.UndefinedTable, psycopg.errors.InvalidSchemaName:
             row = None
         waiting = sum(n for (d, _), n in self._pending.items() if d == day)
         return (int(row[0]) if row else 0) + waiting
@@ -227,7 +227,7 @@ class DarwinUsage:
         try:
             with psycopg.connect(self.dsn, connect_timeout=10) as con:
                 stored = self._stored(con)
-        except (psycopg.errors.UndefinedTable, psycopg.errors.InvalidSchemaName):
+        except psycopg.errors.UndefinedTable, psycopg.errors.InvalidSchemaName:
             stored = Usage(0)  # nothing has been counted yet
         by_product = Counter(stored.by_product)
         start = self.today() - timedelta(days=WINDOW_DAYS)

@@ -75,9 +75,9 @@ def test_junction_without_crs_is_dropped(tt: Timetable) -> None:
 
 
 def test_stp_overlay_and_cancellation(tt: Timetable) -> None:
-    def branch_deps(day: date) -> list[str | None]:
+    def branch_deps(day: date) -> list[str]:
         hits = tt.trips_at("MKT", day, 13 * 60, 15 * 60 + 30)
-        return sorted(fmt_minutes(s.dep) for t, s in hits if t.uid.startswith("B"))
+        return sorted(str(fmt_minutes(s.dep)) for t, s in hits if t.uid.startswith("B"))
 
     assert branch_deps(date(2026, 10, 2)) == ["13:58", "14:58"]
     assert branch_deps(date(2026, 10, 3)) == ["14:08", "14:58"]  # overlay

@@ -181,7 +181,7 @@ def timetable_age(settings: Settings) -> timedelta | None:
     """Time since the timetable was built; None if there is none or it can't be read."""
     try:
         built = Timetable.open(settings.timetable_db).meta.get("built_at")
-    except (TrainTrackerError, psycopg.Error):
+    except TrainTrackerError, psycopg.Error:
         return None
     return datetime.now(UK_TZ) - datetime.fromisoformat(built) if built else None
 
@@ -310,7 +310,7 @@ def _covered(tt: Timetable, day: date) -> None:
         raise ToolError(f"{iso} is outside the timetable, which covers {span}.")
 
 
-def _tool_errors(
+def _tool_errors[**P, R](
     fn: Callable[P, Awaitable[R]],
 ) -> Callable[P, Awaitable[R]]:
     """Turn our errors into clean tool errors the model can relay."""

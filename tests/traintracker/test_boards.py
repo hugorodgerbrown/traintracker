@@ -35,7 +35,7 @@ def _board(crs: str = "LST", name: str = "London Liverpool Street") -> Board:
             destination=[StationRef(name=d) for d in to],
             scheduled=time,
             platform=platform,
-            **kw,  # type: ignore[arg-type]
+            **kw,
         )
 
     return Board(
@@ -413,7 +413,8 @@ async def test_a_board_is_kept_for_its_minute(
         real_set(key, value, seconds)
 
     monkeypatch.setattr(shared._kept, "set", spy)
-    monkeypatch.setattr(boards.time, "time", lambda: asked.replace(tzinfo=UK_TZ).timestamp())
+    asked_at = asked.replace(tzinfo=UK_TZ).timestamp()
+    monkeypatch.setattr("traintracker.site.boards.time.time", lambda: asked_at)
     data = await shared.get(boards.BoardKey("LST"))
     assert data["updated"] == updated
     assert kept == [pytest.approx(ttl)]
@@ -427,7 +428,7 @@ async def test_a_board_fetched_across_the_minute_is_not_cached_into_the_next(
 ) -> None:
     # Asked for at 23:22:50; the fetch ends at 23:23:05, in the next minute.
     clock = [datetime(2026, 9, 30, 23, 22, 50, tzinfo=UK_TZ).timestamp()]
-    monkeypatch.setattr(boards.time, "time", lambda: clock[0])
+    monkeypatch.setattr("traintracker.site.boards.time.time", lambda: clock[0])
     fetch = FakeFetch()
 
     async def slow(crs: str, to: str | None, platform: str | None) -> tuple[Board, list[str]]:

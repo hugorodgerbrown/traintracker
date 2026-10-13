@@ -13,3 +13,8 @@ dist/
 *.part
 .DS_Store
 .tox/
+# Titan (Django)
+db.sqlite3
+staticfiles/
+.coverage
+coverage.xml

@@ -124,7 +124,7 @@ def test_the_departure_board_reads_fields_the_board_has() -> None:
 def test_registry_metadata_matches_the_package() -> None:
     # server.json is what the MCP Registry publishes; a release that forgets to
     # update it would list the wrong version.
-    root = Path(__file__).parent.parent
+    root = Path(__file__).parents[2]
     listing = json.loads((root / "server.json").read_text())
     project = tomllib.loads((root / "pyproject.toml").read_text())["project"]
     assert listing["version"] == project["version"] == traintracker.__version__

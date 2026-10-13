@@ -82,5 +82,7 @@ def build_mailer(settings: Settings) -> Mailer | None:
         return None
     if settings.mail_backend == "console":
         return ConsoleMailer()
-    assert settings.resend_api_key and settings.mail_from  # email_sign_in checked them
+    # email_sign_in checked them
+    assert settings.resend_api_key
+    assert settings.mail_from
     return ResendMailer(settings.resend_api_key, settings.mail_from, settings.http_timeout)

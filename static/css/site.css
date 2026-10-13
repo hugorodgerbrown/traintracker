@@ -447,7 +447,8 @@ blockquote p {
   gap: 0 0.75rem;
 }
 
-.departures.live .station h1 {
+.departures.live .station h1,
+.departures.live .station h2 {
   margin: 0;
   font-size: 1.125rem;
   font-weight: 600;

@@ -7,7 +7,7 @@ from apps.public import boards, views
 app_name = "public"
 
 urlpatterns = [
-    path("", views.page, {"path": "/"}, name="home"),
+    path("", boards.home, name="home"),
     path("docs", views.page, {"path": "/docs"}, name="docs"),
     path("privacy", views.page, {"path": "/privacy"}, name="privacy"),
     path("terms", views.page, {"path": "/terms"}, name="terms"),

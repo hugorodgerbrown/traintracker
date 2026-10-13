@@ -49,6 +49,14 @@ class Migration(migrations.Migration):
                 ),
                 ("response_body", models.BinaryField(default=b"")),
                 ("response_content_type", models.CharField(blank=True, max_length=255)),
+                (
+                    "response_headers",
+                    models.JSONField(
+                        blank=True,
+                        default=dict,
+                        help_text="Headers to replay (Location, HX-*…); never cookies.",
+                    ),
+                ),
                 ("expires_at", models.DateTimeField(db_index=True)),
             ],
             options={

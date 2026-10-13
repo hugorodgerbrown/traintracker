@@ -13,7 +13,8 @@ back, marked ``Idempotent-Replayed: true``, without the view running again.
   5xx, 408, 425, 429, 401, a CSRF 403 (``X-CSRF-Failure``) and streaming.
   Storing a 401 would replay "signed out" for 24 hours after the user signs
   back in.
-- A repeat must match the original's method, path, user and body hash;
+- A repeat must match the original's method, path and query string, user
+  and body hash;
   otherwise it is a 409, never another request's response.
 - A state-changing request without a key passes straight through, so plain
   HTML forms keep working.
@@ -32,6 +33,8 @@ logger = logging.getLogger(__name__)
 
 STATE_CHANGING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 MAX_KEY_LENGTH = 128
+# IdempotencyRecord.path holds the path and query string.
+MAX_TARGET_LENGTH = 2048
 TTL = timedelta(hours=24)
 # Statuses the outbox pauses on or retries (static/js/outbox_core.js classify).
 RETRYABLE_STATUSES = frozenset({401, 408, 425, 429})
@@ -53,9 +56,13 @@ class IdempotencyMiddleware:
 
         from apps.core.models import IdempotencyRecord
 
+        # The query string too: DELETE /items?id=1 and ?id=2 are different writes.
+        target = request.get_full_path()
+        if len(target) > MAX_TARGET_LENGTH:
+            return HttpResponse("Request target too long for an Idempotency-Key", status=414)
         fingerprint = {
             "method": request.method or "",
-            "path": request.path,
+            "path": target,
             "principal": _principal(request),
             "body_hash": hashlib.sha256(request.body).hexdigest(),
         }

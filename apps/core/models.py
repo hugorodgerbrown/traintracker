@@ -17,6 +17,10 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
+# Response headers a replay leaves out: the body and type are stored
+# separately, and a replay must never set the first response's cookies.
+_UNREPLAYED_HEADERS = frozenset({"content-type", "content-length", "set-cookie"})
+
 # How many times reserve() retries when a competing request keeps
 # releasing the key between our INSERT and our read.
 _RESERVE_ATTEMPTS = 3
@@ -118,6 +122,7 @@ class IdempotencyRecordManager(models.Manager["IdempotencyRecord"]):
                 response_status=None,
                 response_body=b"",
                 response_content_type="",
+                response_headers={},
                 expires_at=now + ttl,
                 updated_at=now,
                 **fingerprint,
@@ -159,6 +164,11 @@ class IdempotencyRecord(BaseModel):
     response_status = models.PositiveSmallIntegerField(null=True, blank=True)
     response_body = models.BinaryField(default=b"")
     response_content_type = models.CharField(max_length=255, blank=True)
+    response_headers = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Headers to replay (Location, HX-*…); never cookies.",
+    )
     expires_at = models.DateTimeField(db_index=True)
 
     objects = IdempotencyRecordManager()
@@ -195,6 +205,11 @@ class IdempotencyRecord(BaseModel):
         self.response_status = response.status_code
         self.response_body = bytes(response.content)
         self.response_content_type = str(response.get("Content-Type", ""))[:255]
+        self.response_headers = {
+            name: value
+            for name, value in response.items()
+            if name.lower() not in _UNREPLAYED_HEADERS
+        }
         self.expires_at = timezone.now() + ttl
         self.save(
             update_fields=[
@@ -202,6 +217,7 @@ class IdempotencyRecord(BaseModel):
                 "response_status",
                 "response_body",
                 "response_content_type",
+                "response_headers",
                 "expires_at",
                 "updated_at",
             ]
@@ -212,11 +228,13 @@ class IdempotencyRecord(BaseModel):
         type(self).objects.filter(pk=self.pk, status=self.Status.RESERVED).delete()
 
     def build_response(self) -> HttpResponse:
-        """Rebuild the stored response, marked as a replay."""
+        """Rebuild the stored response, its headers included, marked as a replay."""
         response = HttpResponse(
             bytes(self.response_body),
             status=self.response_status or 200,
             content_type=self.response_content_type or None,
         )
+        for name, value in (self.response_headers or {}).items():
+            response[name] = value
         response["Idempotent-Replayed"] = "true"
         return response

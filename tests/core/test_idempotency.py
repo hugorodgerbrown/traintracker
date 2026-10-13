@@ -24,10 +24,10 @@ def _no_calls() -> None:
     urls.CALLS.clear()
 
 
-def post(client: Client, body: dict[str, Any], key: str | None = "key-1") -> Any:
+def post(client: Client, body: dict[str, Any], key: str | None = "key-1", url: str = URL) -> Any:
     """POST JSON to the test write endpoint, with an Idempotency-Key unless key is None."""
     headers = {"Idempotency-Key": key} if key else {}
-    return client.post(URL, json.dumps(body), content_type="application/json", headers=headers)
+    return client.post(url, json.dumps(body), content_type="application/json", headers=headers)
 
 
 def test_replay_returns_first_response_without_running_view_again(signed_in: Client) -> None:
@@ -38,6 +38,29 @@ def test_replay_returns_first_response_without_running_view_again(signed_in: Cli
     assert second.content == first.content
     assert second["Idempotent-Replayed"] == "true"
     assert len(urls.CALLS) == 1
+
+
+def test_a_replay_keeps_the_headers_but_not_the_cookies(signed_in: Client) -> None:
+    """Location (and HX-* and the like) come back on a replay; Set-Cookie never does."""
+    first = post(signed_in, {"text": "hello"})
+    second = post(signed_in, {"text": "hello"})
+    assert second["Location"] == first["Location"] == "/write/1/"
+    assert "seen" in first.cookies
+    assert "seen" not in second.cookies
+
+
+def test_same_key_different_query_string_is_a_conflict(signed_in: Client) -> None:
+    """?id=1 and ?id=2 are different writes, though their path and body are the same."""
+    post(signed_in, {}, url=f"{URL}?id=1")
+    assert post(signed_in, {}, url=f"{URL}?id=2").status_code == 409
+    assert len(urls.CALLS) == 1
+
+
+def test_a_keyed_request_target_must_fit_the_record(signed_in: Client) -> None:
+    """A path and query string too long to store is refused rather than half-checked."""
+    response = post(signed_in, {}, url=f"{URL}?q={'x' * 2048}")
+    assert response.status_code == 414
+    assert not urls.CALLS
 
 
 def test_no_key_passes_through(signed_in: Client) -> None:

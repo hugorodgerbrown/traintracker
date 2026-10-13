@@ -22,7 +22,11 @@ def write(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"calls": len(CALLS)})
     body = json.loads(request.body or b"{}")
     CALLS.append(body)
-    return JsonResponse({"saved": body, "calls": len(CALLS)}, status=201)
+    response = JsonResponse({"saved": body, "calls": len(CALLS)}, status=201)
+    # A created resource's address, as a real write would give it.
+    response["Location"] = f"/write/{len(CALLS)}/"
+    response.set_cookie("seen", "1")
+    return response
 
 
 urlpatterns = [path("write/", write, name="write")]

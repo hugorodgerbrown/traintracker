@@ -8,6 +8,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.core import mail
 from django.core.cache import cache
+from django.core.mail import EmailMultiAlternatives
 from django.test import Client
 from django.urls import reverse
 
@@ -84,8 +85,11 @@ def test_sign_in_email_has_a_simple_html_version(client: Client) -> None:
     """The HTML half carries the same code and link as the text half, escaped."""
     request_email(client)
     link, code = emailed()
-    html, kind = mail.outbox[0].alternatives[0]
+    message = mail.outbox[0]
+    assert isinstance(message, EmailMultiAlternatives)
+    content, kind = message.alternatives[0]
     assert kind == "text/html"
+    html = str(content)
     assert code in html
     assert link in html
 

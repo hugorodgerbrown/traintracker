@@ -174,7 +174,14 @@ LOGGING = {
     "formatters": {"plain": {"format": "%(levelname)s %(name)s %(message)s"}},
     "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "plain"}},
     "root": {"handlers": ["console"], "level": "INFO"},
-    "loggers": {"django.db.backends": {"level": "WARNING"}},
+    "loggers": {
+        "django.db.backends": {"level": "WARNING"},
+        # httpx logs every request URL at INFO. The Network Rail download
+        # (refresh_timetable) redirects to a presigned S3 URL whose query string
+        # holds temporary AWS credentials. As traintracker.server does for its CLI.
+        "httpx": {"level": "WARNING"},
+        "httpcore": {"level": "WARNING"},
+    },
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

@@ -1,6 +1,7 @@
 """Tests for the rail management commands: refresh_timetable, import_timetable, rail_status."""
 
 import gzip
+import logging
 from io import StringIO
 from pathlib import Path
 
@@ -78,3 +79,9 @@ def test_status_reports_sources_and_timetable(feed_file: Path) -> None:
     out = run("rail_status")
     assert "Darwin:" in out
     assert "built_at" in out
+
+
+def test_request_urls_are_not_logged() -> None:
+    """The download's presigned URL, in httpx's INFO lines, stays out of Django's logs."""
+    assert logging.getLogger("httpx").getEffectiveLevel() >= logging.WARNING
+    assert logging.getLogger("httpcore").getEffectiveLevel() >= logging.WARNING

@@ -195,6 +195,24 @@ def test_a_call_that_takes_too_long_says_try_again(monkeypatch: Any) -> None:
         _run_train_tool("find_station", {"query": "x"})
 
 
+def test_an_unexpected_error_tells_the_model_nothing_of_the_server(monkeypatch: Any) -> None:
+    """The SDK's unexpected errors can carry internals; the model gets a plain message."""
+    from mcp.server.mcpserver.exceptions import UnexpectedToolError
+
+    from apps.rail import runtime
+
+    def broken(*args: Any, **kwargs: Any) -> Any:
+        try:
+            raise KeyError("/srv/secret/path")
+        except KeyError as exc:
+            raise UnexpectedToolError("Error executing tool x: /srv/secret/path") from exc
+
+    monkeypatch.setattr(runtime, "run", broken)
+    with pytest.raises(ToolError) as caught:
+        _run_train_tool("find_station", {"query": "x"})
+    assert str(caught.value) == "Something went wrong on the server. Try again."
+
+
 def call_endpoint(client: Client, body: Any, headers: dict[str, str] | None = None) -> Any:
     """POST ``body`` to /mcp with a valid bearer token for an ordinary user."""
     token = TestMCPAuth().token_for(UserFactory.create())

@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from mcp.server.mcpserver.exceptions import ToolError as SdkToolError
+from mcp.server.mcpserver.exceptions import UnexpectedToolError
 from mcp.server.mcpserver.tools import Tool as SdkTool
 
 from apps.rail import runtime
@@ -77,11 +78,16 @@ def _run_train_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
 
     The server checks the arguments against the tool's schema and turns
     Traintrackr's own errors into messages for the model; either arrives
-    here as the SDK's ToolError. Its message can repeat what the caller
-    asked, which the privacy policy keeps out of the logs.
+    here as the SDK's ToolError, whose message is written for the model. Its
+    message can repeat what the caller asked, which the privacy policy keeps
+    out of the logs. Anything else the SDK calls unexpected, and its message
+    could carry internals, so the model gets a plain one.
     """
     try:
         result = runtime.run(server.mcp.call_tool, name, args)
+    except UnexpectedToolError as exc:
+        logger.error("mcp.tool name=%s raised %s", name, type(exc.__cause__).__name__)
+        raise ToolError("Something went wrong on the server. Try again.") from None
     except SdkToolError as exc:
         logger.info("mcp.tool name=%s failed", name)
         raise ToolError(str(exc)) from None

@@ -91,6 +91,7 @@ INSTALLED_APPS = [
     "whitenoise.runserver_nostatic",
     "django.contrib.staticfiles",
     "apps.core",
+    "apps.rail",
 ]
 
 MIDDLEWARE = [

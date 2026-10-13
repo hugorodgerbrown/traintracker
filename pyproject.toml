@@ -41,7 +41,7 @@ test = [
 lint = [
     # Exact pin, bumped in step with .pre-commit-config.yaml so the hook and
     # CI never disagree.
-    "ruff==0.16.10",
+    "ruff==0.17.0",
 ]
 types = [
     "django-stubs>=6.0.2,<7",

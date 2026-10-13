@@ -165,7 +165,8 @@ def render_page(
     markup_fields = {
         "content": content,
         "nav": _nav(current),
-        "home_current": ' aria-current="page"' if current == "/" else "",
+        # The attribute is always there, quoted in layout.html; "false" is its default.
+        "home_current": "page" if current == "/" else "false",
     }
     for key, markup in markup_fields.items():
         page = page.replace("{{ " + key + " }}", markup)

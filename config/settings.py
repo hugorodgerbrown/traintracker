@@ -8,8 +8,8 @@ production hardening that `manage.py check --deploy` asks for.
 Traintrackr is moving onto the Titan template in four steps
 (docs/decisions/traintrackr-moves-onto-titan-in-four-steps.md). Until the
 last one, production still runs `traintracker serve-http` (src/traintracker)
-and nothing here is deployed. Step 2 brings the accounts and the MCP
-endpoint; the public pages arrive with step 3.
+and nothing here is deployed. Step 2 brought the accounts and the MCP
+endpoint, step 3 the public pages and the boards.
 
 Django's tables live in the database's default schema. The timetable, the
 Darwin usage counts and the current sign-in each keep a schema of their own
@@ -110,6 +110,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "apps.core",
     "apps.accounts",
+    "apps.public",
     "apps.rail",
     "apps.mcp",
     # After the project's apps so their templates (templates/mcp_auth/) win.
@@ -136,13 +137,16 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [BASE_DIR / "templates"],
+        # The site's page fragments are production's own files until Titan 4/4
+        # moves them into apps/public (apps/public/views.py).
+        "DIRS": [BASE_DIR / "templates", BASE_DIR / "src" / "traintracker" / "site"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "apps.core.analytics.analytics",
             ],
         },
     },

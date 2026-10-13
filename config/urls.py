@@ -12,6 +12,8 @@ admin.site.site_header = APP_NAME
 admin.site.site_title = APP_NAME
 
 urlpatterns = [
+    # Public: the homepage, docs, privacy, terms and the departure boards.
+    path("", include("apps.public.urls")),
     # Signing in and out, and the account page.
     path("", include("apps.accounts.urls")),
     # Health checks: /livez for Render (process up), /healthz adds the database.

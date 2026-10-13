@@ -232,6 +232,21 @@ def test_the_landing_page_still_opens_when_the_board_cannot_be_had(
     assert empty in board
 
 
+def test_the_landing_page_still_opens_when_the_board_stalls(
+    client: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A board call that times out leaves the page up, with its board saying so."""
+
+    def stalled(*args: object) -> None:
+        """Time out, as runtime.run does when a call runs past its limit."""
+        raise TimeoutError
+
+    monkeypatch.setattr(boards.runtime, "run", stalled)
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "The live board isn&#x27;t answering." in response.content.decode()
+
+
 def _tools() -> list[Tool]:
     """The tools the MCP server lists."""
 

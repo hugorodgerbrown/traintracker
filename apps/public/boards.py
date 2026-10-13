@@ -239,6 +239,8 @@ def home(request: HttpRequest) -> HttpResponse:
         # The page is still worth reading: the board says why it is empty,
         # and site.js fills it in when the next fetch works.
         data, problem = tt.unavailable(HOME_BOARD), str(exc)
+    except TimeoutError:
+        data, problem = tt.unavailable(HOME_BOARD), "The live board isn't answering."
     fields = _board_fields(HOME_BOARD, data, "home", problem)
     fields |= {"trains": fields["trains"][:HOME_ROWS], "rows": HOME_ROWS}
     context = page_context("/", title, description, "/") | fields

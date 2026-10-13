@@ -80,6 +80,14 @@ def test_sign_in_emails_a_link_and_a_code(client: Client) -> None:
     assert b"walker@example.com" in page.content
 
 
+def test_code_page_draws_the_code_as_six_boxes(client: Client) -> None:
+    """The code field carries code_input.js's hook, and the page loads the script."""
+    request_email(client)
+    page = client.get(CODE).content.decode()
+    assert re.search(r'<input id="code"[^>]*data-code-input data-code-length="6"', page)
+    assert "js/code_input.js" in page
+
+
 def test_a_bad_email_is_refused(client: Client) -> None:
     """An invalid address re-renders the form with an error, and sends nothing."""
     response = request_email(client, "not an email")

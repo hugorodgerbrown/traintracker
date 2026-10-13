@@ -5,7 +5,8 @@ Until Titan 4/4 both exist: production serves ``src/traintracker/site`` from
 cut-over. Each address below is asked of both, with the same boards behind
 them; the status, the redirect and what a reader gets (the words, the links,
 the form fields and the data site.js reads) must be the same. Only where the
-static files live and the clock's second may differ.
+static files live, the clock's second and whether a link names the site may
+differ.
 """
 
 import asyncio
@@ -17,11 +18,15 @@ import httpx
 import pytest
 from django.test import Client
 
+from tests.traintracker.test_boards import BASE
+
 # Static files are /static/site.css?v=... in production and
 # /static/css/site.css (hashed when DEBUG is off) in Django.
 _STATIC = re.compile(r"/static/(?:[\w-]+/)*([\w-]+?)(?:\.[0-9a-f]{12})?\.(\w+)(?:\?v=\w+)?")
 # Attributes that hold the time of the request, not the board.
 _NOW = {"datetime"}
+# Django writes every link as a path (a frame resolves it on its own site);
+# production writes the embed's link to the board in full.
 
 
 class _Reading(HTMLParser):
@@ -36,6 +41,8 @@ class _Reading(HTMLParser):
         kept = sorted(
             (name, _STATIC.sub(r"\1.\2", value or "")) for name, value in attrs if name not in _NOW
         )
+        if tag == "a":
+            kept = [(n, v.removeprefix(BASE) if n == "href" else v) for n, v in kept]
         self.tokens.append((tag, kept))
         self.in_clock = tag == "time"
 

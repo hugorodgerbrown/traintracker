@@ -1,12 +1,12 @@
 {% extends "public/layout.html" %}
 {% block content %}{% include "public/_figure.html" %}
-<p class="hint">Live times, updated every minute.{% if key.to %} <a href="{{ all_path }}">Every train from {{ station_name }}</a>.{% endif %}
+<p class="hint">Live times, updated every minute.{% if key.to %} <a href="/{{ all_path }}">Every train from {{ station_name }}</a>.{% endif %}
   <a href="/board">Choose another station</a>.</p>
 {% if platform_links %}
 <h2 id="platforms">One platform</h2>
 <p>The board for one platform shows only the trains leaving from it.</p>
 <ul class="chips">
-{% for path, text, here in platform_links %}<li><a href="{{ path }}"{% if here %} aria-current="page"{% endif %}>{{ text }}</a></li>
+{% for path, text, here in platform_links %}<li><a href="/{{ path }}"{% if here %} aria-current="page"{% endif %}>{{ text }}</a></li>
 {% endfor %}</ul>
 {% endif %}
 <h2 id="share">Share this board</h2>

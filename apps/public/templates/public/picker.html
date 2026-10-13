@@ -23,9 +23,9 @@
 </form>
 {% if choices %}<h2 id="which">{{ choices.heading }}</h2>
 <ul class="choices">
-{% for name, crs, href in choices.options %}<li><a href="{{ href }}">{{ name }}</a> ({{ crs }})</li>
+{% for name, crs, href in choices.options %}<li><a href="/{{ href }}">{{ name }}</a> ({{ crs }})</li>
 {% endfor %}</ul>{% endif %}
 <h2>Examples</h2>
 <ul>
-{% for path, title in examples %}<li><a href="{{ path }}">{{ title }}</a></li>
+{% for path, title in examples %}<li><a href="/{{ path }}">{{ title }}</a></li>
 {% endfor %}</ul>{% endblock %}

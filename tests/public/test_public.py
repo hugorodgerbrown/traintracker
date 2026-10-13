@@ -1,5 +1,6 @@
 """What Django adds around the pages: headers, framing, caching and limits."""
 
+import re
 from typing import Any
 
 import pytest
@@ -37,6 +38,16 @@ def test_only_an_embedded_board_may_be_framed(client: Client) -> None:
         response = client.get(address)
         assert response["X-Frame-Options"] == "DENY", address
         assert "frame-ancestors 'none'" in response["Content-Security-Policy"], address
+
+
+def test_every_link_is_a_path_on_the_site(client: Client) -> None:
+    """Links the views fill in start with "/"; an embed's link opens the board on the site."""
+    for address in ("/", "/board/LST", "/board/LST/COL", "/board?station=liverpool", "/board"):
+        hrefs = re.findall(r'<a [^>]*href="([^"]*)"', client.get(address).content.decode())
+        assert hrefs, address
+        assert all(h.startswith(("/", "#", "https://", "mailto:")) for h in hrefs), address
+    embedded = client.get("/board/LST?embed=1").content.decode()
+    assert '<a href="/board/LST" target="_blank" rel="noopener">Traintrackr</a>' in embedded
 
 
 def test_boards_are_cached_for_half_a_minute_and_the_feed_to_its_minute(client: Client) -> None:

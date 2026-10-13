@@ -25,7 +25,7 @@ from django.shortcuts import redirect, render
 from django.views.decorators.http import require_safe
 
 from apps.core.ratelimit import client_ip, over_limit
-from apps.public.views import page_context
+from apps.public.views import page_context, relative
 from apps.rail import runtime
 from traintracker import server, stations
 from traintracker.config import UK_TZ
@@ -78,6 +78,7 @@ def _figure_context(
     return {
         **page_context(key.path, title, description, "/board"),
         "key": key,
+        "board_path": relative(key.path),
         "mode": mode,
         "board": data,
         "kind": key.kind(),
@@ -97,14 +98,14 @@ def _board_page(
     url = context["page_url"]
     platform_links = []
     if (data["platforms"] or key.platform) and not key.to:
-        platform_links = [(tt.BoardKey(key.crs).path, "All", key.platform is None)] + [
-            (tt.BoardKey(key.crs, platform=p.upper()).path, p, p.upper() == key.platform)
+        platform_links = [(relative(tt.BoardKey(key.crs).path), "All", key.platform is None)] + [
+            (relative(tt.BoardKey(key.crs, platform=p.upper()).path), p, p.upper() == key.platform)
             for p in data["platforms"]
             if tt.PLATFORM.fullmatch(p.upper())
         ]
     context |= {
         "platform_links": platform_links,
-        "all_path": tt.BoardKey(key.crs).path,
+        "all_path": relative(tt.BoardKey(key.crs).path),
         "station_name": tt._name(key.crs),
         "embed_code": (
             f'<iframe src="{url}?embed=1" title="{key.title()}" width="100%" '
@@ -150,7 +151,7 @@ def _picker(
         "problem": problem,
         "choices": choices,
         "max_query": stations.MAX_QUERY,
-        "examples": [(k.path, k.title()) for k in tt.EXAMPLES],
+        "examples": [(relative(k.path), k.title()) for k in tt.EXAMPLES],
     }
     response = render(request, "public/picker.html", context, status=status)
     response["Cache-Control"] = "public, max-age=30"
@@ -164,7 +165,7 @@ def _choices(
     return {
         "heading": heading,
         "options": [
-            (s.name, s.crs, f"{tt.PICKER_PATH}?{urlencode(typed | {field: s.crs})}")
+            (s.name, s.crs, f"{relative(tt.PICKER_PATH)}?{urlencode(typed | {field: s.crs})}")
             for s in candidates
         ],
     }

@@ -30,6 +30,15 @@ NAV = [
 ]
 
 
+def relative(path: str) -> str:
+    """A site path without its leading slash, for a template's ``href="/{{ path }}"``.
+
+    Every link the templates write starts with a literal ``/``, so no value
+    can turn it into another scheme (``javascript:``).
+    """
+    return path.removeprefix("/")
+
+
 @cache
 def fields() -> dict[str, str]:
     """The values the pages name: the MCP address and the fair-use line."""
@@ -44,7 +53,7 @@ def page_context(path: str, title: str, description: str, current: str) -> dict[
         "page_url": f"{settings.SITE_URL}{path}",
         "share_image": f"{settings.SITE_URL}{static('img/share.png')}",
         "share_image_alt": site.SHARE_IMAGE_ALT,
-        "nav": NAV,
+        "nav": [(relative(p), text, p == current) for p, text in NAV],
         "current": current,
         **fields(),
     }

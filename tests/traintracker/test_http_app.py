@@ -562,7 +562,7 @@ async def test_wrong_passphrases_over_many_sign_ins_pause_the_passphrase(
 
     async def no_sleep(_: float) -> None: ...
 
-    monkeypatch.setattr(oauth.asyncio, "sleep", no_sleep)
+    monkeypatch.setattr("traintracker.oauth.asyncio.sleep", no_sleep)
     client_id = await _register(client)
     for _ in range(2):
         sign_in, _ = await _start_sign_in(client, client_id)
@@ -574,7 +574,7 @@ async def test_wrong_passphrases_over_many_sign_ins_pause_the_passphrase(
     assert right.status_code == 429 and "paused" in right.text
     # An hour on, the passphrase is accepted again.
     hour_on = time.time() + 3601
-    monkeypatch.setattr(oauth.time, "time", lambda: hour_on)
+    monkeypatch.setattr("traintracker.oauth.time.time", lambda: hour_on)
     later = await client.post("/sign-in", data={"request": sign_in, "passphrase": PASSPHRASE})
     assert later.status_code != 429
 

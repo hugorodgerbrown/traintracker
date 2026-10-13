@@ -1,13 +1,15 @@
-# Weekly updates for the locked Python dependencies and the pinned Actions.
-# The uv version (render.yaml, tox.yml) and the tox versions (tox.yml) are
-# written into commands, which Dependabot doesn't read: raise those by hand.
+# Weekly updates for the locked Python dependencies and the pinned Actions,
+# grouped into one PR each. tox's `audit` env (in CI, and weekly) catches a
+# known CVE between these. The uv version (render.yaml, ci.yml) and the tox
+# versions (ci.yml) are written into commands, which Dependabot doesn't read:
+# raise those by hand.
 version: 2
 updates:
   - package-ecosystem: uv
     directory: /
-    schedule:
-      interval: weekly
+    schedule: { interval: weekly }
+    groups:
+      python: { patterns: ["*"] }
   - package-ecosystem: github-actions
     directory: /
-    schedule:
-      interval: weekly
+    schedule: { interval: weekly }

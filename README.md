@@ -197,7 +197,7 @@ For each date it applies Network Rail's precedence rules per train: cancellation
 
 ## Install
 
-Requires [uv](https://docs.astral.sh/uv/), Python 3.11+ and a Postgres database (any version from 13). Locally, Docker (or OrbStack) is the quickest way to get one:
+Requires [uv](https://docs.astral.sh/uv/), Python 3.14 (uv installs it from `.python-version`) and a Postgres database (any version from 13). Locally, Docker (or OrbStack) is the quickest way to get one:
 
 ```bash
 docker run -d --name traintracker-pg --restart unless-stopped \
@@ -393,24 +393,30 @@ Version 0.1.0 is published. CI doesn't publish: a new version is published by ha
 
 ## Development
 
-tox runs formatting, lint, type and test checks on Python 3.11 from `uv.lock` (via the `tox-uv` plugin). The tests need a Postgres they can create schemas in, at `TEST_DATABASE_URL` (default `postgresql://postgres:postgres@127.0.0.1:55432/postgres`, which the `docker run` under [Install](#install) provides). Each test works in its own schema and drops it afterwards. CI runs Postgres 17 as a service.
+Traintrackr is moving onto [Titan](https://github.com/hugorodgerbrown/django-titan-template), the Django project template its sibling apps are built from, in four steps ([the decision](docs/decisions/traintrackr-moves-onto-titan-in-four-steps.md)). The first step brings the template's Django project (`manage.py`, `config/`, `apps/core/`) and its checks; the MCP server in `src/traintracker/` is still what runs in production, unchanged, until the last step.
+
+tox runs every check on Python 3.14 from `uv.lock` (via the `tox-uv` plugin), as Titan does; [docs/testing.md](docs/testing.md) says which test goes where. The MCP server's tests need a Postgres they can create schemas in, at `TEST_DATABASE_URL` (default `postgresql://postgres:postgres@127.0.0.1:55432/postgres`, which the `docker run` under [Install](#install) provides). Each test works in its own schema and drops it afterwards. CI runs Postgres 17 as a service.
 
 ```bash
-uvx --with tox-uv tox              # all environments: format, lint, type, tests
-uvx --with tox-uv tox -e tests     # one environment
-uvx --with tox-uv tox -e tests -- -k platform   # arguments after -- go to the tool
+uvx --with tox-uv tox              # fmt, lint, types, checks, test, audit
+uvx --with tox-uv tox -e test      # one environment
+uvx --with tox-uv tox -e test -- -k platform   # arguments after -- go to the tool
+uvx --with tox-uv tox -e sast      # semgrep (downloads its rule packs)
 ```
 
-CI runs the same environments with the versions of uv, tox and tox-uv written into [`.github/workflows/tox.yml`](.github/workflows/tox.yml), and its Actions pinned to a commit. Dependabot ([`.github/dependabot.yml`](.github/dependabot.yml)) proposes updates to `uv.lock` and to the Actions each week; the uv and tox versions are raised by hand, uv in `render.yaml` as well.
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs each environment as its own job, with `sast` and a gitleaks scan as well, using the versions of uv, tox and tox-uv written into the workflow, and its Actions pinned to a commit. Dependabot ([`.github/dependabot.yml`](.github/dependabot.yml)) proposes updates to `uv.lock` and to the Actions each week; the uv and tox versions are raised by hand, uv in `render.yaml` as well. `uv run pre-commit install` runs ruff, gitleaks and mypy before each commit.
 
 | Environment | Runs |
 |---|---|
-| `format` | `ruff format --check` |
-| `lint` | `ruff check` |
-| `type` | `mypy` (strict) |
-| `tests` | `pytest`: importer, STP rules, planner, download, clients, demo mode, tools end to end, sign-in, rate limit, site, Darwin usage |
+| `fmt` | `ruff format --check` |
+| `lint` | `ruff check`: Titan's rules, docstrings and bandit included. `src/traintracker/` and its tests keep their earlier rule set until step 2 moves them into `apps/` |
+| `types` | `mypy` with django-stubs; `src/traintracker/` stays strict |
+| `checks` | `manage.py check --deploy` with production settings, and no missing migrations |
+| `test` | `pytest` with coverage (floor 90%): `tests/core/` for the Django project; `tests/traintracker/` for the importer, STP rules, planner, download, clients, demo mode, tools end to end, sign-in, rate limit, site and Darwin usage |
+| `audit` | `pip-audit` over the production dependencies |
+| `sast` | `semgrep` (not in the default list: it downloads rule packs) |
 
-Tests use a synthetic SCHEDULE feed in Network Rail's JSON format (`tests/feedgen.py`) and API fixtures shaped on the published Darwin schema. They aren't live recordings, so the first run against real services is the final check.
+Tests use a synthetic SCHEDULE feed in Network Rail's JSON format (`tests/traintracker/feedgen.py`) and API fixtures shaped on the published Darwin schema. They aren't live recordings, so the first run against real services is the final check.
 
 ### Preview servers
 
@@ -424,6 +430,7 @@ Tests use a synthetic SCHEDULE feed in Network Rail's JSON format (`tests/feedge
 The Inspector needs Node 22.19 or later. It starts a local server that can run commands, guarded by a token it makes at each launch and puts into the page it serves; the config leaves that on.
 
 ```
+manage.py        Django (Titan): config/ settings and URLs, apps/core/ shared pieces
 src/traintracker/
   server.py      MCP tools, source fallback, live overlay, CLI
   http_app.py    Streamable-HTTP entry point: auth wiring, Host check, health check

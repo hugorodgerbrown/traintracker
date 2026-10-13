@@ -173,7 +173,7 @@ def _darwin_page(times: list[str]) -> dict[str, Any]:
 @respx.mock
 async def test_darwin_pages_past_ten_rows(settings: Settings) -> None:
     pages = {
-        "0": [f"13:{m:02d}" for m in range(0, 10)],
+        "0": [f"13:{m:02d}" for m in range(10)],
         "14": [f"13:{m:02d}" for m in range(9, 19)],  # overlaps the first page by one
     }
     route = respx.get(f"{settings.darwin_departures_url}/GetDepBoardWithDetails/LST").mock(
@@ -183,7 +183,7 @@ async def test_darwin_pages_past_ten_rows(settings: Settings) -> None:
     )
     async with httpx.AsyncClient() as http:
         board = await DarwinClient(settings, http).board("LST", "departures", rows=15)
-    assert [s.scheduled for s in board.services] == [f"13:{m:02d}" for m in range(0, 15)]
+    assert [s.scheduled for s in board.services] == [f"13:{m:02d}" for m in range(15)]
     assert [c.request.url.params["numRows"] for c in route.calls] == ["10", "10"]
 
 

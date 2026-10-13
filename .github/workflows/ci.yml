@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Weekly, so a new CVE in a pinned dependency shows up without a push.
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # One job per tox env: the same commands as `uv run tox` locally.
+  tox:
+    name: ${{ matrix.env }}
+    runs-on: ubuntu-latest
+    # The MCP server's tests make their schemas in a real Postgres.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [fmt, lint, types, checks, test, audit, sast]
+    steps:
+      # Actions are pinned to a commit: a tag can be moved to other code.
+      # Dependabot raises the commit and the version in the comment together.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # uv installs the Python in .python-version for tox.
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.19" # as in render.yaml
+          enable-cache: true
+      - name: Run tox -e ${{ matrix.env }}
+        run: uvx --with tox-uv==1.36.0 tox@4.64.5 -e ${{ matrix.env }}
+
+  secrets:
+    name: secrets
+    runs-on: ubuntu-latest
+    # gitleaks-action reads the PR's commit range through the API.
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_VERSION: "8.30.1"

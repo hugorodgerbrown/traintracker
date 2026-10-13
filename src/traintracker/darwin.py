@@ -221,7 +221,7 @@ class DarwinClient:
             offset = nxt
             try:
                 page = await self._page(crs, board, filter_crs, offset, end - offset)
-            except (UpstreamError, httpx.HTTPError):
+            except UpstreamError, httpx.HTTPError:
                 break  # keep what the earlier pages returned
             new = [s for s in page.board.services if s.service_id not in seen]
             seen.update(s.service_id for s in new)

@@ -8,7 +8,7 @@ import json
 import os
 import re
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -53,7 +53,7 @@ async def client(settings: Settings) -> AsyncIterator[httpx.AsyncClient]:
 
 
 @pytest.fixture
-def resend() -> AsyncIterator[respx.Route]:
+def resend() -> Iterator[respx.Route]:
     with respx.mock(assert_all_called=False) as mock:
         yield mock.post(RESEND_URL).mock(return_value=httpx.Response(200, json={"id": "m1"}))
 

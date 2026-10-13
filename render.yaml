@@ -4,7 +4,7 @@
 #
 # uv is pinned: the build runs with the service's secrets in its environment, so
 # it installs a known version, and uv then installs exactly what uv.lock lists.
-# Raise the version here and in .github/workflows/tox.yml together.
+# Raise the version here and in .github/workflows/ci.yml together.
 services:
   - type: web
     name: traintracker

@@ -1,0 +1,44 @@
+{% load static %}<!doctype html>
+{# The site's pages, as src/traintracker/site/layout.html draws them. #}
+<html lang="en-GB">
+  <head>
+{% include "public/_head.html" %}
+    <meta property="og:title" content="{{ title }}" />
+    <meta property="og:description" content="{{ description }}" />
+    <meta property="og:url" content="{{ page_url }}" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Traintrackr" />
+    <meta property="og:image" content="{{ share_image }}" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="{{ share_image_alt }}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="apple-touch-icon" href="{% static 'icons/icon-180.png' %}" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header>
+      <a class="name" href="/" aria-label="Traintrackr home" aria-current="{% if current == '/' %}page{% else %}false{% endif %}"><img src="{% static 'icons/icon.svg' %}" alt="" width="32" height="32" />Traintrackr</a>
+      <nav aria-label="Site">
+        <ul>
+          {% for path, text, here in nav %}<li><a href="/{{ path }}"{% if here %} aria-current="page"{% endif %}>{{ text }}</a></li>
+          {% endfor %}
+        </ul>
+      </nav>
+    </header>
+    <main id="main">{% block content %}{% endblock %}</main>
+    <footer>
+      {# TODO(hugo): add the "Powered by National Rail" logo here once National Rail gives permission (TRA-9). #}
+      <p>
+        Live train times:
+        <a href="https://www.nationalrail.co.uk/">Powered by National Rail Enquiries</a>. <a href="/docs#data">Data sources</a>.
+      </p>
+      <p>
+        Traintrackr is not run by, or endorsed by, National Rail Enquiries or
+        Network Rail. Contact:
+        <a href="mailto:support@traintrackr.live">support@traintrackr.live</a>.
+      </p>
+    </footer>
+  </body>
+</html>

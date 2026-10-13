@@ -1,0 +1,35 @@
+{% extends "public/layout.html" %}
+{% block content %}{% include "public/_figure.html" %}
+<p class="hint">Live times, updated every minute.{% if key.to %} <a href="/{{ all_path }}">Every train from {{ station_name }}</a>.{% endif %}
+  <a href="/board">Choose another station</a>.</p>
+{% if platform_links %}
+<h2 id="platforms">One platform</h2>
+<p>The board for one platform shows only the trains leaving from it.</p>
+<ul class="chips">
+{% for path, text, here in platform_links %}<li><a href="/{{ path }}"{% if here %} aria-current="page"{% endif %}>{{ text }}</a></li>
+{% endfor %}</ul>
+{% endif %}
+<h2 id="share">Share this board</h2>
+<p>Anyone with the link sees this board with live times. They don't need to sign in.</p>
+<div class="copy">
+  <code id="board-link">{{ page_url }}</code>
+  <button type="button" data-copy="#board-link" hidden>Copy link</button>
+  <p role="status"></p>
+</div>
+<h2 id="tv">Show it on a TV</h2>
+<p>The board fills the screen, keeps it awake and hides the cursor. Drag this window onto a
+  TV you've extended your display to, or cast this tab, then choose Show on TV. Esc goes back.</p>
+<p><button type="button" data-tv hidden>Show on TV</button></p>
+<p>On a TV's own browser, or a streaming stick, open the TV link:</p>
+<div class="copy">
+  <code id="tv-link">{{ page_url }}?tv=1</code>
+  <button type="button" data-copy="#tv-link" hidden>Copy TV link</button>
+  <p role="status"></p>
+</div>
+<h2 id="embed">Put it on your own page</h2>
+<p>Paste this into your page's HTML. The board fills the width it is given, up to 760 pixels.</p>
+<div class="copy">
+  <code id="embed-code">{{ embed_code }}</code>
+  <button type="button" data-copy="#embed-code" hidden>Copy code</button>
+  <p role="status"></p>
+</div>{% endblock %}

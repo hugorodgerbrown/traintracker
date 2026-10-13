@@ -460,7 +460,7 @@ async def test_a_failure_is_shared_too(client: httpx.AsyncClient, fetch: FakeFet
     fetch.error = "National Rail live data (Darwin) is offline."
     r = await client.get("/api/board/LST")
     assert r.status_code == 503
-    assert r.json() == {"error": "National Rail live data (Darwin) is offline."}
+    assert r.json() == {"error": boards.FEED_UNAVAILABLE}  # the page says why
     page = await client.get("/board/LST")
     assert page.status_code == 503
     assert "National Rail live data (Darwin) is offline." in page.text

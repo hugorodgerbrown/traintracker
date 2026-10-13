@@ -1,7 +1,7 @@
-"""The sign-in pages' stylesheet and icons are the public site's, byte for byte.
+"""Django's static files are the public site's, byte for byte.
 
-Until Titan 3/4 moves the site into Django, ``static/`` holds copies of the
-files production serves from ``src/traintracker/site/``. This keeps the two
+Until Titan 4/4 removes ``src/traintracker/``, ``static/`` holds copies of
+the files production serves from ``src/traintracker/site/``. This keeps the two
 from drifting apart: change the site's file and copy it.
 """
 
@@ -20,6 +20,9 @@ SITE = ROOT / "src" / "traintracker" / "site"
         ("icons/icon.svg", "icon.svg"),
         ("icons/icon-32.png", "icon-32.png"),
         ("icons/icon-180.png", "icon-180.png"),
+        ("icons/icon-512.png", "icon-512.png"),
+        ("js/site.js", "site.js"),
+        ("img/share.png", "share.png"),
     ],
 )
 def test_static_copy_matches_the_site(copy: str, original: str) -> None:

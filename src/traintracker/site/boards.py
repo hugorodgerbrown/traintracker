@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import logging
 import re
 import time
 from collections.abc import Awaitable, Callable
@@ -54,6 +55,8 @@ from traintracker.models import Board, BoardService
 from traintracker.ratelimit import RateLimiter, client_address, limited
 from traintracker.site import ANALYTICS, HEADERS, HSTS, render_page
 
+logger = logging.getLogger(__name__)
+
 PICKER_PATH = "/board"
 FEED_PREFIX = "/api/board"
 SUGGEST_PATH = "/api/stations"
@@ -67,6 +70,8 @@ MAX_SUGGESTIONS = 8
 # What one client address may do: (at once, a minute). A page open on a screen
 # takes one a minute; this leaves room for an office of screens behind one address.
 BOARD_LIMIT = (30, 60.0)
+# What the feed says when a board can't be had; the pages say why.
+FEED_UNAVAILABLE = "Board temporarily unavailable."
 # A platform as the board's address has it: "9", "10A", "B".
 PLATFORM = re.compile(r"[0-9A-Z]{1,4}")
 # "London Liverpool Street (LST)", as a suggestion fills the station field.
@@ -714,7 +719,8 @@ def routes(fields: dict[str, str], fetch: Fetch, ip_header: str | None = None) -
             fresh = f"public, max-age={int(minute_left(minute))}"
             return JSONResponse(board, headers={**FEED_HEADERS, "Cache-Control": fresh})
         except BoardUnavailable as exc:
-            return JSONResponse({"error": str(exc)}, 503, headers=FEED_HEADERS)
+            logger.warning("Board %s unavailable: %s", key.path, exc)
+            return JSONResponse({"error": FEED_UNAVAILABLE}, 503, headers=FEED_HEADERS)
 
     async def suggest(request: Request) -> Response:
         query = request.query_params.get("q", "")

@@ -1,0 +1,12 @@
+<!doctype html>
+{# A board alone: embedded in another site's page (?embed=1), or filling a TV (?tv=1). #}
+<html lang="en-GB" class="{{ mode }}">
+  <head>
+{% include "public/_head.html" %}
+    <link rel="canonical" href="{{ page_url }}" />
+    <meta name="robots" content="noindex" />
+  </head>
+  <body>
+    <main id="main">{% include "public/_figure.html" %}</main>
+  </body>
+</html>

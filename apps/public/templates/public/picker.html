@@ -1,0 +1,31 @@
+{% extends "public/layout.html" %}
+{% block content %}<h1>Departure boards</h1>
+<p class="lede">A live board for any station in Great Britain, to keep open,
+  share or put on your own page.</p>
+<form class="picker" method="get" action="/board">
+  <label for="station">Station</label>
+  <input id="station" name="station" value="{{ typed.station }}" required maxlength="{{ max_query }}"
+    autocomplete="off" list="station-list" data-suggest="/api/stations"{% if problem %} aria-describedby="picker-error"{% endif %} />
+  <datalist id="station-list"></datalist>
+  <label for="to">Going to <span class="optional">(optional)</span></label>
+  <input id="to" name="to" value="{{ typed.to }}" maxlength="{{ max_query }}"
+    autocomplete="off" list="to-list" data-suggest="/api/stations" />
+  <datalist id="to-list"></datalist>
+  <p class="hint">Only trains that call there, wherever they end up.</p>
+  <p class="or">or</p>
+  <label for="platform">Platform <span class="optional">(optional)</span></label>
+  <input id="platform" name="platform" value="{{ typed.platform }}" maxlength="4" autocomplete="off"
+    inputmode="text" />
+  <p class="hint">Only the trains leaving from one platform. Leave both empty for
+    every train from the station.</p>
+  {% if problem %}<p class="error" id="picker-error">{{ problem }}</p>{% endif %}
+  <button type="submit">Show the board</button>
+</form>
+{% if choices %}<h2 id="which">{{ choices.heading }}</h2>
+<ul class="choices">
+{% for name, crs, href in choices.options %}<li><a href="/{{ href }}">{{ name }}</a> ({{ crs }})</li>
+{% endfor %}</ul>{% endif %}
+<h2>Examples</h2>
+<ul>
+{% for path, title in examples %}<li><a href="/{{ path }}">{{ title }}</a></li>
+{% endfor %}</ul>{% endblock %}

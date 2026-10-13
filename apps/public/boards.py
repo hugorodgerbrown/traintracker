@@ -273,8 +273,8 @@ def feed(request: HttpRequest, station: str, then: str | None = None) -> JsonRes
     try:
         minute, board = runtime.run(shared().get_for_minute, key)
     except tt.BoardUnavailable as exc:
-        logger.warning("Board unavailable in feed for key %s", key, exc_info=exc)
-        return _feed_response({"error": "Board temporarily unavailable."}, 503)
+        logger.warning("Board %s unavailable: %s", key.path, exc)
+        return _feed_response({"error": tt.FEED_UNAVAILABLE}, 503)
     # No cache keeps it past its minute, even when the fetch ended after it.
     return _feed_response(board, max_age=int(tt.minute_left(minute)))
 

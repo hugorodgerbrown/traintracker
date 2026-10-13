@@ -6,10 +6,10 @@ from typing import Any
 import pytest
 from django.test import Client
 
+from apps.public import board as tt
 from apps.public import boards
-from tests.traintracker.test_boards import FakeFetch
-from traintracker.ratelimit import RateLimiter
-from traintracker.site import boards as tt
+from apps.rail.ratelimit import RateLimiter
+from tests.public.fakes import FakeFetch
 
 pytestmark = pytest.mark.django_db
 
@@ -120,7 +120,7 @@ def test_the_shared_boards_fetch_through_the_server(monkeypatch: pytest.MonkeyPa
     """Outside the tests, a board comes from the server's own public_board."""
     monkeypatch.undo()
     boards.shared.cache_clear()
-    from traintracker import server
+    from apps.rail import server
 
     assert isinstance(boards.shared(), tt.SharedBoards)
     assert boards.shared().fetch is server.public_board

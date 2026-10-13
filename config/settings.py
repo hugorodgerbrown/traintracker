@@ -5,16 +5,9 @@ environment variable (or `.env` locally, via python-decouple); the
 defaults suit local development, and `DJANGO_DEBUG=0` turns on the
 production hardening that `manage.py check --deploy` asks for.
 
-Traintrackr is moving onto the Titan template in four steps
-(docs/decisions/traintrackr-moves-onto-titan-in-four-steps.md). Until the
-last one, production still runs `traintracker serve-http` (src/traintracker)
-and nothing here is deployed. Step 2 brought the accounts and the MCP
-endpoint, step 3 the public pages and the boards.
-
-Django's tables live in the database's default schema. The timetable, the
-Darwin usage counts and the current sign-in each keep a schema of their own
-(TIMETABLE_SCHEMA, USAGE_SCHEMA, MCP_AUTH_SCHEMA), so one DATABASE_URL
-serves both.
+Django's tables live in the database's default schema. The timetable and
+the Darwin usage counts each keep a schema of their own (TIMETABLE_SCHEMA,
+USAGE_SCHEMA), so one DATABASE_URL serves both.
 """
 
 from pathlib import Path
@@ -137,9 +130,7 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        # The site's page fragments are production's own files until Titan 4/4
-        # moves them into apps/public (apps/public/views.py).
-        "DIRS": [BASE_DIR / "templates", BASE_DIR / "src" / "traintracker" / "site"],
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -255,9 +246,13 @@ LOGGING = {
         "django.db.backends": {"level": "WARNING"},
         # httpx logs every request URL at INFO. The Network Rail download
         # (refresh_timetable) redirects to a presigned S3 URL whose query string
-        # holds temporary AWS credentials. As traintracker.server does for its CLI.
+        # holds temporary AWS credentials.
         "httpx": {"level": "WARNING"},
         "httpcore": {"level": "WARNING"},
+        # The MCP SDK logs each failed tool call at INFO with the error text,
+        # which names what was asked for ("'Yeovil' is ambiguous"). The privacy
+        # policy says questions are not written to logs.
+        "mcp.server.mcpserver.server": {"level": "WARNING"},
     },
 }
 

@@ -1,14 +1,14 @@
 """Say which rail data sources are set up, how much of Darwin is used, and the timetable.
 
-``traintracker status`` as a management command. It only reads.
+It only reads.
 """
 
 from typing import Any
 
 from django.core.management.base import BaseCommand
 
+from apps.rail.server import status_text
 from apps.rail.settings import rail_settings
-from traintracker.server import status_text
 
 
 class Command(BaseCommand):

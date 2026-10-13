@@ -10,7 +10,7 @@ https://traintrackr.live/mcp
 
 ## Use it
 
-**Claude.** In claude.ai, open **Settings → Connectors → Add custom connector**. Name it *Traintrackr*, paste the connector address, and leave the OAuth fields empty. Choose **Connect**: Claude opens the Traintrackr sign-in page, where you enter your email address and then the six-digit code sent to it. A connector added in claude.ai also works in Claude Desktop and the mobile apps.
+**Claude.** In claude.ai, open **Settings → Connectors → Add custom connector**. Name it *Traintrackr*, paste the connector address, and leave the OAuth fields empty. Choose **Connect**: Claude opens the Traintrackr sign-in page, where you enter your email address and then open the link, or type the six-digit code, in the email it sends. A connector added in claude.ai also works in Claude Desktop and the mobile apps.
 
 **ChatGPT.** ChatGPT adds it through developer mode, on the web, in Plus, Pro, Business, Enterprise and Edu plans; in a workspace, an admin may have to allow developer mode first. Turn on **Settings → Security and login → Developer mode**, then at [chatgpt.com/plugins](https://chatgpt.com/plugins) choose **+**, name it *Traintrackr*, paste the connector address and choose OAuth. Sign in with your email address as above. In a new chat, choose **+ → Developer mode** and select Traintrackr.
 
@@ -45,7 +45,7 @@ flowchart LR
 | `timetable` | Booked departures/arrivals at a station on any date | Local timetable |
 | `service_details` | Every stop for one train | Whichever source issued the ID |
 | `plan_journey` | A to B with changes (up to `max_changes`, default 4), incl. cross-London links | Local timetable + Darwin live overlay |
-| `data_status` | What's configured, timetable freshness, what's missing; on a server you run yourself, Darwin allowance used | — |
+| `data_status` | What's configured, timetable freshness, what's missing; with `DJANGO_DEBUG=1` (a server you run yourself), also the timetable schema, the last refresh error and the Darwin allowance used | — |
 | `privacy_policy` | "What do you keep about me?" The privacy policy as text, with the page's address | The `/privacy` page |
 
 Every tool accepts station names or CRS codes. Ambiguous names ("Sudbury", "Harrow") return the candidates so Claude can ask which one you meant.
@@ -54,7 +54,7 @@ Every tool accepts station names or CRS codes. Ambiguous names ("Sudbury", "Harr
 
 `show_board` comes with an [MCP App](https://modelcontextprotocol.io/specification/draft/extensions/apps): a client that supports MCP Apps draws its result as a split-flap departure board next to the answer. A client draws the board for every call of a tool that has one, so it is on a tool of its own, which the assistant is told to use only when someone asks to see a board. `live_departures` and `live_arrivals` return the same trains and draw nothing. A client without MCP Apps gets `show_board`'s result as it would theirs.
 
-The board is one page, [`src/traintracker/ui/board.html`](src/traintracker/ui/board.html), served as the resource `ui://traintracker/board.html`. Its style and script are inline and it loads nothing from anywhere. The client hands it the tool's result; it shows up to 12 trains, the station's notices and the data credit. **Refresh** asks the client to call `show_board` again with the same arguments, which counts against the rate limit like any other call. The flaps don't turn for someone who has asked their system for reduced motion, and a screen reader gets the trains as a table.
+The board is one page, [`apps/rail/ui/board.html`](apps/rail/ui/board.html), served as the resource `ui://traintracker/board.html`. Its style and script are inline and it loads nothing from anywhere. The client hands it the tool's result; it shows up to 12 trains, the station's notices and the data credit. **Refresh** asks the client to call `show_board` again with the same arguments, which counts against the rate limit like any other call. The flaps don't turn for someone who has asked their system for reduced motion, and a screen reader gets the trains as a table.
 
 ## Run your own copy
 
@@ -99,7 +99,7 @@ Add that to the `traintracker` entry in the Claude desktop config (see [Add to t
 3. Put your portal username and password in `NR_USERNAME` and `NR_PASSWORD`.
 4. If the portal gives a different download link for the *full daily extract, all operators, JSON* than `NR_SCHEDULE_URL` in `.env.example`, set `NR_SCHEDULE_URL` to it.
 
-The server downloads the feed in the background when the timetable is missing or older than 26 hours. It checks this on start-up and on every tool call, so a server left running for days stays current. If a download fails it keeps serving the old timetable, and `data_status` shows the error. You can also run `traintracker refresh` by hand (see [Commands](#commands)). Set `TIMETABLE_AUTO_REFRESH=0` where a separate job runs `traintracker refresh`, as on Render.
+The server downloads the feed in the background when the timetable is missing or older than 26 hours. It checks this on start-up and on every tool call, so a server left running for days stays current. If a download fails it keeps serving the old timetable, and `data_status` shows the error. You can also run `manage.py refresh_timetable --commit` by hand (see [Commands](#commands)). Set `TIMETABLE_AUTO_REFRESH=0` where a separate job runs `refresh_timetable`, as on Render.
 
 ### 3. Postgres
 
@@ -154,13 +154,13 @@ flowchart TD
 A train from the timetable (`timetable`, `plan_journey`, `service_details` with a `tt:` ID, and the live tools when they fall back to booked times) carries `trainline_url`: that train's page on Trainline, with its stops and how it is running. The address is `<TRAINLINE_LIVE_URL>/departures/<station>/<token>`, where the token is the base64 of `/callingPattern/<train UID>/<run date>`. The station only titles the page: the board's station, the station a leg is boarded at, or the train's origin.
 
 - Trains from Darwin have no link: a Darwin service ID carries no train UID.
-- Trainline names stations by a slug of its own name for them. Most follow from the name in the station list; [`trainline_slugs.json`](src/traintracker/data/trainline_slugs.json) holds the ones that differ, and `null` for stations Trainline has no live board for (mostly ones opened since 2022). A train that calls only at those has no link.
+- Trainline names stations by a slug of its own name for them. Most follow from the name in the station list; [`trainline_slugs.json`](apps/rail/data/trainline_slugs.json) holds the ones that differ, and `null` for stations Trainline has no live board for (mostly ones opened since 2022). A train that calls only at those has no link.
 - Trainline publishes no specification for these addresses. They were read off its live boards, and the slugs checked against [its sitemap of live pages](https://www.thetrainline.com/live/sitemap), in September 2026. For a train it doesn't know, Trainline shows the station's board.
 - Demo mode gives no links: its trains are made up.
 
 ### Darwin allowance
 
-Free Darwin access covers 5 million requests per four-week railway period, and one server key serves every user. The server counts the requests it sends to Darwin and reports the total in `traintracker status`, and in `data_status` on a server you run over stdio (a hosted server doesn't tell everyone who signs in how much is left):
+Free Darwin access covers 5 million requests per four-week railway period, and one server key serves every user. The server counts the requests it sends to Darwin and reports the total in `manage.py rail_status`, and in `data_status` when `DJANGO_DEBUG=1` (a hosted server doesn't tell everyone who signs in how much is left):
 
 ```
 Darwin usage: 412,906 requests in the last 28 days, 8.26% of 5,000,000
@@ -209,8 +209,10 @@ git clone git@github.com:hugorodgerbrown/traintracker.git
 cd traintracker
 uv sync
 cp .env.example .env          # fill in your keys and DATABASE_URL (.env is git-ignored)
-uv run traintracker refresh   # first timetable download (a few minutes)
-uv run traintracker status
+uv run python manage.py migrate
+uv run python manage.py refresh_timetable --commit   # first timetable download (a few minutes)
+uv run python manage.py rail_status
+uv run python manage.py runserver                    # the site, sign-in and /mcp at localhost:8000
 ```
 
 ### Add to the Claude desktop app
@@ -222,19 +224,38 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`. Use the 
   "mcpServers": {
     "traintracker": {
       "command": "/Users/hugo/.local/bin/uv",
-      "args": ["--directory", "/Users/hugo/Projects/traintracker", "run", "traintracker"]
+      "args": ["run", "--directory", "/Users/hugo/Projects/traintracker", "python", "manage.py", "serve_stdio"]
     }
   }
 }
 ```
 
-`--directory` makes the project folder the working directory, so the server reads your keys from `.env` there. Keys can go in an `"env"` block in this file instead; real environment variables take precedence over `.env`.
+`--directory` makes the project folder the working directory, so the server reads your keys from `.env` there. `serve_stdio` answers only the app that started it, so it has no sign-in and no rate limit. Keys can go in an `"env"` block in this file instead; real environment variables take precedence over `.env`.
 
 Restart the Claude app, then ask *"what's the status of traintracker's data sources?"* to check everything is connected.
 
 ## Configuration
 
-All configuration is by environment variable, read from `.env` in the project folder if present. See [`.env.example`](.env.example).
+All configuration is by environment variable, read from `.env` in the project folder if present. See [`.env.example`](.env.example). Local development needs none of the Django settings; on Render, titan's env groups set them (see [Deploy to Render](#deploy-to-render)).
+
+The Django settings, in [`config/settings.py`](config/settings.py):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `DJANGO_DEBUG` | `1` | `0` turns on the production hardening `manage.py check --deploy` asks for. With `1`, sign-in emails go to the console log and `data_status` shows the internal details |
+| `DJANGO_SECRET_KEY` | a development key | Required with `DJANGO_DEBUG=0`. Also keys the hash of each sign-in code |
+| `DJANGO_ALLOWED_HOSTS` | `localhost,127.0.0.1` | Comma-separated host names the site answers; Render's `onrender.com` name is added for you |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | — | Comma-separated origins trusted for form posts |
+| `SITE_URL` | `http://localhost:8000` (on Render, the `onrender.com` name) | The public address: links in emails, the passkey origin, and the connector address the site shows (`<SITE_URL>/mcp`) |
+| `RATE_LIMIT_PROXY_COUNT` | `0`, or `1` with `DJANGO_DEBUG=0` | Proxies in front of the app; the client address for the limits is that many hops from the end of `X-Forwarded-For` |
+| `EMAIL_HOST` / `EMAIL_PORT` | `localhost` / `587` | SMTP relay for the sign-in email. For [Resend](https://resend.com): host `smtp.resend.com` |
+| `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | — | SMTP login. For Resend: user `resend`, and the API key as the password |
+| `EMAIL_USE_TLS` | `1` | STARTTLS to the relay |
+| `DEFAULT_FROM_EMAIL` | `Traintrackr <noreply@localhost>` | Sender of the sign-in email; its domain must be verified with the relay |
+| `WEBAUTHN_RP_ID` | host name of `SITE_URL` | Where passkeys work (see [docs/accounts.md](docs/accounts.md)) |
+| `FIVEBAR_DOMAIN` | — | Turns on cookieless visitor counts by fivebar for that domain; off when empty |
+
+The train tools' settings, read by [`apps/rail/config.py`](apps/rail/config.py):
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -244,107 +265,78 @@ All configuration is by environment variable, read from `.env` in the project fo
 | `DARWIN_ARRIVALS_API_KEY` / `DARWIN_ARRIVALS_URL` | — | Live Arrival Board product |
 | `NR_USERNAME` / `NR_PASSWORD` | — | Network Rail data feeds login |
 | `NR_SCHEDULE_URL` | full daily JSON extract | Override if the portal gives a different link |
-| `DATABASE_URL` | — | Postgres database for the timetable (required) |
+| `DATABASE_URL` | — | Postgres database for the timetable (required), and for Django's own tables |
 | `TIMETABLE_SCHEMA` | `timetable` | Schema the timetable lives in (demo mode appends `_demo`) |
 | `USAGE_SCHEMA` | `traintracker_usage` | Schema for the count of requests sent to Darwin (see [Darwin allowance](#darwin-allowance)) |
 | `DARWIN_DAILY_LIMIT` | `170000` | Most requests sent to Darwin in one UK day; past it the live tools answer with booked times. `0` turns the limit off |
 | `TIMETABLE_AUTO_REFRESH` | `1` | `0` stops the server downloading the timetable itself (use a cron job instead) |
 | `TIMETABLE_MAX_AGE_HOURS` | `26` | Re-download when older than this |
 | `TRAINTRACKER_DATA_DIR` | `$XDG_DATA_HOME/traintracker` if set, else `~/.traintracker` | Where the feed is downloaded to before import |
-| `MCP_AUTH_TOKEN` | — | Static bearer token accepted by `serve-http` |
-| `MCP_OAUTH_PASSPHRASE` | — | Passphrase accepted by the OAuth sign-in page, for the owner and for directory reviewers. `serve-http` needs this, email sign-in, `MCP_AUTH_TOKEN`, or any mix of them |
-| `RESEND_API_KEY` | — | [Resend](https://resend.com) API key. With `MAIL_FROM` and `MCP_ACCOUNT_SECRET` it turns on email sign-in (see [Sign-in](#sign-in)) |
-| `MAIL_FROM` | — | Sender of the sign-in code, e.g. `Traintrackr <login@mail.traintrackr.live>`; the domain (here the subdomain `mail.traintrackr.live`) must be verified with Resend |
-| `MCP_ACCOUNT_SECRET` | — | Key that turns an email address into an account ID. Long and random; changing it gives every address a new account |
-| `MAIL_BACKEND` | `resend` | `console` writes the sign-in code to the log instead of sending it. For local development only |
-| `MAIL_MAX_PER_HOUR` | `100` | Most sign-in codes sent in an hour, over all addresses |
-| `RATE_LIMIT_PER_MINUTE` | `30` | Tool calls per account per minute over HTTP; `0` turns the limit off |
+| `RATE_LIMIT_PER_MINUTE` | `30` | Tool calls per account per minute on `/mcp`; `0` turns the limit off |
 | `RATE_LIMIT_BURST` | `10` | Tool calls an account can make at once before the per-minute rate applies |
-| `MCP_REDIRECT_HOSTS` | `claude.ai,claude.com,chatgpt.com,platform.openai.com` | Hosts a client may return the browser to after sign-in, over https. Loopback addresses are always allowed. `*` allows any address |
-| `CLIENT_IP_HEADER` | — | Header the hosting platform's proxy puts the caller's address in (`CF-Connecting-IP` on Render), used for the limits before sign-in. Leave unset where clients can reach the server without passing that proxy: the connection's own address is used |
-| `MCP_PUBLIC_URL` | `https://` + first public host | Base URL clients use; the OAuth issuer and resource (`<url>/mcp`) derive from it |
-| `MCP_AUTH_SCHEMA` | `mcp_auth` | Schema for OAuth clients, codes, tokens and accounts (tokens stored as SHA-256 hashes, accounts as keyed hashes of the address) |
-| `HOST` / `PORT` | `0.0.0.0` / `8000` | Where `serve-http` listens (bind address) |
-| `MCP_PUBLIC_HOSTS` | — | Comma-separated extra hostnames clients use (e.g. a custom domain), added to `RENDER_EXTERNAL_HOSTNAME`; `serve-http` rejects other `Host` headers (DNS-rebinding protection) |
-| `OPENAI_APPS_CHALLENGE` | — | Token from OpenAI's plugin portal. When set, `serve-http` returns it at `/.well-known/openai-apps-challenge`, which OpenAI fetches to verify the domain |
+| `OPENAI_APPS_CHALLENGE` | — | Token from OpenAI's plugin portal. When set, it is returned at `/.well-known/openai-apps-challenge`, which OpenAI fetches to verify the domain |
 | `MIN_INTERCHANGE_MINUTES` | `5` | Minimum change time for planning |
 | `TRAINLINE_LIVE_URL` | `https://www.thetrainline.com/live` | Base of the [Trainline link](#trainline-links) on timetable services |
 | `HTTP_TIMEOUT_SECONDS` | `15` | Upstream request timeout |
 | `TRAINTRACKER_DEMO` | off | `1` uses generated example data instead of any account (see [demo mode](#try-it-without-accounts-demo-mode)) |
+| `TRAINTRACKER_NO_DOTENV` | off | `1` stops the train tools reading `.env` (the [preview servers](#preview-servers) set it) |
 
 ## Commands
 
+Every command is a Django management command, run as `uv run python manage.py <command>`. The ones that change data only say what they would do unless given `--commit`.
+
 | Command | Does |
 |---|---|
-| `traintracker` | Run the MCP server on stdio (what Claude runs) |
-| `traintracker serve-http` | Run the MCP server over streamable HTTP at `/mcp`, behind OAuth sign-in and/or a static bearer token, with a `/healthz` check and the [public site](#site) |
-| `traintracker forget EMAIL` | Delete the account for an email address, with its tokens (an erasure request) |
-| `traintracker block EMAIL` | Stop an address signing in, and its tokens working |
-| `traintracker refresh` | Download the SCHEDULE feed and rebuild the timetable (in demo mode, regenerate the demo timetable) |
-| `traintracker import FILE.json.gz` | Build the timetable from a feed file you downloaded yourself |
-| `traintracker status` | Show configured sources, Darwin allowance used and timetable details |
+| `runserver` | Run the site, sign-in and `/mcp` locally (production runs gunicorn; see [Deploy to Render](#deploy-to-render)) |
+| `serve_stdio` | Run the MCP server on stdio (what the Claude desktop app and the MCP Inspector run). No sign-in and no rate limit |
+| `migrate` | Create or update Django's tables |
+| `refresh_timetable [--commit]` | Download the SCHEDULE feed and rebuild the timetable (in demo mode, rebuild the generated timetable) |
+| `import_timetable FILE [--commit]` | Build the timetable from a feed file you downloaded yourself (JSON, gzipped or not) |
+| `rail_status` | Show configured sources, Darwin allowance used and timetable details |
+| `forget_account EMAIL [--commit]` | Delete the account for an email address, with its passkeys, its connected apps' tokens and any sign-in request (an erasure request) |
+| `block_account EMAIL [--commit]` | Close the account for an address, or make a closed one, so it can't sign in and its connected apps stop |
+| `purge_idle_accounts [--commit]` | Delete accounts with no sign-in and no new token for 180 days |
+| `purge_sign_in_requests [--commit]` | Delete sign-in requests past their expiry |
+| `purge_idempotency_records [--commit]` | Delete idempotency records past their 24-hour window (Titan's) |
+| `cleartokens` | Delete expired OAuth tokens (django-oauth-toolkit's) |
 
-Logs go to stderr; stdout carries the MCP protocol.
+The account commands are described in [docs/accounts.md](docs/accounts.md). Under `serve_stdio`, logs go to stderr and stdout carries the MCP protocol.
 
 ## Deploy to Render
 
-[`render.yaml`](render.yaml) defines two services in Frankfurt:
+[`render.yaml`](render.yaml) defines three services in Frankfurt:
 
 | Service | Type | Does | Environment |
 |---|---|---|---|
-| `traintracker` | Web service, 512 MB, [traintrackr.live](https://traintrackr.live) | `serve-http`; health check `/healthz` | `DATABASE_URL`, `DARWIN_API_KEY`, `MCP_OAUTH_PASSPHRASE`, `RESEND_API_KEY`, `MAIL_FROM`, `MCP_ACCOUNT_SECRET`, `MCP_PUBLIC_HOSTS`, `CLIENT_IP_HEADER`, `TIMETABLE_AUTO_REFRESH=0` |
-| `traintracker-refresh` | Cron job, 06:30 UTC daily | `traintracker refresh` | `DATABASE_URL`, `NR_USERNAME`, `NR_PASSWORD` |
+| `traintracker` | Web service, 512 MB, [traintrackr.live](https://traintrackr.live) | gunicorn, one worker with 8 threads. The build runs `collectstatic`, `migrate` runs before each deploy goes live, and the health check is `/livez` | Env groups `titan` and `traintracker`; `DARWIN_API_KEY`, `OPENAI_APPS_CHALLENGE` and `TIMETABLE_AUTO_REFRESH=0` on the service |
+| `traintracker-refresh` | Cron job, 06:30 UTC daily | `manage.py refresh_timetable --commit` | Env groups `titan` and `traintracker`; `NR_USERNAME`, `NR_PASSWORD` on the service |
+| `traintracker-purge` | Cron job, 03:17 UTC daily | `purge_idempotency_records`, `purge_sign_in_requests`, `cleartokens` and `purge_idle_accounts`: what the privacy policy says is deleted | Env groups `titan` and `traintracker` |
 
-The web service holds one day's journey network in memory for `plan_journey` (about 200 MB), so it needs at least 512 MB.
+The two env groups are made by titan, the command-line tool that comes with [django-titan-template](https://github.com/hugorodgerbrown/django-titan-template). `titan` is shared by every Titan app (debug off, the Python version, hosts and origins, the SMTP relay); `traintracker` is this app's own (`DATABASE_URL`, `DJANGO_SECRET_KEY`, the mail key and sender, `SITE_URL` and `FIVEBAR_DOMAIN`). The Blueprint refers to them without declaring them, so a sync never overwrites them; a value set on a service wins over its groups'. The web service runs one worker because the train tools share one event loop, one Darwin budget and one journey network per process ([the decision](docs/decisions/the-train-tools-run-on-one-event-loop.md)). It holds one day's journey network in memory for `plan_journey` (about 200 MB), so it needs at least 512 MB.
 
-1. Create the `traintracker` database and role on your Postgres instance (see [Postgres](#3-postgres)).
-2. In the Render dashboard: **New → Blueprint**, pick this repository, and enter the values Render prompts for. The three email sign-in values go together: give all of them, or leave all three empty and sign in with the passphrase. Use the Postgres instance's *internal* URL, with the `traintracker` role and its password in place of the instance's own user, and `/traintracker` as the database name.
-3. Run the cron job once by hand (**Trigger Run**) to load the first timetable.
-4. Add the server as a claude.ai connector (below). Use your own service's host: its `onrender.com` name, or a custom domain you have added to the service and listed in `MCP_PUBLIC_HOSTS` (the `render.yaml` value is this repository's deployment, `traintrackr.live`). `render.yaml` turns the `onrender.com` name off (`renderSubdomainPolicy: disabled`), which Render allows only for a service with a custom domain: remove that line to use the `onrender.com` name.
-
-For a client that can't do OAuth, set `MCP_AUTH_TOKEN` on the service to a long random value; it is accepted as a bearer token alongside OAuth, and never expires. For example, in a terminal (so the token stays out of any transcript), with the token on the clipboard:
-
-```bash
-claude mcp add -s user --transport http traintracker https://<your-service-host>/mcp --header "Authorization: Bearer $(pbpaste)"
-```
+1. Run `titan deploy traintracker`. It makes what the Blueprint needs before the first deploy: the shared `titan` group, the app's role and database on the shared Postgres instance, a sending-only Resend key, and the `traintracker` group. Then it deploys the Blueprint, adds the domain `traintracker.<parent domain>` to the service, and checks `/healthz` on its `onrender.com` name. Set `DARWIN_API_KEY`, `OPENAI_APPS_CHALLENGE`, `NR_USERNAME` and `NR_PASSWORD` on their services when Render asks for them.
+2. Run the `traintracker-refresh` cron job once by hand (**Trigger Run**) to load the first timetable.
+3. Put the service on its domain. titan's own `golive` points an app at `<slug>.<parent domain>`; this deployment keeps `traintrackr.live`, which the directory listings, the MCP Registry and people's connectors use, so it is done by hand: add the domain to the service, add it to the service's `DJANGO_ALLOWED_HOSTS` (after the `titan` group's value), and set `SITE_URL=https://traintrackr.live` and `FIVEBAR_DOMAIN=traintrackr.live` in the `traintracker` group. titan never overwrites a value that is already set, so `DEFAULT_FROM_EMAIL` can be changed there too.
+4. Add the server as a claude.ai connector (below).
 
 ### Add as a claude.ai connector
 
-The server is its own OAuth authorization server, so it can be added once in claude.ai and used from claude.ai, Claude Desktop and the mobile apps. ChatGPT connects the same way.
+`/mcp` is Titan's MCP view behind mcp-auth, the template's OAuth server on [django-oauth-toolkit](https://github.com/jazzband/django-oauth-toolkit), so it can be added once in claude.ai and used from claude.ai, Claude Desktop and the mobile apps. ChatGPT connects the same way.
 
 1. In claude.ai: **Settings → Connectors → Add custom connector**, name `traintracker`, URL `https://<your-service-host>/mcp`. Leave the OAuth client fields empty: Claude registers itself.
 2. Claude opens the server's sign-in page. Sign in (see [Sign-in](#sign-in)).
 
-Sign-in hands Claude a one-hour access token and a 90-day refresh token, rotated on each refresh. A refresh token that turns up again more than a minute after it was replaced means two parties hold it, and that connection is signed out. The authorization server metadata lists the `offline_access` scope and public clients (`none`), which the MCP SDK's own metadata leaves out: ChatGPT may drop a connection when its access token expires unless `offline_access` is listed. Every client may ask for that scope; a refresh token is issued either way. Clients, codes, tokens and accounts are stored in the `mcp_auth` schema, tokens as SHA-256 hashes. The server keeps up to four database connections open for sign-in and token checks. To sign every client out, run `TRUNCATE mcp_auth.tokens` against the database. Changing the passphrase doesn't sign anyone out; truncate the tokens as well.
+Signing in hands Claude a one-hour access token and a 30-day refresh token, rotated on each refresh. The `offline_access` scope is listed, which ChatGPT needs to stay connected when its access token expires. Only callbacks to Claude, ChatGPT and loopback addresses (desktop clients such as Claude Code) are accepted (`MCP_AUTH` in [`config/settings.py`](config/settings.py)). Anyone with an active account may connect. `/oauth/connected/` lists the apps connected to the signed-in account. The `traintracker-purge` cron job deletes expired tokens each night.
 
 ### Sign-in
 
-`/mcp` always needs a bearer token. The sign-in page offers up to two ways to get one, depending on what is configured:
+Sign-in is Titan's accounts: an email address, then the link or the six-digit code in the email it sends, or a passkey added from the account page. There are no passwords. [docs/accounts.md](docs/accounts.md) has the details: how long a link and a code last, the limits on emails and code tries, what an account keeps, and how to close or forget one. With `DJANGO_DEBUG=1` the sign-in email is written to the console log in place of being sent; don't use that on a host whose logs other people can read.
 
-| Way in | For | Turned on by |
-|---|---|---|
-| A six-digit code sent by email | Anyone | `RESEND_API_KEY`, `MAIL_FROM` and `MCP_ACCOUNT_SECRET` |
-| The passphrase | The owner, and directory reviewers, who need credentials that work without a mailbox | `MCP_OAUTH_PASSPHRASE` |
-
-With only the passphrase set, the page is the passphrase form and nothing else. With both, the passphrase sits behind a *Have a passphrase?* link.
-
-**Email codes.** The person enters an address and receives a code that lasts 10 minutes and works once, for that sign-in only. Five wrong codes discard the sign-in, as five wrong passphrases do. To limit what the page can be made to send, a sign-in can ask for three codes, an address is sent five an hour, one client address can ask for five at once and ten an hour, and the server sends `MAIL_MAX_PER_HOUR` an hour in all. When that last limit is reached nobody can be sent a code, and the log gets a warning.
-
-**Accounts.** The address is passed to Resend to deliver the code and is not stored. The account is an HMAC-SHA256 of the lower-cased address, without any `+tag`, under `MCP_ACCOUNT_SECRET`, so the stored ID can't be turned back into the address, or tested against a guess, without the secret. An account holds its ID, when it was created, when it was last used (a sign-in or a token refresh) and whether it is blocked. Accounts not used for 180 days are deleted, with their tokens. `traintracker forget EMAIL` deletes one on request; `traintracker block EMAIL` shuts one out, and `UPDATE mcp_auth.accounts SET blocked = false` lets them all back in.
-
-Everyone who signs in with the passphrase shares one account, `passphrase`. Use a long random passphrase: `serve-http` warns at start-up about one shorter than 20 characters. One client address can try ten passphrases at once and ten an hour, and after 30 wrong passphrases in an hour, over all sign-ins, the passphrase is refused for the rest of that hour (email sign-in is not affected).
-
-**Rate limit.** Tool calls over HTTP are limited per account: `RATE_LIMIT_BURST` calls at once, refilled at `RATE_LIMIT_PER_MINUTE`. One Darwin key serves every user, and the limit stops one account spending the whole allowance. A call pays for one request to Darwin; a call that makes more (a long board read page by page, a journey with several legs) is charged one for each further request, so the account's next calls wait longer. A journey plan counts as three calls. A call over the limit comes back as a tool error, *Too many requests. Try again in N seconds.*, which the model can read and relay. The counts are held in memory, so a restart clears them. The static token counts as one account. The stdio server is not limited.
-
-**Where a client can return to.** A client registers the callback the browser goes back to after sign-in. Only callbacks on `MCP_REDIRECT_HOSTS` (Claude and ChatGPT by default), over https, and loopback addresses (desktop clients such as Claude Code) are accepted. OAuth answers some errors by redirecting to the callback before anyone has signed in, so with any callback allowed a link to the server could be made to send people to any site. To let another app connect, add its callback host.
-
-**Before sign-in.** Registration and the start of a sign-in need no account, so they are limited another way. A client address can register 30 clients at once and 20 a minute, and start 20 sign-ins at once and 10 a minute; over that the answer is 429 with `Retry-After`. The address comes from `CLIENT_IP_HEADER` where that is set, and from the connection otherwise. These endpoints take bodies up to 16 KiB, a registration up to 4 KiB and a sign-in request up to 8 KiB. The server holds 10,000 registered clients at most, and a registration deletes clients that are a week old with no tokens and no sign-in under way (an assistant registers afresh each time it connects).
-
-**Running it locally.** `MAIL_BACKEND=console` with `MCP_ACCOUNT_SECRET` set writes the code to the log in place of sending it. Don't use it on a host whose logs other people can read.
+**Rate limit.** Tool calls on `/mcp` are limited per account: `RATE_LIMIT_BURST` calls at once, refilled at `RATE_LIMIT_PER_MINUTE`. One Darwin key serves every user, and the limit stops one account spending the whole allowance. A call pays for one request to Darwin; a call that makes more (a long board read page by page, a journey with several legs) is charged one for each further request, so the account's next calls wait longer. A journey plan counts as three calls. A call over the limit comes back as a tool error, *Too many requests. Try again in N seconds.*, which the model can read and relay. The counts are held in memory, so a restart clears them. `serve_stdio` is not limited.
 
 ## Site
 
-`serve-http` also serves a small public site from the same app, so there is one deploy and one domain:
+The Django app also serves a small public site, so there is one deploy and one domain:
 
 | Path | Page |
 |---|---|
@@ -354,9 +346,9 @@ Everyone who signs in with the passphrase shares one account, `passphrase`. Use 
 | `/terms` | Terms of use: the service as is, accuracy, liability, fair use, data licences, governing law |
 | `/board` | Pick a station, and a platform if you like, for a live board (see [Shareable boards](#shareable-boards)) |
 
-The pages are files in [`src/traintracker/site/`](src/traintracker/site): HTML fragments placed inside `layout.html`, one stylesheet and one script, for the copy buttons, the departure boards and the station picker. The shareable boards are rendered per request by [`site/boards.py`](src/traintracker/site/boards.py); `embed.html` is their layout inside another site's frame. The board is the app's look, drawn by `site.js` from a table of example trains in `index.html`: `ui/board.html` keeps its style and script inline, which the site's content security policy refuses, so the flaps are written out again in `site.css` and `site.js`. A change to how the app draws its flaps goes in both. The icon is `icon.svg`, with PNGs rendered from it at 32, 180 and 512 pixels; `icon-512.png` is the one uploaded to the directory listings, and `/favicon.ico` answers with the 32-pixel PNG. To change the icon, edit the SVG and render the PNGs again, for example `magick -background none -density 1200 icon.svg -resize 512x512 PNG32:icon-512.png`. The link-preview card is `share.png`, 1200 by 630, drawn from `share.svg` to look like the departure board app. It needs a browser to render: the card uses the system's sans-serif and bold monospace fonts, which ImageMagick's own SVG renderer can't select. Draw `share.svg` onto a 1200 by 630 canvas in a browser and save that as a PNG, or take a screenshot of it at that size with a device pixel ratio of 1; then `magick saved.png -strip PNG24:share.png` drops the alpha channel, which the tests reject. In `share.svg` each flap is a `<rect>` and each letter its own `<text>`, so changing a train means changing its letters one by one. There is no build step. They are filled in once at start-up with the server's own values (the connector address from `MCP_PUBLIC_URL`, the rate limit), so a copy deployed elsewhere describes itself. The privacy policy and terms name this repository's deployment and its operator: change `privacy.html`, `terms.html` and the support address when you deploy your own.
+The site is [`apps/public/`](apps/public). The pages are Django templates: each page's content is a fragment in `templates/public/pages/` (`index.html`, `docs.html`, `privacy.html`, `terms.html`) placed inside `templates/public/layout.html`, rendered by [`views.py`](apps/public/views.py); [`pages.py`](apps/public/pages.py) lists them, builds the header's links, and turns the privacy page into the text the `privacy_policy` tool returns. The shareable boards (the board pages, the picker, the embed, the TV view, the JSON feed and the station suggestions) are rendered per request by [`boards.py`](apps/public/boards.py); `frame.html` is the board alone, for an embed or a TV. The static files are in [`static/`](static): one stylesheet, `css/site.css`, and one script, `js/site.js`, for the copy buttons, the departure boards and the station picker. The board is the app's look, drawn by `site.js` from a table of example trains in `index.html`: `apps/rail/ui/board.html` keeps its style and script inline, which the site's content security policy refuses, so the flaps are written out again in `site.css` and `site.js`. A change to how the app draws its flaps goes in both. The icon is `static/icons/icon.svg`, with PNGs rendered from it at 32, 180 and 512 pixels; `icon-512.png` is the one uploaded to the directory listings, and `/favicon.ico` redirects to the 32-pixel PNG. To change the icon, edit the SVG and render the PNGs again, for example `magick -background none -density 1200 icon.svg -resize 512x512 PNG32:icon-512.png`. The link-preview card is `static/img/share.png`, 1200 by 630, drawn from `static/img/share.svg` to look like the departure board app. It needs a browser to render: the card uses the system's sans-serif and bold monospace fonts, which ImageMagick's own SVG renderer can't select. Draw `share.svg` onto a 1200 by 630 canvas in a browser and save that as a PNG, or take a screenshot of it at that size with a device pixel ratio of 1; then `magick saved.png -strip PNG24:share.png` drops the alpha channel, which the tests reject. In `share.svg` each flap is a `<rect>` and each letter its own `<text>`, so changing a train means changing its letters one by one. There is no build step. The pages name the server's own values (the connector address from `SITE_URL`, the fair-use line from `RATE_LIMIT_PER_MINUTE` and `RATE_LIMIT_BURST`), so a copy deployed elsewhere describes itself. The privacy policy and terms name this repository's deployment and its operator: change `privacy.html`, `terms.html` and the support address when you deploy your own.
 
-The stylesheet and script are linked by an address that carries a hash of the file, so a browser fetches a changed file at once and can cache an unchanged one for an hour. The pages set no cookies and load nothing from another origin; the `Content-Security-Policy` header allows only the site's own stylesheet and script (and, on the boards, fetches from the site itself). They follow the reader's light or dark setting and work at phone width.
+The stylesheet and script are served by WhiteNoise under names that carry a hash of the file (`collectstatic`), so a browser fetches a changed file at once and can cache an unchanged one. The pages set no cookies and load nothing from another origin, except fivebar's counter while `FIVEBAR_DOMAIN` is set; the `Content-Security-Policy` header allows only the site's own stylesheet, script and fetches. They follow the reader's light or dark setting and work at phone width.
 
 ### Shareable boards
 
@@ -373,7 +365,7 @@ The stylesheet and script are linked by an address that carries a hash of the fi
 
 After the station, a station's three-letter code is a destination and anything else a platform. A board is for a destination or a platform, never both. Each board has one address: a lower-case code, a name (`/board/cambridge`, `/board/LST/colchester`) or a platform written `p9` or `platform-9` redirects to it, so every share of a board is the same link. A name that fits several stations goes to the picker, which asks which. The board page has the link and the `<iframe>` code, each with a copy button, and a link to each platform's board.
 
-The page is rendered with the trains in it, as a table, so it works without JavaScript; `site.js` draws the flaps, which turn from the old letters to the new at each update. Because anyone can open a board, and a board embedded in a busy page is opened by all its visitors, what reaches Darwin is one fetch per board a minute, not one per viewer: an answer (or a failure) is kept for 60 seconds and shared by every request for that board, and requests that arrive while it is being fetched wait for the same answer. Each client address may open 30 boards at once and 60 a minute (`BOARD_LIMIT` in [`site/boards.py`](src/traintracker/site/boards.py)); over that the answer is 429 with `Retry-After`. The boards count toward `DARWIN_DAILY_LIMIT` like any other request.
+The page is rendered with the trains in it, as a table, so it works without JavaScript; `site.js` draws the flaps, which turn from the old letters to the new at each update. Because anyone can open a board, and a board embedded in a busy page is opened by all its visitors, what reaches Darwin is one fetch per board a minute, not one per viewer: an answer (or a failure) is kept for 60 seconds and shared by every request for that board (`SharedBoards` in `board.py`), and requests that arrive while it is being fetched wait for the same answer. Each client address may open 30 boards at once and 60 a minute (`BOARD_LIMIT` in [`apps/public/board.py`](apps/public/board.py)); over that the answer is 429 with `Retry-After`. The boards count toward `DARWIN_DAILY_LIMIT` like any other request.
 
 **On a TV.** `?tv=1` shows the board alone and sizes its flaps so that every train fits the screen, in one line a train on a wide screen and two on a tall one; the columns the screen has left over at that size widen the destination, so the board fills the width and long names fit. On the board page, **Show on TV** switches to the same view in place and goes full screen, for a window dragged onto a TV used as an extended display or a cast tab; leaving full screen goes back. On a TV the screen is kept awake (Screen Wake Lock, where the browser has it), the cursor hides after 3 seconds without moving, and the page reloads itself once a night, between 03:10 and 03:50 UK time, so a board left running for weeks picks up changes to the site. It shares its fetch with every other view of that board, so it costs Darwin nothing extra. Every live board counts down to its next update beside "Updated", and one that hasn't updated for 5 minutes dims and says when it last did.
 
@@ -393,9 +385,9 @@ Version 0.1.0 is published. CI doesn't publish: a new version is published by ha
 
 ## Development
 
-Traintrackr is moving onto [Titan](https://github.com/hugorodgerbrown/django-titan-template), the Django project template its sibling apps are built from, in four steps ([the decision](docs/decisions/traintrackr-moves-onto-titan-in-four-steps.md)). The first step brings the template's Django project (`manage.py`, `config/`, `apps/core/`) and its checks; the MCP server in `src/traintracker/` is still what runs in production, unchanged, until the last step.
+Traintrackr is a Django project on [Titan](https://github.com/hugorodgerbrown/django-titan-template), the project template its sibling apps are built from. It moved onto Titan in four steps, from a Starlette app of its own ([the decision](docs/decisions/traintrackr-moves-onto-titan-in-four-steps.md)); keep new work close to the template so `copier update --trust` stays a clean merge. HTTP is served by Django under gunicorn, with the train tools on one event loop per process ([the decision](docs/decisions/the-train-tools-run-on-one-event-loop.md)).
 
-tox runs every check on Python 3.14 from `uv.lock` (via the `tox-uv` plugin), as Titan does; [docs/testing.md](docs/testing.md) says which test goes where. The MCP server's tests need a Postgres they can create schemas in, at `TEST_DATABASE_URL` (default `postgresql://postgres:postgres@127.0.0.1:55432/postgres`, which the `docker run` under [Install](#install) provides). Each test works in its own schema and drops it afterwards. CI runs Postgres 17 as a service.
+tox runs every check on Python 3.14 from `uv.lock` (via the `tox-uv` plugin), as Titan does; [docs/testing.md](docs/testing.md) says which test goes where. The rail tests (`tests/rail/`) need a Postgres they can create schemas in, at `TEST_DATABASE_URL` (default `postgresql://postgres:postgres@127.0.0.1:55432/postgres`, which the `docker run` under [Install](#install) provides). Each test works in its own schema and drops it afterwards (`tests/rail/conftest.py`). CI runs Postgres 17 as a service.
 
 ```bash
 uvx --with tox-uv tox              # fmt, lint, types, checks, test, audit
@@ -409,14 +401,14 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs each environmen
 | Environment | Runs |
 |---|---|
 | `fmt` | `ruff format --check` |
-| `lint` | `ruff check`: Titan's rules, docstrings and bandit included. `src/traintracker/` and its tests keep their earlier rule set until step 2 moves them into `apps/` |
-| `types` | `mypy` with django-stubs; `src/traintracker/` stays strict |
+| `lint` | `ruff check`: Titan's rules, docstrings and bandit included, everywhere. The SQL in `apps/rail/` (and its tests) is built with f-strings around schema names, so it is exempt from `S608` |
+| `types` | `mypy` with django-stubs; `apps/rail/` stays strict |
 | `checks` | `manage.py check --deploy` with production settings, and no missing migrations |
-| `test` | `pytest` with coverage (floor 90%): `tests/core/` for the Django project; `tests/traintracker/` for the importer, STP rules, planner, download, clients, demo mode, tools end to end, sign-in, rate limit, site and Darwin usage |
+| `test` | `pytest` with coverage (floor 90%): `tests/rail/` for the importer, STP rules, planner, download, clients, demo mode, the tools, the commands, rate limit and Darwin usage; `tests/public/` for the site and the boards; `tests/mcp/` for the `/mcp` endpoint and its tools; `tests/accounts/` for sign-in, passkeys and the account commands; `tests/core/` for Titan's shared pieces |
 | `audit` | `pip-audit` over the production dependencies |
 | `sast` | `semgrep` (not in the default list: it downloads rule packs) |
 
-Tests use a synthetic SCHEDULE feed in Network Rail's JSON format (`tests/traintracker/feedgen.py`) and API fixtures shaped on the published Darwin schema. They aren't live recordings, so the first run against real services is the final check.
+Tests use a synthetic SCHEDULE feed in Network Rail's JSON format (`tests/rail/feedgen.py`) and API fixtures shaped on the published Darwin schema. They aren't live recordings, so the first run against real services is the final check.
 
 ### Preview servers
 
@@ -424,28 +416,40 @@ Tests use a synthetic SCHEDULE feed in Network Rail's JSON format (`tests/traint
 
 | Name | Runs | Use it for |
 |---|---|---|
-| `web` | `traintracker serve-http` on port 8000, or a free port if that is taken | The public site, the sign-in page and `/mcp`. Sign-in codes are written to the server's log (`MAIL_BACKEND=console`) |
-| `mcp-inspector` | The [MCP Inspector](https://github.com/modelcontextprotocol/inspector) (version 2, through `npx`) on port 6274, with this server as its stdio target | Calling the tools by hand. Its Apps tab draws a tool's MCP App, where it has one |
+| `web` | `manage.py migrate`, then `manage.py runserver` with `DJANGO_DEBUG=1` on port 8000, or a free port if that is taken | The public site, the sign-in pages and `/mcp`. Sign-in emails are written to the server's console log |
+| `mcp-inspector` | The [MCP Inspector](https://github.com/modelcontextprotocol/inspector) (version 2, through `npx`) on port 6274, with `manage.py serve_stdio` as its stdio target | Calling the tools by hand. Its Apps tab draws a tool's MCP App, where it has one |
 
 The Inspector needs Node 22.19 or later. It starts a local server that can run commands, guarded by a token it makes at each launch and puts into the page it serves; the config leaves that on.
 
 ```
-manage.py        Django (Titan): config/ settings and URLs, apps/core/ shared pieces
-src/traintracker/
-  server.py      MCP tools, source fallback, live overlay, CLI
-  http_app.py    Streamable-HTTP entry point: auth wiring, Host check, health check
-  oauth.py       OAuth provider (Postgres), sign-in page, accounts
-  mail.py        Sends the sign-in code (Resend, or the log in development)
-  ratelimit.py   Per-account limit on tool calls
-  site/          Public pages: landing, docs, privacy policy, terms
-  ui/            MCP App: the departure board shown with a live board
-  timetable.py   SCHEDULE importer and Postgres queries (STP resolution)
-  planner.py     Connection Scan journey planner, London links
-  darwin.py      Rail Data Marketplace LDBWS client
-  usage.py       Count of requests sent to Darwin, against the allowance
-  stations.py    Station search and name resolution
-  models.py      Output models shared by all sources
-  demo.py        Demo mode: generated timetable and in-process Darwin
+manage.py
+config/          Settings (one module, from the environment), URLs, WSGI/ASGI
+apps/
+  core/          Titan's shared pieces: BaseModel, idempotency, rate limits, /livez and /healthz
+  accounts/      Sign-in by email link or code, passkeys, the account commands
+  mcp/           /mcp: Titan's MCP view (mcp-auth), the tool list, ui:// resources
+  public/        The site: pages (views.py, pages.py), boards (boards.py, board.py), templates
+  pwa/           The app's name and identity, as Titan's templates use it
+  rail/          The train tools and the data behind them
+    server.py    MCP tools, source fallback, live overlay
+    runtime.py   The tools' event loop, one per process
+    timetable.py SCHEDULE importer and Postgres queries (STP resolution)
+    planner.py   Connection Scan journey planner, London links
+    darwin.py    Rail Data Marketplace LDBWS client
+    usage.py     Count of requests sent to Darwin, against the allowance
+    ratelimit.py Per-account limit on tool calls
+    stations.py  Station search and name resolution
+    trainline.py Links to a train's page on Trainline
+    schemas.py   Output models shared by all sources
+    demo.py      Demo mode: generated timetable and in-process Darwin
+    config.py    The train tools' settings, from the environment
+    ui/          MCP App: the departure board (ui://traintracker/board.html)
+    data/        stations.json, trainline_slugs.json
+    management/  serve_stdio, refresh_timetable, import_timetable, rail_status
+templates/       Traintrackr's sign-in, account and connect pages
+static/          site.css, site.js, the sign-in scripts, the icons and the share card
+tests/           core, accounts, mcp, public, rail
+docs/            accounts.md, testing.md, decisions/
 ```
 
 ## Data and licences

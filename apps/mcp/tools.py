@@ -3,24 +3,26 @@
 Add a tool by writing a function and listing it in TOOLS with its JSON
 Schema. Raise ToolError for a mistake the model should see and correct.
 
-Traintrackr's train tools are still defined on ``traintracker.server``'s MCP
-server, which production runs until Titan 4/4: their arguments, schemas,
-titles and hints come from there, so the two endpoints can't drift apart.
-Each one is listed here as a Tool whose function runs it on the train tools'
-event loop (apps/rail/runtime.py).
+Traintrackr's train tools are defined on ``apps.rail.server``'s MCP server:
+their arguments, schemas, titles and hints come from there. Each one is
+listed here as a Tool whose function runs it on the train tools' event loop
+(apps/rail/runtime.py), once the account's bucket allows it
+(apps/rail/ratelimit.py).
 """
 
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import cache
 from typing import Any
 
 from mcp.server.mcpserver.exceptions import ToolError as SdkToolError
 from mcp.server.mcpserver.exceptions import UnexpectedToolError
 from mcp.server.mcpserver.tools import Tool as SdkTool
 
-from apps.rail import runtime
-from traintracker import server
+from apps.rail import runtime, server
+from apps.rail.ratelimit import COSTS, RateLimiter, charged, limited
+from apps.rail.settings import rail_settings
 
 logger = logging.getLogger(__name__)
 
@@ -73,8 +75,20 @@ class Tool:
         return described
 
 
-def _run_train_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
-    """Run the train tool ``name`` and return its structured result.
+@cache
+def limiter() -> RateLimiter | None:
+    """The process's buckets, one per account; None with RATE_LIMIT_PER_MINUTE=0."""
+    settings = rail_settings()
+    if settings.rate_limit_per_minute <= 0:
+        return None
+    return RateLimiter(settings.rate_limit_per_minute, settings.rate_limit_burst)
+
+
+def _run_train_tool(user: Any, name: str, args: dict[str, Any]) -> dict[str, Any]:
+    """Run the train tool ``name`` for ``user`` and return its structured result.
+
+    Each account has a bucket of calls (apps/rail/ratelimit.py); over it, the
+    model is told how long to wait.
 
     The server checks the arguments against the tool's schema and turns
     Traintrackr's own errors into messages for the model; either arrives
@@ -83,8 +97,16 @@ def _run_train_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
     out of the logs. Anything else the SDK calls unexpected, and its message
     could carry internals, so the model gets a plain one.
     """
+    buckets = limiter()
+    key = str(user.pk)
+    if buckets and (wait := buckets.take(key, COSTS.get(name, 1))):
+        logger.info("mcp.tool name=%s limited", name)
+        raise ToolError(limited(wait))
     try:
-        result = runtime.run(server.mcp.call_tool, name, args)
+        if buckets:
+            result = runtime.run(charged, buckets, key, server.mcp.call_tool, name, args)
+        else:
+            result = runtime.run(server.mcp.call_tool, name, args)
     except UnexpectedToolError as exc:
         logger.error("mcp.tool name=%s raised %s", name, type(exc.__cause__).__name__)
         raise ToolError("Something went wrong on the server. Try again.") from None
@@ -101,7 +123,7 @@ def _run_train_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _train_tool(info: SdkTool) -> Tool:
-    """List one of ``traintracker.server``'s tools as a Tool."""
+    """List one of ``apps.rail.server``'s tools as a Tool."""
     hints = info.annotations
     ui = (info.meta or {}).get("ui", {}).get("resourceUri")
     return Tool(
@@ -110,7 +132,7 @@ def _train_tool(info: SdkTool) -> Tool:
         description=info.description or "",
         input_schema=info.parameters,
         output_schema=info.output_schema,
-        func=lambda _user, args: _run_train_tool(info.name, args),
+        func=lambda user, args: _run_train_tool(user, info.name, args),
         read_only=bool(hints and hints.read_only_hint),
         hints={
             "destructiveHint": bool(hints and hints.destructive_hint),

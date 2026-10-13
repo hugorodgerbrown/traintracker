@@ -1,6 +1,6 @@
 """The train tools' event loop: one per process, in a thread of its own.
 
-The tools are coroutines on ``traintracker.server``'s MCP server. They share
+The tools are coroutines on ``apps.rail.server``'s MCP server. They share
 one HTTP client, the day's Darwin request budget, and a semaphore that holds
 timetable reads and journey plans to two at a time; the server's lifespan
 makes them and starts the daily timetable refresh. Titan's ``/mcp`` view is
@@ -22,7 +22,7 @@ from collections.abc import Callable, Coroutine
 from contextlib import AsyncExitStack
 from typing import Any
 
-from traintracker import server
+from apps.rail import server
 
 logger = logging.getLogger(__name__)
 

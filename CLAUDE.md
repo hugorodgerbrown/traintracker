@@ -1,17 +1,11 @@
 # CLAUDE.md — Traintrackr
 
 Live GB train times, platforms and journeys, in Claude and ChatGPT. It is
-moving onto the Titan
+built on the Titan
 [django-titan-template](https://github.com/hugorodgerbrown/django-titan-template)
-in four steps
 ([docs/decisions/traintrackr-moves-onto-titan-in-four-steps.md](docs/decisions/traintrackr-moves-onto-titan-in-four-steps.md));
 keep new work close to the template so `copier update --trust` stays a clean
-merge.
-
-Until the last step, production runs the MCP server in `src/traintracker/`
-(`traintracker serve-http`, see `render.yaml`), and the Django project is not
-deployed. A change to what people see or call still goes in
-`src/traintracker/`.
+merge. Deploying is `titan deploy` (`render.yaml`).
 
 ## Layout
 
@@ -23,11 +17,12 @@ apps/core/         BaseModel, IdempotencyMiddleware + IdempotencyRecord,
 apps/accounts/     email link or code sign-in, passkeys, the account
                    commands (docs/accounts.md)
 apps/mcp/          /mcp (Titan's view, mcp-auth) listing the train tools
-apps/rail/         the train tools' event loop and the timetable commands
+apps/rail/         the train tools (server.py), their event loop
+                   (runtime.py), the timetable, planner and Darwin client,
+                   the board MCP App (ui/), and the rail commands
+apps/public/       the public site: pages, departure boards, embed, TV view
 templates/         Traintrackr's sign-in, account and connect pages
-src/traintracker/  the MCP server production runs: tools (server.py), HTTP
-                   app and OAuth, the public site (site/), the board MCP App
-                   (ui/), the timetable, planner and Darwin client
+static/            site.css, site.js, icons and the share card
 docs/              testing, decisions/
 .claude/skills/    writing the Titan docs kept in Linear (research, user
                    testing script, blog post), each with a length setting
@@ -38,9 +33,9 @@ docs/              testing, decisions/
 ```bash
 uv sync
 uv run python manage.py runserver
-uv run traintracker serve-http   # the MCP server; see the README for its settings
-uv run tox                       # every check CI runs (except sast)
-uv run pytest tests/core         # targeted run while iterating
+uv run python manage.py serve_stdio   # the tools on stdio (desktop app, MCP Inspector)
+uv run tox                            # every check CI runs (except sast)
+uv run pytest tests/core              # targeted run while iterating
 ```
 
 Never run a bare `pytest`; use `uv run`. Dependencies: `uv add` /
@@ -50,7 +45,6 @@ Never run a bare `pytest`; use `uv run`. Dependencies: `uv add` /
 
 - A module docstring on every module and a docstring on every class and
   function (ruff `D`, Google style); every argument typed.
-  `src/traintracker/` is exempt from `D` until step 2 moves it into `apps/`.
 - British English in prose and identifiers (colour, behaviour), except
   third-party names.
 - Simple over clever; no abstraction until two callers need it.
@@ -66,7 +60,7 @@ Every concrete model ships the full kit: inherits `BaseModel`; has an
 admin class, a `to_string()`, an explicit `Meta.ordering`, a custom
 queryset, a factory in `tests/factories.py`, and tests. Use `uuid`, never
 `id`, in URLs and anything a client sees. The timetable is not a model: it
-is a Postgres schema rebuilt each day (`src/traintracker/timetable.py`).
+is a Postgres schema rebuilt each day (`apps/rail/timetable.py`).
 
 ### Management commands
 
@@ -83,11 +77,12 @@ Before changing anything a person sees, read the system's `project/README.md` wi
 `project/components/<Name>/README.md` where the change touches them. Follow its
 colour, type, spacing, board and copy rules. That covers:
 
-- `src/traintracker/site/`: the pages, `site.css`, `site.js`, icons and share card.
-- `src/traintracker/ui/board.html`: the board drawn in Claude and ChatGPT.
-- `src/traintracker/oauth.py`: the sign-in and verification pages (`_HEAD`,
-  `_page` and the forms), which use the site stylesheet and icon.
-- `src/traintracker/mail.py`: the sign-in email's subject and body (copy rules).
+- `apps/public/templates/` and `static/`: the pages, boards, `site.css`,
+  `site.js`, icons and share card.
+- `apps/rail/ui/board.html`: the board drawn in Claude and ChatGPT.
+- `templates/accounts/` and `templates/mcp_auth/`: the sign-in, account and
+  connect pages, which use the site stylesheet and icon.
+- `templates/accounts/emails/`: the sign-in email's subject and body (copy rules).
 
 The system was built from this repository's code, so the code is the source and
 the artifact documents it. When a change alters a token, a component or a rule

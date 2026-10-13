@@ -1,7 +1,6 @@
 """Download Network Rail's daily SCHEDULE extract and rebuild the timetable.
 
-``traintracker refresh`` as a management command, for the Render cron job
-after the cut-over. It replaces the timetable schema, so it only does so
+The Render cron job runs it each morning. It replaces the timetable schema, so it only does so
 with ``--commit``; without it, it says what it would do. In demo mode it
 rebuilds the generated timetable instead.
 """
@@ -11,10 +10,10 @@ from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
+from apps.rail import demo
+from apps.rail.errors import TrainTrackerError
 from apps.rail.settings import rail_settings
-from traintracker import demo
-from traintracker.errors import TrainTrackerError
-from traintracker.timetable import download_and_build
+from apps.rail.timetable import download_and_build
 
 
 class Command(BaseCommand):

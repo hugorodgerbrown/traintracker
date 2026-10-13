@@ -1,0 +1,189 @@
+"""Configuration from environment variables. Nothing is read from disk."""
+
+from __future__ import annotations
+
+import os
+import re
+from dataclasses import dataclass, field, replace
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+UK_TZ = ZoneInfo("Europe/London")
+
+# Rail Data Marketplace product base URLs. Each RDM product has its own URL and
+# its own consumer key; copy both from the product's "Specification" tab.
+DARWIN_DEPARTURES_URL = (
+    "https://api1.raildata.org.uk/1010-live-departure-board-dep1_2/LDBWS/api/20220120"
+)
+DARWIN_SERVICE_URL = "https://api1.raildata.org.uk/1010-service-details1_2/LDBWS/api/20220120"
+# Demo mode serves Darwin from generated data in-process; this host never resolves.
+DEMO_DARWIN_URL = "https://demo.traintracker.invalid/LDBWS"
+NR_SCHEDULE_URL = (
+    "https://publicdatafeeds.networkrail.co.uk/ntrod/CifFileAuthenticate"
+    "?type=CIF_ALL_FULL_DAILY&day=toc-full"
+)
+# Trainline's live boards; a timetable service links to its train's page there.
+TRAINLINE_LIVE_URL = "https://www.thetrainline.com/live"
+
+
+# Requests sent to Darwin in one day before the live tools fall back to booked
+# times. The free allowance is 5 million per four weeks, about 178,000 a day.
+DARWIN_DAILY_LIMIT = 170_000
+
+TRUE = {"1", "true", "yes", "on"}
+
+
+def default_data_dir() -> Path:
+    """Where local data is kept by default: under XDG_DATA_HOME, else ~/.traintracker."""
+    base = os.environ.get("XDG_DATA_HOME")
+    return Path(base) / "traintracker" if base else Path.home() / ".traintracker"
+
+
+def load_dotenv(path: Path | None = None) -> None:
+    """Load KEY=VALUE lines from .env into os.environ without overriding real env vars.
+
+    Lets secrets live in a git-ignored .env in the project folder rather than
+    in the Claude desktop config.
+    """
+    if os.environ.get("TRAINTRACKER_NO_DOTENV"):
+        return
+    path = path or Path.cwd() / ".env"
+    if not path.is_file():
+        return
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.removeprefix("export ").partition("=")
+        key, value = key.strip(), value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        else:
+            value = value.split(" #", 1)[0].rstrip()  # inline comment
+        os.environ.setdefault(key, value)
+
+
+def _env(name: str) -> str | None:
+    value = os.environ.get(name, "").strip()
+    return value or None
+
+
+SCHEMA_NAME = re.compile(r"[a-z_][a-z0-9_]{0,40}")
+
+
+@dataclass(frozen=True)
+class TimetableDB:
+    """Where a timetable lives: a Postgres database and the schema inside it."""
+
+    dsn: str = field(repr=False)
+    schema: str
+
+    def __post_init__(self) -> None:
+        if not SCHEMA_NAME.fullmatch(self.schema):
+            raise ValueError(f"Invalid timetable schema name {self.schema!r}.")
+
+
+@dataclass(frozen=True)
+class Settings:
+    """The server's settings, read from environment variables by `from_env`."""
+
+    darwin_key: str | None = field(repr=False)
+    darwin_departures_url: str
+    darwin_service_key: str | None = field(repr=False)
+    darwin_service_url: str
+    darwin_arrivals_key: str | None = field(repr=False)
+    darwin_arrivals_url: str | None
+    nr_username: str | None
+    nr_password: str | None = field(repr=False)
+    nr_schedule_url: str
+    database_url: str | None = field(repr=False)
+    timetable_schema: str
+    auto_refresh: bool
+    data_dir: Path
+    timetable_max_age_hours: float
+    min_interchange_minutes: int
+    http_timeout: float
+    demo: bool = False
+    rate_limit_per_minute: int = 30
+    rate_limit_burst: int = 10
+    usage_schema: str = "traintracker_usage"
+    openai_apps_challenge: str | None = None
+    darwin_daily_limit: int = DARWIN_DAILY_LIMIT
+    trainline_live_url: str = TRAINLINE_LIVE_URL
+
+    @property
+    def timetable_db(self) -> TimetableDB:
+        """The timetable's database and schema."""
+        # A separate schema, so demo data never mixes with the real timetable.
+        schema = f"{self.timetable_schema}_demo" if self.demo else self.timetable_schema
+        return TimetableDB(self.database_url or "", schema)
+
+    @property
+    def has_nr(self) -> bool:
+        """Whether Network Rail feed credentials are set, for the timetable."""
+        return self.nr_username is not None and self.nr_password is not None
+
+    @property
+    def has_darwin(self) -> bool:
+        """Whether the Darwin departures key is set."""
+        return self.darwin_key is not None
+
+    @property
+    def has_darwin_arrivals(self) -> bool:
+        """Whether both the Darwin arrivals key and its URL are set."""
+        return self.darwin_arrivals_key is not None and self.darwin_arrivals_url is not None
+
+    @property
+    def has_any_darwin(self) -> bool:
+        """Whether any Darwin product can be called.
+
+        Each has its own key, and a server may hold the arrivals or
+        service-details one without departures.
+        """
+        return self.has_darwin or self.has_darwin_arrivals or self.darwin_service_key is not None
+
+    @classmethod
+    def from_env(cls) -> Settings:
+        """The settings from environment variables; TRAINTRACKER_DEMO swaps in generated data."""
+        darwin_key = _env("DARWIN_API_KEY")
+        settings = cls(
+            darwin_key=darwin_key,
+            darwin_departures_url=_env("DARWIN_DEPARTURES_URL") or DARWIN_DEPARTURES_URL,
+            # Service details is a separate RDM product; fall back to the board key.
+            darwin_service_key=_env("DARWIN_SERVICE_API_KEY") or darwin_key,
+            darwin_service_url=_env("DARWIN_SERVICE_URL") or DARWIN_SERVICE_URL,
+            darwin_arrivals_key=_env("DARWIN_ARRIVALS_API_KEY"),
+            darwin_arrivals_url=_env("DARWIN_ARRIVALS_URL"),
+            nr_username=_env("NR_USERNAME"),
+            nr_password=_env("NR_PASSWORD"),
+            nr_schedule_url=_env("NR_SCHEDULE_URL") or NR_SCHEDULE_URL,
+            database_url=_env("DATABASE_URL"),
+            timetable_schema=_env("TIMETABLE_SCHEMA") or "timetable",
+            # Off where a separate cron job runs `manage.py refresh_timetable`.
+            auto_refresh=(_env("TIMETABLE_AUTO_REFRESH") or "1").lower() in TRUE,
+            data_dir=Path(_env("TRAINTRACKER_DATA_DIR") or default_data_dir()).expanduser(),
+            timetable_max_age_hours=float(_env("TIMETABLE_MAX_AGE_HOURS") or 26),
+            min_interchange_minutes=int(_env("MIN_INTERCHANGE_MINUTES") or 5),
+            http_timeout=float(_env("HTTP_TIMEOUT_SECONDS") or 15),
+            rate_limit_per_minute=int(_env("RATE_LIMIT_PER_MINUTE") or 30),
+            rate_limit_burst=int(_env("RATE_LIMIT_BURST") or 10),
+            usage_schema=_env("USAGE_SCHEMA") or "traintracker_usage",
+            openai_apps_challenge=_env("OPENAI_APPS_CHALLENGE"),
+            darwin_daily_limit=int(_env("DARWIN_DAILY_LIMIT") or DARWIN_DAILY_LIMIT),
+            trainline_live_url=_env("TRAINLINE_LIVE_URL") or TRAINLINE_LIVE_URL,
+        )
+        if (_env("TRAINTRACKER_DEMO") or "").lower() not in TRUE:
+            return settings
+        # Generated data only: every Darwin product on, no real account used.
+        return replace(
+            settings,
+            darwin_key="demo",
+            darwin_departures_url=DEMO_DARWIN_URL,
+            darwin_service_key="demo",
+            darwin_service_url=DEMO_DARWIN_URL,
+            darwin_arrivals_key="demo",
+            darwin_arrivals_url=DEMO_DARWIN_URL,
+            nr_username=None,
+            nr_password=None,
+            demo=True,
+        )

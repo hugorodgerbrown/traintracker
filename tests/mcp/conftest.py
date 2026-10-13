@@ -8,8 +8,8 @@ import psycopg
 import pytest
 
 from apps.rail import runtime
-from tests.traintracker.conftest import TEST_DATABASE_URL
-from traintracker.timetable import Timetable
+from apps.rail.timetable import Timetable
+from tests.rail.conftest import TEST_DATABASE_URL
 
 
 @pytest.fixture(scope="module")

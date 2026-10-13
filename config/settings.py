@@ -8,9 +8,8 @@ production hardening that `manage.py check --deploy` asks for.
 Traintrackr is moving onto the Titan template in four steps
 (docs/decisions/traintrackr-moves-onto-titan-in-four-steps.md). Until the
 last one, production still runs `traintracker serve-http` (src/traintracker)
-and nothing here is deployed. The accounts, public pages, design page and
-MCP endpoint, and the settings that go with them, arrive with the steps
-that bring them.
+and nothing here is deployed. Step 2 brings the accounts and the MCP
+endpoint; the public pages arrive with step 3.
 
 Django's tables live in the database's default schema. The timetable, the
 Darwin usage counts and the current sign-in each keep a schema of their own
@@ -19,10 +18,20 @@ serves both.
 """
 
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import dj_database_url
 from decouple import Csv, config
 from django.utils.csp import CSP
+from mcp_auth.conf import (
+    CHATGPT_REDIRECT_URI_PATTERNS,
+    DEFAULT_CONSENT_FORM_ACTION,
+    DEFAULT_REDIRECT_URI_PATTERNS,
+    oauth2_settings,
+)
+
+from apps.core import analytics
+from apps.pwa import conf as pwa_conf
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -63,16 +72,25 @@ SILENCED_SYSTEM_CHECKS = [
     # HSTS preload needs a registrable domain of our own; an onrender.com
     # name can't be preloaded.
     "security.W021",
+    # ALLOW_LOCALHOST_LOOPBACK on purpose: Claude Code and other local MCP
+    # clients sign in through a loopback port (RFC 8252); mcp_auth only
+    # allows loopback callbacks that match its pattern.
+    "oauth2_provider.W008",
 ]
 
-# Content Security Policy: everything from this origin, nothing inline.
+# fivebar counts visits without cookies; off until FIVEBAR_DOMAIN is set.
+# The sign-in pages never load it (one-time addresses). See apps/core/analytics.py.
+FIVEBAR_DOMAIN: str = config("FIVEBAR_DOMAIN", default="")
+
+# Content Security Policy: everything from this origin, nothing inline. The
+# other origin is fivebar's, and only while FIVEBAR_DOMAIN is set.
 SECURE_CSP = {
     "default-src": [CSP.SELF],
-    "script-src": [CSP.SELF],
+    "script-src": [CSP.SELF, *analytics.csp_sources(FIVEBAR_DOMAIN)],
     "style-src": [CSP.SELF],
     "img-src": [CSP.SELF, "data:"],
     "font-src": [CSP.SELF],
-    "connect-src": [CSP.SELF],
+    "connect-src": [CSP.SELF, *analytics.csp_sources(FIVEBAR_DOMAIN)],
     "object-src": [CSP.NONE],
     "base-uri": [CSP.SELF],
     "form-action": [CSP.SELF],
@@ -91,7 +109,12 @@ INSTALLED_APPS = [
     "whitenoise.runserver_nostatic",
     "django.contrib.staticfiles",
     "apps.core",
+    "apps.accounts",
     "apps.rail",
+    "apps.mcp",
+    # After the project's apps so their templates (templates/mcp_auth/) win.
+    "mcp_auth",
+    "oauth2_provider",
 ]
 
 MIDDLEWARE = [
@@ -147,6 +170,56 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
+# Sign-in is by emailed link or code, or a passkey; there are no passwords
+# outside the admin's own (unused) form. See docs/accounts.md. Nobody signs
+# in to Traintrackr for its own sake: it happens on the way to connecting
+# Claude or ChatGPT, and the account page is where that ends otherwise.
+LOGIN_URL = "accounts:sign_in"
+LOGIN_REDIRECT_URL = "accounts:account"
+LOGOUT_REDIRECT_URL = "accounts:sign_in"
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 90
+
+# How long an emailed sign-in link and code work, and how many wrong codes
+# end a request.
+SIGN_IN_MAX_AGE_SECONDS = 15 * 60
+SIGN_IN_MAX_CODE_ATTEMPTS = 5
+
+# Passkeys (WebAuthn). The relying party is this site's host name; a
+# passkey only works on the host it was made for.
+WEBAUTHN_RP_ID: str = config("WEBAUTHN_RP_ID", default=urlsplit(SITE_URL).hostname or "localhost")
+WEBAUTHN_RP_NAME = pwa_conf.APP_NAME
+WEBAUTHN_ORIGINS: list[str] = config("WEBAUTHN_ORIGINS", default=SITE_URL, cast=Csv())
+
+# Email. The console in development; any SMTP relay in production (Django
+# 6.1's MAILERS replaces the EMAIL_HOST family of settings).
+_SMTP = "django.core.mail.backends.smtp.EmailBackend"
+_EMAIL_BACKEND: str = config(
+    "EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend" if DEBUG else _SMTP
+)
+MAILERS = {
+    "default": {
+        "BACKEND": _EMAIL_BACKEND,
+        "OPTIONS": {
+            "host": config("EMAIL_HOST", default="localhost"),
+            "port": config("EMAIL_PORT", default=587, cast=int),
+            "username": config("EMAIL_HOST_USER", default=""),
+            "password": config("EMAIL_HOST_PASSWORD", default=""),
+            "use_tls": config("EMAIL_USE_TLS", default=True, cast=bool),
+            "timeout": 10,
+        }
+        if _EMAIL_BACKEND == _SMTP
+        else {},
+    }
+}
+DEFAULT_FROM_EMAIL: str = config(
+    "DEFAULT_FROM_EMAIL",
+    default=f"{pwa_conf.APP_NAME} <noreply@localhost>",
+)
+
+# Background tasks (django.tasks). Email is sent from a task so a slow mail
+# server never holds a request; the immediate backend runs it in-process.
+TASKS = {"default": {"BACKEND": "django.tasks.backends.immediate.ImmediateBackend"}}
+
 # Rate limits count per client address. Behind Render's proxy the client is
 # the last X-Forwarded-For entry; locally there is no proxy.
 RATE_LIMIT_PROXY_COUNT: int = config("RATE_LIMIT_PROXY_COUNT", default=0 if DEBUG else 1, cast=int)
@@ -182,6 +255,27 @@ LOGGING = {
         "httpx": {"level": "WARNING"},
         "httpcore": {"level": "WARNING"},
     },
+}
+
+# OAuth 2.1 for the MCP endpoint, so Claude and ChatGPT can add Traintrackr
+# as a connector. The shared Titan preset: PKCE, rotating refresh tokens, DCR
+# and CIMD, held to the callbacks below.
+OAUTH2_PROVIDER = oauth2_settings(
+    resource_name=pwa_conf.APP_NAME,
+    scope_description="Look up train times",
+)
+MCP_AUTH = {
+    # Anyone with an active account may connect, not only staff (the
+    # template's default): the tools only read public rail data, and
+    # Traintrackr is listed in the Claude and ChatGPT directories.
+    "CAN_CONNECT": "mcp_auth.policy.active_user",
+    # ChatGPT's callbacks as well as Claude's and loopback.
+    "REDIRECT_URI_PATTERNS": DEFAULT_REDIRECT_URI_PATTERNS + CHATGPT_REDIRECT_URI_PATTERNS,
+    "CONSENT_FORM_ACTION": [
+        *DEFAULT_CONSENT_FORM_ACTION,
+        "https://chatgpt.com",
+        "https://platform.openai.com",
+    ],
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

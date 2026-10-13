@@ -1,0 +1,37 @@
+{% extends "public_base.html" %}
+{% load static %}
+{% block title %}Sign in · {{ pwa.name }}{% endblock %}
+{% block description %}Sign in to {{ pwa.name }}, or create an account, with your email address.{% endblock %}
+{% block extra_js %}
+  <script src="{% static 'js/webauthn_json.js' %}" defer></script>
+  <script src="{% static 'js/passkeys.js' %}" defer></script>
+{% endblock %}
+{% block content %}
+  <section class="card stack">
+    <h1>Sign in</h1>
+    <p>Enter your email address and we'll send you a link and a code. New here? The same email creates your account.</p>
+    <form class="stack" method="post" action="{% url 'accounts:sign_in' %}">
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      <label class="field">
+        <span class="field__label">Email address</span>
+        {# "webauthn" lets the browser offer a saved passkey as the user focuses the field. #}
+        <input type="email" name="email" value="{{ form.email.value|default_if_none:'' }}"
+               autocomplete="email webauthn" inputmode="email" required autofocus>
+      </label>
+      {{ form.email.errors }}
+      {{ form.next }}
+      <button class="button" type="submit">Email me a link</button>
+    </form>
+    <p class="meta">By continuing you agree to the <a href="{% url 'public:terms' %}">terms</a>. Our <a href="{% url 'public:privacy' %}">privacy notice</a> says what we keep.</p>
+  </section>
+  {# Shown by passkeys.js only where the browser supports passkeys. #}
+  <section class="card stack" data-passkey-sign-in
+           data-options-url="{% url 'accounts:passkey_sign_in_options' %}"
+           data-verify-url="{% url 'accounts:passkey_sign_in' %}"
+           data-next="{{ form.next.value|default_if_none:'' }}" hidden>
+    <h2>Have a passkey?</h2>
+    <button class="button button--secondary" type="button" data-passkey-button>Sign in with a passkey</button>
+    <p class="form-error" data-passkey-error role="alert" hidden></p>
+  </section>
+{% endblock %}

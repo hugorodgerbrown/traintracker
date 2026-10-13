@@ -1,0 +1,21 @@
+{% load static %}<!doctype html>
+{# The sign-in, account and connect pages: one narrow column, the site's stylesheet. #}
+{# No header, no fivebar: they live at one-time addresses and are never shared. #}
+<html lang="en-GB">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex">
+    <title>{% block title %}Traintrackr{% endblock %}</title>
+    <link rel="icon" href="{% static 'icons/icon.svg' %}" type="image/svg+xml">
+    <link rel="icon" href="{% static 'icons/icon-32.png' %}" sizes="32x32" type="image/png">
+    <link rel="apple-touch-icon" href="{% static 'icons/icon-180.png' %}">
+    <link rel="stylesheet" href="{% static 'css/site.css' %}">
+    {% block extra_js %}{% endblock %}
+  </head>
+  <body>
+    <main class="sign-in" id="main">
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>

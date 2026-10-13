@@ -1,0 +1,13 @@
+{% extends "public_base.html" %}
+{% block title %}Sign in · {{ pwa.name }}{% endblock %}
+{% block content %}
+  <section class="card stack">
+    <h1>Sign in</h1>
+    <p>Continue as <strong>{{ email }}</strong>.</p>
+    {# A button, not an automatic sign-in: mail scanners open links, and would use this one up. #}
+    <form method="post">
+      {% csrf_token %}
+      <button class="button" type="submit">Continue</button>
+    </form>
+  </section>
+{% endblock %}

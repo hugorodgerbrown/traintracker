@@ -1,0 +1,15 @@
+{% extends "mcp_auth/base.html" %}
+{% block title %}Connected apps · Traintrackr{% endblock %}
+{% block body %}
+  <h1>Connected apps</h1>
+  {% for app in apps %}
+    <form method="post" action="{% url 'oauth2_provider:disconnect' app.pk %}">
+      {% csrf_token %}
+      <p>{{ app.name|default:app.client_id }}</p>
+      <button type="submit" class="quiet">Disconnect {{ app.name|default:"this app" }}</button>
+    </form>
+  {% empty %}
+    <p>No apps are connected. When you connect Claude or ChatGPT, it shows here.</p>
+  {% endfor %}
+  <p class="hint"><a href="{% url 'accounts:account' %}">Back to your account</a></p>
+{% endblock %}

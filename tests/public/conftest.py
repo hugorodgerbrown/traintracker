@@ -24,7 +24,8 @@ def fetch() -> FakeFetch:
 @pytest.fixture(autouse=True)
 def django_site(settings: Any, monkeypatch: pytest.MonkeyPatch, fetch: FakeFetch) -> None:
     """Django's pages with production's values, and boards from ``fetch`` on a fresh loop."""
-    cache.clear()  # the rate limits' counters
+    cache.clear()
+    boards.limiter.cache_clear()  # a full bucket for every address
     settings.SITE_URL = BASE
     settings.FIVEBAR_DOMAIN = "traintrackr.live"
     monkeypatch.setattr(views, "fields", lambda: FIELDS)

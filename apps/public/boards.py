@@ -8,12 +8,14 @@ templates. The shared boards live on the train tools' event loop
 
 ``?embed=1`` is the one page another site may frame; ``?tv=1`` fills a
 screen. Each client address may open boards at a limited rate, which bounds
-what one address can make the server fetch.
+what one address can make the server fetch: production's token bucket, a
+burst of 30 refilled at 60 a minute, kept in the process's memory as
+production keeps it (one worker serves the site:
+docs/decisions/the-train-tools-run-on-one-event-loop.md).
 """
 
 import logging
-import math
-import time
+import threading
 from datetime import datetime
 from functools import cache
 from typing import Any
@@ -24,17 +26,17 @@ from django.http import HttpRequest, HttpResponse, HttpResponseRedirect, JsonRes
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_safe
 
-from apps.core.ratelimit import client_ip, over_limit
+from apps.core.ratelimit import client_ip
 from apps.public.views import page_context, relative
 from apps.rail import runtime
 from traintracker import server, stations
 from traintracker.config import UK_TZ
-from traintracker.ratelimit import limited
+from traintracker.ratelimit import RateLimiter, limited
 from traintracker.site import boards as tt
 
 logger = logging.getLogger(__name__)
 
-BURST, WINDOW = int(tt.BOARD_LIMIT[0]), int(tt.BOARD_LIMIT[1])
+BURST, PER_MINUTE = int(tt.BOARD_LIMIT[0]), tt.BOARD_LIMIT[1]
 PICKER_TITLE = "Departure boards · Traintrackr"
 PICKER_DESCRIPTION = "A live departure board for any station in Great Britain, to share or embed."
 
@@ -45,11 +47,19 @@ def shared() -> tt.SharedBoards:
     return tt.SharedBoards(server.public_board)
 
 
+@cache
+def limiter() -> RateLimiter:
+    """The process's buckets, one for each client address."""
+    return RateLimiter(PER_MINUTE, BURST)
+
+
+_taking = threading.Lock()  # the buckets are shared by the worker's threads
+
+
 def _wait(request: HttpRequest) -> int:
     """Seconds this address must wait, or 0 if it may open a board now."""
-    if not over_limit("board", client_ip(request), limit=BURST, window_seconds=WINDOW):
-        return 0
-    return max(1, math.ceil(WINDOW - time.time() % WINDOW))
+    with _taking:
+        return limiter().take(client_ip(request))
 
 
 def _refused(wait: int, response: HttpResponse) -> HttpResponse:

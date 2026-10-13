@@ -8,6 +8,7 @@ from django.test import Client
 
 from apps.public import boards
 from tests.traintracker.test_boards import FakeFetch
+from traintracker.ratelimit import RateLimiter
 from traintracker.site import boards as tt
 
 pytestmark = pytest.mark.django_db
@@ -71,13 +72,30 @@ def test_one_address_can_open_boards_only_so_fast(client: Client) -> None:
         assert client.get("/board/LST").status_code == 200
     page = client.get("/board/LST")
     assert page.status_code == 429
-    assert 1 <= int(page["Retry-After"]) <= boards.WINDOW
+    assert 1 <= int(page["Retry-After"]) <= 60
     assert page["Cache-Control"] == "private, no-store"
     data = client.get("/api/board/LST")
     assert data.status_code == 429
     assert "Try again in" in data.json()["error"]
     other = client.get("/board/LST", REMOTE_ADDR="192.0.2.9")
     assert other.status_code == 200
+
+
+def test_the_limit_refills_through_the_minute(
+    client: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A burst of 30, then one more a second: a reload a second later is served."""
+    now = [0.0]
+    limiter = RateLimiter(boards.PER_MINUTE, boards.BURST, clock=lambda: now[0])
+    monkeypatch.setattr(boards, "limiter", lambda: limiter)
+    for _ in range(boards.BURST):
+        assert client.get("/api/board/LST").status_code == 200
+    page = client.get("/board/LST")
+    assert page.status_code == 429
+    assert page["Retry-After"] == "1"
+    now[0] += 1
+    assert client.get("/board/LST").status_code == 200
+    assert client.get("/board/LST").status_code == 429
 
 
 def test_the_favicon_is_the_png(client: Client) -> None:

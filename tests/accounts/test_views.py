@@ -80,6 +80,16 @@ def test_sign_in_emails_a_link_and_a_code(client: Client) -> None:
     assert b"walker@example.com" in page.content
 
 
+def test_sign_in_email_has_a_simple_html_version(client: Client) -> None:
+    """The HTML half carries the same code and link as the text half, escaped."""
+    request_email(client)
+    link, code = emailed()
+    html, kind = mail.outbox[0].alternatives[0]
+    assert kind == "text/html"
+    assert code in html
+    assert link in html
+
+
 def test_code_page_draws_the_code_as_six_boxes(client: Client) -> None:
     """The code field carries code_input.js's hook, and the page loads the script."""
     request_email(client)

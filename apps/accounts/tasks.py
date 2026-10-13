@@ -14,7 +14,7 @@ from apps.pwa import conf
 
 @task()
 def send_sign_in_email(email: str, link: str, code: str) -> None:
-    """Email ``email`` its sign-in link and code."""
+    """Email ``email`` its sign-in link and code, as plain text and as simple HTML."""
     context = {
         "link": link,
         "code": code,
@@ -23,4 +23,5 @@ def send_sign_in_email(email: str, link: str, code: str) -> None:
     }
     subject = render_to_string("accounts/emails/sign_in_subject.txt", context).strip()
     body = render_to_string("accounts/emails/sign_in.txt", context)
-    send_mail(subject, body, None, [email])
+    html = render_to_string("accounts/emails/sign_in.html", context)
+    send_mail(subject, body, None, [email], html_message=html)

@@ -13,6 +13,9 @@ dependencies = [
     "gunicorn>=26.2.0,<27",
     "python-decouple>=3.8,<4",
     "whitenoise>=6.12.0,<7",
+    # Titan's accounts (passkeys) and the MCP endpoint's OAuth.
+    "mcp-auth",
+    "webauthn>=3.0.0,<4",
     # The MCP server (src/traintracker), which production runs until Titan 4/4.
     "mcp>=2.2,<3",
     "httpx>=0.28",
@@ -71,6 +74,10 @@ packages = ["src/traintracker"]
 [tool.uv]
 default-groups = ["dev"]
 
+[tool.uv.sources]
+# The shared Titan MCP auth app, pinned to a release tag.
+mcp-auth = { git = "https://github.com/hugorodgerbrown/mcp-auth", tag = "v0.1.2" }
+
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings"
 pythonpath = ["."]
@@ -104,6 +111,10 @@ ignore = [
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.ruff.lint.isort]
+# The MCP server is this repository's code too, though it installs as a package.
+known-first-party = ["apps", "config", "tests", "traintracker"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106"]
@@ -144,7 +155,7 @@ strict_equality = true
 extra_checks = true
 
 [[tool.mypy.overrides]]
-module = ["decouple", "factory", "factory.*"]
+module = ["decouple", "factory", "factory.*", "oauth2_provider.*"]
 ignore_missing_imports = true
 
 [tool.django-stubs]

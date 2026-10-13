@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Your account · Traintrackr{% endblock %}
+{% block extra_js %}
+  <script src="{% static 'js/webauthn_json.js' %}" defer></script>
+  <script src="{% static 'js/passkeys.js' %}" defer></script>
+{% endblock %}
+{% block content %}
+  <h1>Your account</h1>
+  <p>Signed in as <strong>{{ email }}</strong>.</p>
+  <p>To use Traintrackr, add it as a connector in Claude or ChatGPT. You can see and disconnect them on <a href="{% url 'oauth2_provider:connected-apps' %}">connected apps</a>.</p>
+  <form method="post" action="{% url 'accounts:sign_out' %}" data-sign-out>
+    {% csrf_token %}
+    <button type="submit" class="quiet">Sign out</button>
+  </form>
+
+  <section data-passkey-register
+           data-options-url="{% url 'accounts:passkey_register_options' %}"
+           data-register-url="{% url 'accounts:passkey_register' %}">
+    <h2>Passkeys</h2>
+    <p>A passkey signs you in with Face ID, a fingerprint or your device PIN, with no email to wait for.</p>
+    {% for passkey in passkeys %}
+      <form method="post" action="{% url 'accounts:passkey_delete' passkey.uuid %}">
+        {% csrf_token %}
+        <p><strong>{{ passkey.name }}</strong><br>
+          <span class="hint">Added {{ passkey.created_at|date:"j M Y" }}{% if passkey.last_used_at %} · last used {{ passkey.last_used_at|date:"j M Y" }}{% endif %}{% if passkey.backed_up %} · synced{% endif %}</span></p>
+        <button type="submit" class="quiet" aria-label="Remove {{ passkey.name }}">Remove</button>
+      </form>
+    {% empty %}
+      <p class="hint">You haven't added a passkey yet.</p>
+    {% endfor %}
+    {# Shown by passkeys.js only where the browser supports passkeys. #}
+    <div data-passkey-controls hidden>
+      <form>
+        <button type="button" data-passkey-button>Add a passkey</button>
+      </form>
+      <p class="error" data-passkey-error role="alert" hidden></p>
+    </div>
+    <p class="hint" data-passkey-unsupported>This browser can't make passkeys.</p>
+  </section>
+{% endblock %}

@@ -1,0 +1,9 @@
+{% extends "public_base.html" %}
+{% block title %}Link expired · {{ pwa.name }}{% endblock %}
+{% block content %}
+  <section class="card stack">
+    <h1>This link has expired</h1>
+    <p>Sign-in links work once, for {{ minutes }} minutes, and only the newest one we sent you works.</p>
+    <p><a class="button" href="{% url 'accounts:sign_in' %}">Send a new link</a></p>
+  </section>
+{% endblock %}

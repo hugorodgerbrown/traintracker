@@ -1,0 +1,7 @@
+{% extends "public_base.html" %}
+{% block title %}Link expired · Traintrackr{% endblock %}
+{% block content %}
+  <h1>This link has expired</h1>
+  <p>A sign-in link works once, for {{ minutes }} minutes, and only the newest one sent to you works.</p>
+  <p>Start again from Claude or ChatGPT, or <a href="{% url 'accounts:sign_in' %}">send a new link</a>.</p>
+{% endblock %}

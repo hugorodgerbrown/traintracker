@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Account · {{ pwa.name }}{% endblock %}
+{% block extra_js %}
+  <script src="{% static 'js/webauthn_json.js' %}" defer></script>
+  <script src="{% static 'js/passkeys.js' %}" defer></script>
+{% endblock %}
+{% block content %}
+  <section class="card stack">
+    <h1>Account</h1>
+    <p><span class="meta">Signed in as</span><br><strong>{{ email }}</strong></p>
+    <form method="post" action="{% url 'accounts:sign_out' %}" data-sign-out>
+      {% csrf_token %}
+      <button class="button button--secondary" type="submit">Sign out</button>
+    </form>
+    {% if user.is_staff %}<p><a href="{% url 'design:index' %}">Design system</a></p>{% endif %}
+  </section>
+  <section class="card stack" data-passkey-register
+           data-options-url="{% url 'accounts:passkey_register_options' %}"
+           data-register-url="{% url 'accounts:passkey_register' %}">
+    <h2>Passkeys</h2>
+    <p>A passkey signs you in with Face ID, a fingerprint or your device PIN, with no email to wait for.</p>
+    {% if passkeys %}
+      <ul class="item-list">
+        {% for passkey in passkeys %}
+          <li class="item">
+            <div>
+              <p class="item__title">{{ passkey.name }}</p>
+              <p class="meta">Added {{ passkey.created_at|date:"j M Y" }}{% if passkey.last_used_at %} · last used {{ passkey.last_used_at|date:"j M Y" }}{% endif %}{% if passkey.backed_up %} · synced{% endif %}</p>
+            </div>
+            <form method="post" action="{% url 'accounts:passkey_delete' passkey.uuid %}">
+              {% csrf_token %}
+              <button class="button button--quiet" type="submit" aria-label="Remove {{ passkey.name }}">Remove</button>
+            </form>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="meta">You haven't added a passkey yet.</p>
+    {% endif %}
+    {# Shown by passkeys.js only where the browser supports passkeys. #}
+    <div class="stack" data-passkey-controls hidden>
+      <button class="button" type="button" data-passkey-button>Add a passkey</button>
+      <p class="form-error" data-passkey-error role="alert" hidden></p>
+    </div>
+    <p class="meta" data-passkey-unsupported>This browser can't make passkeys.</p>
+  </section>
+{% endblock %}

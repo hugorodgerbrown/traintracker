@@ -1,0 +1,12 @@
+{% autoescape off %}Your sign-in code for {{ site_name }}:
+
+{{ code }}
+
+Or open this link to sign in:
+
+{{ link }}
+
+The code and the link expire in {{ minutes }} minutes, and either can be used once.
+
+If you didn't ask to sign in, ignore this message: nobody can sign in without the code or the link.
+{% endautoescape %}

@@ -1239,18 +1239,7 @@ def main(argv: list[str] | None = None) -> None:
         meta = build_from_file(Path(argv[1]), settings.timetable_db)
         print(f"Timetable built in schema {settings.timetable_db.schema}: {meta}", file=sys.stderr)
     elif cmd == "status":
-        info: Any
-        try:
-            info = Timetable.open(settings.timetable_db).meta
-        except TrainTrackerError as exc:
-            info = str(exc)
-        print(
-            ("Demo mode (generated data)\n" if settings.demo else "")
-            + f"Darwin: {_yn(settings.has_darwin)}; NR: {_yn(settings.has_nr)}\n"
-            + _usage_line(settings)
-            + f"Timetable schema {settings.timetable_db.schema}: {info}",
-            file=sys.stderr,
-        )
+        print(status_text(settings), file=sys.stderr)
     else:
         print(
             "usage: traintracker [serve | serve-http | refresh | import FILE.json.gz | status"
@@ -1293,6 +1282,21 @@ def _account_command(cmd: str, address: str, settings: Settings) -> None:
             print("No account for that address.", file=sys.stderr)
     finally:
         provider.close()
+
+
+def status_text(settings: Settings) -> str:
+    """What `status` prints: the sources configured, Darwin usage and the timetable."""
+    info: Any
+    try:
+        info = Timetable.open(settings.timetable_db).meta
+    except TrainTrackerError as exc:
+        info = str(exc)
+    return (
+        ("Demo mode (generated data)\n" if settings.demo else "")
+        + f"Darwin: {_yn(settings.has_darwin)}; NR: {_yn(settings.has_nr)}\n"
+        + _usage_line(settings)
+        + f"Timetable schema {settings.timetable_db.schema}: {info}"
+    )
 
 
 def _usage_line(settings: Settings) -> str:

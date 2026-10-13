@@ -20,6 +20,11 @@ config/            settings (one module, env-driven), urls, wsgi/asgi
 apps/core/         BaseModel, IdempotencyMiddleware + IdempotencyRecord,
                    decorators (require_htmx, login_required_json), rate
                    limits, livez and healthz
+apps/accounts/     email link or code sign-in, passkeys, the account
+                   commands (docs/accounts.md)
+apps/mcp/          /mcp (Titan's view, mcp-auth) listing the train tools
+apps/rail/         the train tools' event loop and the timetable commands
+templates/         Traintrackr's sign-in, account and connect pages
 src/traintracker/  the MCP server production runs: tools (server.py), HTTP
                    app and OAuth, the public site (site/), the board MCP App
                    (ui/), the timetable, planner and Darwin client

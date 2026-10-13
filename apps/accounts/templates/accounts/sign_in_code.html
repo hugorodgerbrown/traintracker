@@ -1,0 +1,24 @@
+{% extends "public_base.html" %}
+{% load static %}
+{% block title %}Check your email · {{ pwa.name }}{% endblock %}
+{% block extra_js %}<script src="{% static 'js/code_input.js' %}" defer></script>{% endblock %}
+{% block content %}
+  <section class="card stack">
+    <h1>Check your email</h1>
+    <p>We sent a link and a code to <strong>{{ email }}</strong>. Open the link, or type the code here. Both work once, for {{ minutes }} minutes.</p>
+    {# The code is one field without JavaScript; code_input.js turns it into six digit boxes. #}
+    <form class="stack" method="post" action="{% url 'accounts:sign_in_code' %}">
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      <label class="field">
+        <span class="field__label">Code</span>
+        <input id="sign-in-code" class="input--code" type="text" name="code" inputmode="numeric" pattern="[0-9 ]*"
+               autocomplete="one-time-code" maxlength="20" required autofocus data-code-input data-code-length="6">
+      </label>
+      {{ form.code.errors }}
+      <button class="button" type="submit">Sign in</button>
+    </form>
+    <p class="meta">Using the installed app on an iPhone? Type the code: a link opens in Safari, which signs in Safari rather than the app.</p>
+    <p class="meta">Nothing arrived? Check spam, or <a href="{% url 'accounts:sign_in' %}">send another</a>.</p>
+  </section>
+{% endblock %}

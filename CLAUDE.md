@@ -102,7 +102,9 @@ choice in `docs/decisions/`.
 ## Invariants
 
 1. No `mark_safe()` / `|safe` on content from outside the code.
-2. No inline script, style or event handler in a template.
+2. No inline script, style or event handler in a template. Email templates
+   are the exception for style: email clients ignore stylesheets, so they
+   use inline styles, and they stay very simple.
 3. Every fragment view is `@require_htmx`; every outbox endpoint is
    `@login_required_json`.
 4. No secrets in source.

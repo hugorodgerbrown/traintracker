@@ -25,12 +25,18 @@ from django.views.decorators.http import require_safe
 
 from apps.core.ratelimit import client_ip
 from apps.public import board as tt
+from apps.public import pages
 from apps.public.views import page_context, relative
 from apps.rail import runtime, server, stations
 from apps.rail.config import UK_TZ
 from apps.rail.ratelimit import RateLimiter, limited
 
 logger = logging.getLogger(__name__)
+
+# The board on the landing page: the station the share card draws, and as
+# many trains as the card shows.
+HOME_BOARD = tt.BoardKey("LST")
+HOME_ROWS = 7
 
 BURST, PER_MINUTE = int(tt.BOARD_LIMIT[0]), tt.BOARD_LIMIT[1]
 PICKER_TITLE = "Departure boards · Traintrackr"
@@ -74,11 +80,19 @@ def _mode(request: HttpRequest) -> str:
 def _figure_context(
     key: tt.BoardKey, data: dict[str, Any], mode: str, problem: str = ""
 ) -> dict[str, Any]:
-    """What public/_figure.html draws: the board, its trains and its notices."""
+    """A board's own page around public/_figure.html: its title, sharing and header."""
     title = f"{key.title()} · Traintrackr"
     description = "" if problem else f"Live {key.title()}, updated every minute."
+    return page_context(key.path, title, description, "/board") | _board_fields(
+        key, data, mode, problem
+    )
+
+
+def _board_fields(
+    key: tt.BoardKey, data: dict[str, Any], mode: str, problem: str = ""
+) -> dict[str, Any]:
+    """What public/_figure.html draws: the board, its trains and its notices."""
     return {
-        **page_context(key.path, title, description, "/board"),
         "key": key,
         "board_path": relative(key.path),
         "mode": mode,
@@ -212,6 +226,27 @@ def pick(request: HttpRequest) -> HttpResponse:
     to = found["to"].crs if "to" in found and found["to"].crs != crs else None
     # #new tells site.js the board was made here, to count it once.
     return _see_other(tt.BoardKey(crs, to, platform).path + tt.NEW_BOARD)
+
+
+@require_safe
+def home(request: HttpRequest) -> HttpResponse:
+    """The landing page, with Liverpool Street's live board under the lede."""
+    name, _, title, description = pages.PAGES["/"]
+    problem = ""
+    try:
+        data = runtime.run(shared().get, HOME_BOARD)
+    except tt.BoardUnavailable as exc:
+        # The page is still worth reading: the board says why it is empty,
+        # and site.js fills it in when the next fetch works.
+        data, problem = tt.unavailable(HOME_BOARD), str(exc)
+    except TimeoutError:
+        data, problem = tt.unavailable(HOME_BOARD), "The live board isn't answering."
+    fields = _board_fields(HOME_BOARD, data, "home", problem)
+    fields |= {"trains": fields["trains"][:HOME_ROWS], "rows": HOME_ROWS}
+    context = page_context("/", title, description, "/") | fields
+    response = render(request, "public/page.html", context | {"fragment": name})
+    response["Cache-Control"] = "public, max-age=30"
+    return response
 
 
 @require_safe

@@ -498,6 +498,8 @@ function follow(figure, seconds, show) {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "The board couldn't be fetched.");
+      // A board in a page (the landing page's) shows its first few trains only.
+      if (figure.dataset.rows) data.trains = data.trains.slice(0, Number(figure.dataset.rows));
       rows(table, data.trains);
       empty.hidden = data.trains.length > 0;
       empty.textContent = empty.dataset.empty; // in place of why it couldn't be fetched

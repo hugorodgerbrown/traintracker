@@ -14,10 +14,11 @@ from django.test import Client
 from mcp import Client as MCPClient
 from mcp.types import Tool
 
+from apps.public import board as tt
+from apps.public import boards, views
 from apps.public import pages as site
-from apps.public import views
 from apps.rail import server
-from tests.public.fakes import BASE
+from tests.public.fakes import BASE, FakeFetch
 
 pytestmark = pytest.mark.django_db
 
@@ -190,26 +191,60 @@ def test_the_landing_page_has_the_address_and_the_examples(client: Client) -> No
     assert "coming soon" not in text
 
 
-def test_the_landing_page_shows_an_example_board(client: Client) -> None:
-    """Under the lede, a board as a table that site.js draws as flaps."""
-    text = _page(client, "/")
-    assert text.index('class="lede"') < text.index('class="departures"') < text.index("<h2")
-    board = text.split('<figure class="departures">', 1)[1].split("</figure>", 1)[0]
+def test_the_landing_page_shows_liverpool_streets_live_board(
+    client: Client, fetch: FakeFetch
+) -> None:
+    """Under the lede, Liverpool Street's live board, which site.js keeps up to date."""
+    response = client.get("/")
+    text = response.content.decode()
+    assert text.index('class="lede"') < text.index('class="departures live"') < text.index("<h2")
+    board = text.split('<figure class="departures live"', 1)[1].split("</figure>", 1)[0]
+    assert 'data-feed="/api/board/LST"' in board
+    # The first seven trains, as on the share card; site.js keeps to as many.
+    assert 'data-rows="7"' in board
+    assert "data.trains.slice(0, Number(figure.dataset.rows))" in _static(SCRIPT).decode()
+    # The page has its own h1, so the station is a heading under it.
+    assert "<h2>London Liverpool Street</h2>" in board
+    assert "<h1>" not in board
+    assert fetch.calls == [("LST", None, None)]
     # The trains are a table in the page: site.js draws the flaps from it, so
     # the page needs no inline script or style, and reads without JavaScript.
     assert "<script" not in board
     assert "style=" not in board
-    # The same seven trains as the link-preview card, and the same credit.
-    assert board.count("<tr>") == 8
-    assert "seven trains" in site.SHARE_IMAGE_ALT
-    for cell in ("London Liverpool Street", "Colchester Town", "Cancelled", "Norwich"):
-        assert cell in board
-    assert "Powered by National Rail Enquiries" in board
-    # The times are made up, and the caption says so.
-    assert "An example." in board.split("<figcaption>", 1)[1]
+    assert "Live departures from London Liverpool Street." in board.split("<figcaption>", 1)[1]
+    # Like a board's own page, a cache may keep it for half a minute.
+    assert response["Cache-Control"] == "public, max-age=30"
     js = _static(SCRIPT).decode()
     assert ".departures" in js
     assert "prefers-reduced-motion" in js
+
+
+def test_the_landing_page_still_opens_when_the_board_cannot_be_had(
+    client: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With the feed down, the page opens and its board says why it is empty."""
+    shared = tt.SharedBoards(FakeFetch(error="Darwin is down."))
+    monkeypatch.setattr(boards, "shared", lambda: shared)
+    response = client.get("/")
+    assert response.status_code == 200
+    board = response.content.decode().split('<figure class="departures live"', 1)[1]
+    empty = '<p class="empty" data-empty="No departures in the next two hours.">Darwin is down.</p>'
+    assert empty in board
+
+
+def test_the_landing_page_still_opens_when_the_board_stalls(
+    client: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A board call that times out leaves the page up, with its board saying so."""
+
+    def stalled(*args: object) -> None:
+        """Time out, as runtime.run does when a call runs past its limit."""
+        raise TimeoutError
+
+    monkeypatch.setattr(boards.runtime, "run", stalled)
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "The live board isn&#x27;t answering." in response.content.decode()
 
 
 def _tools() -> list[Tool]:

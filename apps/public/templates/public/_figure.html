@@ -1,9 +1,9 @@
 {# The board: a table of the trains, which site.js draws as flaps. #}
 <figure class="departures live" data-feed="{{ key.feed }}" data-refresh="{{ refresh }}"
-  data-station="{{ key.crs }}" data-by="{{ key.by }}">
+  data-station="{{ key.crs }}" data-by="{{ key.by }}"{% if rows %} data-rows="{{ rows }}"{% endif %}>
   <div class="panel">
     <div class="station">
-      <h1>{{ board.station.name }}</h1>
+      {% if mode == "home" %}<h2>{{ board.station.name }}</h2>{% else %}<h1>{{ board.station.name }}</h1>{% endif %}
       <span>{{ kind }}</span>
       <time class="clock" datetime="{{ now|date:'c' }}">{{ now|time:'H:i:s' }}</time>
     </div>
@@ -24,4 +24,10 @@
       <span class="status" role="status"></span></p>
     <button type="button" class="fullscreen quiet" hidden>Full screen</button>
   </div>
-</figure>
+{% if mode == "home" %}  <figcaption>
+    Live departures from {{ board.station.name }}. Ask to see a board (<em>show me
+    the departures board for Liverpool Street</em>) and Claude or ChatGPT draws one
+    like it in the chat. Or <a href="/board">open a live board</a> for your own
+    station, to share or put on your own page.
+  </figcaption>
+{% endif %}</figure>

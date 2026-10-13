@@ -16,17 +16,13 @@ dependencies = [
     # Titan's accounts (passkeys) and the MCP endpoint's OAuth.
     "mcp-auth",
     "webauthn>=3.0.0,<4",
-    # The MCP server (src/traintracker), which production runs until Titan 4/4.
+    # The train tools (apps/rail): Darwin, the timetable and the MCP SDK.
     "mcp>=2.2,<3",
     "httpx>=0.28",
     "psycopg[binary,pool]>=3.3.6,<4",
     "pydantic>=2.10",
     "rapidfuzz>=3.10",
-    "uvicorn>=0.30",
 ]
-
-[project.scripts]
-traintracker = "traintracker.server:main"
 
 # One group per tox env, so each env installs only what it needs. `dev`
 # composes them all for a local `uv sync`.
@@ -61,17 +57,9 @@ dev = [
     {include-group = "types"},
 ]
 
-# The MCP server is still an installed package with its `traintracker`
-# command, which render.yaml runs. The Django project (manage.py, config/,
-# apps/) runs from the checkout, as in every Titan app.
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/traintracker"]
-
 [tool.uv]
+# A Django project, run from the checkout: nothing to build or install.
+package = false
 default-groups = ["dev"]
 
 [tool.uv.sources]
@@ -113,20 +101,18 @@ ignore = [
 convention = "google"
 
 [tool.ruff.lint.isort]
-# The MCP server is this repository's code too, though it installs as a package.
-known-first-party = ["apps", "config", "tests", "traintracker"]
+known-first-party = ["apps", "config", "tests"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106"]
 "**/migrations/*" = ["D"]
-# The MCP server and its tests came over from the Starlette app with their own,
-# smaller rule set. Titan 2/4 moves them into apps/ and brings them up to these
-# rules (docstrings and all); until then they are held to the old set, plus
-# every rule here that they already pass. The SQL is built with f-strings
-# around schema names, which config.py checks against SCHEMA_NAME, never
-# around values. print() is the command line's output.
-"src/traintracker/**" = ["D", "S101", "S104", "S105", "S106", "S608", "T201", "DTZ007"]
-"tests/traintracker/**" = ["D", "S101", "S105", "S106", "S608", "PT018", "DTZ001"]
+# The SQL is built with f-strings around schema names, which
+# apps/rail/config.py checks against SCHEMA_NAME, never around values.
+"apps/rail/**" = ["S608"]
+"tests/rail/**" = ["S608"]
+# Each tool's docstring is the description MCP clients read, so it is
+# written for them as one paragraph, not as a summary line and a body.
+"apps/rail/server.py" = ["D205", "D209"]
 
 [tool.mypy]
 python_version = "3.14"
@@ -141,10 +127,10 @@ disallow_untyped_defs = true
 disallow_incomplete_defs = true
 exclude = ["/migrations/", "^\\.venv/", "^node_modules/"]
 
-# The MCP server was checked with --strict before it came onto the template,
+# The rail code was checked with --strict before it came onto the template,
 # and stays that way. (strict itself is global-only, so its flags are listed.)
 [[tool.mypy.overrides]]
-module = ["traintracker", "traintracker.*"]
+module = ["apps.rail", "apps.rail.*"]
 disallow_any_generics = true
 disallow_subclassing_any = true
 disallow_untyped_calls = true
@@ -162,7 +148,7 @@ ignore_missing_imports = true
 django_settings_module = "config.settings"
 
 [tool.coverage.run]
-source = ["apps", "config", "src/traintracker"]
+source = ["apps", "config"]
 omit = ["*/migrations/*", "config/asgi.py", "config/wsgi.py"]
 
 [tool.coverage.report]

@@ -1,5 +1,7 @@
-"""Traintrackr's rail data: the timetable, Darwin and the journey planner.
+"""Traintrackr's rail data: the timetable, Darwin, the journey planner and the train tools.
 
-The code itself is still in ``src/traintracker`` (the MCP server production
-runs until Titan 4/4); this app holds what Django runs over it.
+server.py defines the tools; apps/mcp lists them on /mcp, and apps/public
+draws the departure boards from the same Darwin client.
 """
+
+__version__ = "0.1.0"

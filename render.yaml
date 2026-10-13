@@ -1,9 +1,21 @@
-# Render Blueprint: the MCP server over HTTP, plus a daily timetable refresh.
-# Both use a database on a (shared) Render Postgres instance; set DATABASE_URL
-# to its internal URL when Render prompts for it. See "Deploy to Render" in the README.
+# Render Blueprint: the Django app, the morning timetable refresh and a
+# nightly clean-up. Deploying it is `titan deploy` (see the README).
 #
-# uv is pinned: the build runs with the service's secrets in its environment, so
-# it installs a known version, and uv then installs exactly what uv.lock lists.
+# Settings come from two env groups that titan makes before this Blueprint
+# is deployed, so the first deploy already has every value it needs:
+#
+# - titan: shared by every Titan app (debug off, the Python version, hosts
+#   and origins under the parent domain, the SMTP relay).
+# - traintracker: this app's own (DATABASE_URL, DJANGO_SECRET_KEY, the mail
+#   key and sender, SITE_URL and FIVEBAR_DOMAIN).
+#
+# Both are referenced here, not declared, so a Blueprint sync never
+# overwrites them. To override a shared value for this app only, set it on
+# the service: a service's own env vars win over its groups'. The rail
+# data's keys are this app's alone, so they are set on the services below.
+#
+# uv is pinned: the build runs with the service's secrets in its environment,
+# so it installs a known version, and uv then installs exactly what uv.lock lists.
 # Raise the version here and in .github/workflows/ci.yml together.
 services:
   - type: web
@@ -11,61 +23,68 @@ services:
     runtime: python
     region: frankfurt
     plan: 0.5c-512mb
-    buildCommand: pip install uv==0.12.19 && uv sync --locked --no-dev
-    startCommand: uv run --no-sync traintracker serve-http
-    healthCheckPath: /healthz
+    buildCommand: >-
+      pip install uv==0.12.19 && uv sync --locked --no-dev &&
+      uv run --no-sync python manage.py collectstatic --noinput
+    # Runs before each deploy goes live; a failed migration stops the deploy.
+    preDeployCommand: uv run --no-sync python manage.py migrate --noinput
+    # One worker, with threads: the train tools share one event loop, one
+    # Darwin budget and one journey network per process, and the network is
+    # held in memory once (docs/decisions/the-train-tools-run-on-one-event-loop.md).
+    startCommand: >-
+      uv run --no-sync gunicorn config.wsgi --bind 0.0.0.0:$PORT
+      --workers 1 --threads 8 --timeout 90 --access-logfile -
+    # Answers 200 while the process is up; no sign-in, no database query.
+    # (/healthz also reads the database, for uptime monitors and titan.)
+    healthCheckPath: /livez
     autoDeployTrigger: checksPass
-    # The service answers on its custom domain only; its onrender.com name gives
-    # a 404. One name is one place to put a limit or a rule. Render needs the
-    # service to have a custom domain for this: remove the line when deploying
-    # your own copy without one.
-    renderSubdomainPolicy: disabled
     envVars:
-      - key: DATABASE_URL
-        sync: false
+      - fromGroup: titan
+      - fromGroup: traintracker
       - key: DARWIN_API_KEY
         sync: false
-      # Passphrase for the OAuth sign-in page (claude.ai connectors). Clients
-      # sign in with OAuth; a static MCP_AUTH_TOKEN can be added by hand for
-      # clients that can't.
-      - key: MCP_OAUTH_PASSPHRASE
+      # The token OpenAI's plugin portal issued for the domain check.
+      - key: OPENAI_APPS_CHALLENGE
         sync: false
-      # Email sign-in, for everyone else: a Resend API key, the sender of the
-      # code (on a domain verified with Resend), and the key that turns an
-      # address into an account ID. All three, or none to leave it off.
-      - key: RESEND_API_KEY
-        sync: false
-      - key: MAIL_FROM
-        sync: false
-      - key: MCP_ACCOUNT_SECRET
-        sync: false
-      # This deployment's custom domain; other Host headers are rejected (421).
-      # Change or remove it when deploying your own copy.
-      - key: MCP_PUBLIC_HOSTS
-        value: traintrackr.live
-      # Render's edge puts the caller's address in this header; the limits on the
-      # endpoints that come before sign-in are counted against it.
-      - key: CLIENT_IP_HEADER
-        value: CF-Connecting-IP
       # The cron job below refreshes the timetable; the web service only reads it.
       - key: TIMETABLE_AUTO_REFRESH
         value: "0"
 
+  # 06:30 UTC (06:30 GMT / 07:30 BST): after Network Rail publishes the daily
+  # extract at about 06:00 UK time.
   - type: cron
     name: traintracker-refresh
     runtime: python
     region: frankfurt
     plan: starter
-    # 06:30 UTC (06:30 GMT / 07:30 BST): after Network Rail publishes the daily
-    # extract at about 06:00 UK time.
     schedule: "30 6 * * *"
     buildCommand: pip install uv==0.12.19 && uv sync --locked --no-dev
-    startCommand: uv run --no-sync traintracker refresh
+    startCommand: uv run --no-sync python manage.py refresh_timetable --commit
     autoDeployTrigger: checksPass
     envVars:
-      - key: DATABASE_URL
-        sync: false
+      - fromGroup: titan
+      - fromGroup: traintracker
       - key: NR_USERNAME
         sync: false
       - key: NR_PASSWORD
         sync: false
+
+  # Deletes what the privacy policy says is deleted: expired idempotency
+  # records (24 hours), sign-in requests (15 minutes), expired OAuth tokens,
+  # and accounts unused for 180 days.
+  - type: cron
+    name: traintracker-purge
+    runtime: python
+    region: frankfurt
+    plan: starter
+    schedule: "17 3 * * *"
+    buildCommand: pip install uv==0.12.19 && uv sync --locked --no-dev
+    startCommand: >-
+      uv run --no-sync python manage.py purge_idempotency_records --commit &&
+      uv run --no-sync python manage.py purge_sign_in_requests --commit &&
+      uv run --no-sync python manage.py cleartokens &&
+      uv run --no-sync python manage.py purge_idle_accounts --commit
+    autoDeployTrigger: checksPass
+    envVars:
+      - fromGroup: titan
+      - fromGroup: traintracker

@@ -9,9 +9,8 @@ anything from this site and the site's CSP doesn't apply to it.
 Add a view by writing its HTML and script, listing it in RESOURCES, and
 pointing a Tool's ``ui`` at its URI.
 
-Traintrackr's one view is the departure board, ``traintracker/ui/board.html``,
-which production's MCP server serves too until Titan 4/4. It has its own
-bridge inline, so it is read as it is.
+Traintrackr's one view is the departure board, ``apps/rail/ui/board.html``.
+It has its own bridge inline, so it is read as it is.
 """
 
 from dataclasses import dataclass, field
@@ -19,7 +18,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
-from traintracker import ui as traintracker_ui
+from apps.rail import ui as rail_ui
 
 UI_DIR = Path(__file__).resolve().parent / "ui"
 MIME_TYPE = "text/html;profile=mcp-app"
@@ -93,11 +92,11 @@ RESOURCES: dict[str, UiResource] = {
     r.uri: r
     for r in [
         UiResource(
-            uri=traintracker_ui.BOARD_URI,
+            uri=rail_ui.BOARD_URI,
             name="departure_board",
             title="Departure board",
             description="A station's live departures or arrivals as a split-flap board.",
-            html=str(Path(traintracker_ui.__file__).resolve().parent / "board.html"),
+            html=str(Path(rail_ui.__file__).resolve().parent / "board.html"),
             # The page draws its own panel.
             prefers_border=False,
             bridge=False,

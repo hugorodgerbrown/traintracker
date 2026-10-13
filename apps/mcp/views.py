@@ -19,13 +19,13 @@ from mcp_auth.resource import mcp_endpoint
 from apps.mcp.resources import MIME_TYPE, RESOURCES, ResourceNotFound, read_resource
 from apps.mcp.tools import TOOLS, ToolError
 from apps.pwa.conf import APP_NAME
-from traintracker import __version__, server
+from apps.rail import __version__, server
 
 logger = logging.getLogger(__name__)
 
 SUPPORTED_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26")
 SERVER_INFO = {"name": "traintracker", "title": APP_NAME, "version": __version__}
-# The same instructions as production's MCP server gives.
+# What the model is told about the tools, from the train tools' own server.
 INSTRUCTIONS = server.INSTRUCTIONS
 
 PARSE_ERROR = -32700

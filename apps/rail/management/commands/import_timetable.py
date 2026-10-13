@@ -1,7 +1,6 @@
 """Build the timetable from a SCHEDULE file already on disk.
 
-``traintracker import FILE`` as a management command: for a feed downloaded
-by hand, or a test feed. It replaces the timetable schema, so it only does
+For a feed downloaded by hand, or a test feed. It replaces the timetable schema, so it only does
 so with ``--commit``.
 """
 
@@ -10,9 +9,9 @@ from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
+from apps.rail.errors import TrainTrackerError
 from apps.rail.settings import rail_settings
-from traintracker.errors import TrainTrackerError
-from traintracker.timetable import build_from_file
+from apps.rail.timetable import build_from_file
 
 
 class Command(BaseCommand):

@@ -1,21 +1,18 @@
 """Shareable departure boards: /board, /board/LST, /board/LST/9, /board/LST/COL.
 
 What a board is, how its address reads and how every viewer of one minute
-shares one Darwin fetch is ``traintracker.site.boards``, which production
-serves until Titan 4/4; these views draw the same pages with Django's
-templates. The shared boards live on the train tools' event loop
-(apps/rail/runtime.py), where the board fetch runs.
+shares one Darwin fetch is board.py; these views draw the pages. The shared
+boards live on the train tools' event loop (apps/rail/runtime.py), where the
+board fetch runs.
 
 ``?embed=1`` is the one page another site may frame; ``?tv=1`` fills a
 screen. Each client address may open boards at a limited rate, which bounds
-what one address can make the server fetch: production's token bucket, a
-burst of 30 refilled at 60 a minute, kept in the process's memory as
-production keeps it (one worker serves the site:
-docs/decisions/the-train-tools-run-on-one-event-loop.md).
+what one address can make the server fetch: a token bucket, a burst of 30
+refilled at 60 a minute, kept in the process's memory (one worker serves the
+site: docs/decisions/the-train-tools-run-on-one-event-loop.md).
 """
 
 import logging
-import threading
 from datetime import datetime
 from functools import cache
 from typing import Any
@@ -27,12 +24,11 @@ from django.shortcuts import redirect, render
 from django.views.decorators.http import require_safe
 
 from apps.core.ratelimit import client_ip
+from apps.public import board as tt
 from apps.public.views import page_context, relative
-from apps.rail import runtime
-from traintracker import server, stations
-from traintracker.config import UK_TZ
-from traintracker.ratelimit import RateLimiter, limited
-from traintracker.site import boards as tt
+from apps.rail import runtime, server, stations
+from apps.rail.config import UK_TZ
+from apps.rail.ratelimit import RateLimiter, limited
 
 logger = logging.getLogger(__name__)
 
@@ -53,13 +49,9 @@ def limiter() -> RateLimiter:
     return RateLimiter(PER_MINUTE, BURST)
 
 
-_taking = threading.Lock()  # the buckets are shared by the worker's threads
-
-
 def _wait(request: HttpRequest) -> int:
     """Seconds this address must wait, or 0 if it may open a board now."""
-    with _taking:
-        return limiter().take(client_ip(request))
+    return limiter().take(client_ip(request))
 
 
 def _refused(wait: int, response: HttpResponse) -> HttpResponse:
@@ -116,7 +108,7 @@ def _board_page(
     context |= {
         "platform_links": platform_links,
         "all_path": relative(tt.BoardKey(key.crs).path),
-        "station_name": tt._name(key.crs),
+        "station_name": tt.station_name(key.crs),
         "embed_code": (
             f'<iframe src="{url}?embed=1" title="{key.title()}" width="100%" '
             f'height="{tt.EMBED_HEIGHT}" style="border:0;max-width:760px" loading="lazy"></iframe>'
@@ -192,7 +184,7 @@ def pick(request: HttpRequest) -> HttpResponse:
     typed = {k: v for k, v in typed.items() if v}
     if not typed.get("station"):
         return _picker(request, typed)
-    platform = tt._platform(typed["platform"]) if "platform" in typed else None
+    platform = tt.clean_platform(typed["platform"]) if "platform" in typed else None
     if "platform" in typed and not platform:
         problem = (
             f"'{typed['platform']}' isn't a platform. Use its number or letter, like 9 or 10A."
@@ -205,7 +197,7 @@ def pick(request: HttpRequest) -> HttpResponse:
     for field, heading in (("station", "Which station?"), ("to", "Going to which station?")):
         if field not in typed:
             continue
-        match = tt._match(typed[field])
+        match = tt.match(typed[field])
         if isinstance(match, stations.Station):
             found[field] = match
             continue
@@ -227,12 +219,12 @@ def show(request: HttpRequest, station: str, then: str | None = None) -> HttpRes
     """A board, at its one address."""
     given = station[: stations.MAX_QUERY]
     then = then[: stations.MAX_QUERY] if then is not None else None
-    key = tt.parse(given, then) or tt._loose(given, then)
+    key = tt.parse(given, then) or tt.loose(given, then)
     if key is None:
         # Not a board: the picker says why, or asks which station.
         query = {"station": given}
         if then:
-            query[tt._field(then)] = then
+            query[tt.then_field(then)] = then
         return _see_other(f"{tt.PICKER_PATH}?{urlencode(query)}")
     # One address for each board, so every share and embed of it is the same.
     if request.path != key.path:
@@ -249,7 +241,7 @@ def show(request: HttpRequest, station: str, then: str | None = None) -> HttpRes
             return _picker(request, typed_back, str(exc), status=503)
         # A TV or an embed has nobody to read a form: it shows the reason in
         # the board, and recovers by itself when the next fetch works.
-        return _frame(request, key, tt._unavailable(key), mode, str(exc))
+        return _frame(request, key, tt.unavailable(key), mode, str(exc))
     if mode == "page":
         return _board_page(request, key, data)
     return _frame(request, key, data, mode)

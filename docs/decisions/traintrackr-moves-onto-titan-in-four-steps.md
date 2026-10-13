@@ -33,7 +33,10 @@ its own, and production keeps running `traintracker serve-http` from
 3. **The site in Django.** `/`, `/docs`, `/privacy`, `/terms`, the boards
    and the TV page as templates under DESIGN.md's rules and the strict CSP.
 4. **Cut over.** `render.yaml` on Titan's env groups, `src/traintracker/`
-   removed. Deploying it is a `titan deploy` by hand.
+   removed. Deploying it is a `titan deploy` by hand. The rail code moved
+   into `apps/rail/` and the site's into `apps/public/`; the stdio server
+   stays, as `manage.py serve_stdio`. The service answers on its
+   onrender.com name again, because `titan deploy` checks `/healthz` there.
 
 What Traintrackr leaves out of the template, for now:
 

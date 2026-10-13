@@ -1,10 +1,8 @@
 """The site's pages: the homepage, docs, privacy and terms, and the favicon.
 
-Each page's content is production's own fragment in ``src/traintracker/site/``
-(on the template path, settings.TEMPLATES), placed in ``public/layout.html``:
-one copy of the words until Titan 4/4 moves them into this app. The fields
-the fragments name (``mcp_url``, ``fair_use``) are the MCP server's own
-values, as production fills them in.
+Each page's content is a fragment in ``templates/public/pages/`` (pages.PAGES),
+placed in ``public/layout.html``. The fields the fragments name (``mcp_url``,
+``fair_use``) are this server's own values.
 """
 
 import logging
@@ -18,15 +16,15 @@ from django.templatetags.static import static
 from django.views.decorators.cache import cache_control
 from django.views.decorators.http import require_safe
 
+from apps.public import pages
 from apps.rail.settings import rail_settings
-from traintracker import http_app, site
 
 logger = logging.getLogger(__name__)
 
 # The header's links after Home, which is the icon and name at the left.
 NAV = [
-    *((path, text) for path, (_, text, _, _) in site.PAGES.items() if path != "/"),
-    *site.EXTRA_NAV.items(),
+    *((path, text) for path, (_, text, _, _) in pages.PAGES.items() if path != "/"),
+    *pages.EXTRA_NAV.items(),
 ]
 
 
@@ -42,7 +40,7 @@ def relative(path: str) -> str:
 @cache
 def fields() -> dict[str, str]:
     """The values the pages name: the MCP address and the fair-use line."""
-    return http_app.site_fields(rail_settings())
+    return pages.fields(rail_settings(), settings.SITE_URL)
 
 
 def page_context(path: str, title: str, description: str, current: str) -> dict[str, Any]:
@@ -52,7 +50,7 @@ def page_context(path: str, title: str, description: str, current: str) -> dict[
         "description": description,
         "page_url": f"{settings.SITE_URL}{path}",
         "share_image": f"{settings.SITE_URL}{static('img/share.png')}",
-        "share_image_alt": site.SHARE_IMAGE_ALT,
+        "share_image_alt": pages.SHARE_IMAGE_ALT,
         "nav": [(relative(p), text, p == current) for p, text in NAV],
         "current": current,
         **fields(),
@@ -63,9 +61,9 @@ def page_context(path: str, title: str, description: str, current: str) -> dict[
 @cache_control(public=True, max_age=300)
 def page(request: HttpRequest, path: str) -> HttpResponse:
     """One of the site's pages, by its path ("/", "/docs", ...)."""
-    if path not in site.PAGES:
+    if path not in pages.PAGES:
         raise Http404
-    name, _, title, description = site.PAGES[path]
+    name, _, title, description = pages.PAGES[path]
     context = page_context(path, title, description, path) | {"fragment": name}
     return render(request, "public/page.html", context)
 

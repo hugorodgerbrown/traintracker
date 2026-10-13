@@ -1,23 +1,23 @@
-"""Fixtures for the public site's tests: the same pages from production's server and Django."""
+"""Fixtures for the public site's tests: Django's pages, with boards from a fake fetch."""
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+from collections.abc import Callable
 from typing import Any
 
-import httpx
 import pytest
 from django.core.cache import cache
-from starlette.applications import Starlette
+from django.utils.csp import CSP
 
+from apps.core import analytics
+from apps.public import board as tt
 from apps.public import boards, views
-from tests.traintracker.test_boards import BASE, FIELDS, FakeFetch
-from traintracker import site
-from traintracker.site import boards as tt
+from tests.public.fakes import BASE, FIELDS, FakeFetch
+from tests.rail.conftest import _isolate_env  # noqa: F401  (autouse: a schema of its own)
 
 
 @pytest.fixture
 def fetch() -> FakeFetch:
-    """The board fetch both apps share: three trains at Liverpool Street."""
+    """The board fetch the views use: three trains at Liverpool Street."""
     return FakeFetch()
 
 
@@ -28,20 +28,15 @@ def django_site(settings: Any, monkeypatch: pytest.MonkeyPatch, fetch: FakeFetch
     boards.limiter.cache_clear()  # a full bucket for every address
     settings.SITE_URL = BASE
     settings.FIVEBAR_DOMAIN = "traintrackr.live"
+    # As config/settings.py builds the policy with FIVEBAR_DOMAIN set.
+    fivebar = [CSP.SELF, *analytics.csp_sources(settings.FIVEBAR_DOMAIN)]
+    settings.SECURE_CSP = {**settings.SECURE_CSP, "script-src": fivebar, "connect-src": fivebar}
     monkeypatch.setattr(views, "fields", lambda: FIELDS)
     shared = tt.SharedBoards(fetch)
     monkeypatch.setattr(boards, "shared", lambda: shared)
 
     def run(fn: Callable[..., Any], *args: Any) -> Any:
+        """Run ``fn(*args)`` to its end on a loop of its own."""
         return asyncio.run(fn(*args))
 
     monkeypatch.setattr(boards.runtime, "run", run)
-
-
-@pytest.fixture
-async def production(fetch: FakeFetch) -> AsyncIterator[httpx.AsyncClient]:
-    """Production's site and boards, as `traintracker serve-http` serves them."""
-    app = Starlette(routes=[*site.routes(FIELDS), *tt.routes(FIELDS, fetch, "x-forwarded-for")])
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url=BASE) as client:
-        yield client

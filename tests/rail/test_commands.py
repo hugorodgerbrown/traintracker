@@ -1,4 +1,4 @@
-"""Tests for the rail management commands: refresh_timetable, import_timetable, rail_status."""
+"""Tests for the rail management commands, from the timetable ones to serve_stdio."""
 
 import gzip
 import logging
@@ -8,9 +8,10 @@ from pathlib import Path
 import pytest
 from django.core.management import CommandError, call_command
 
-from tests.traintracker import feedgen
-from traintracker.config import Settings
-from traintracker.timetable import Timetable, TimetableMissing
+from apps.rail import server
+from apps.rail.config import Settings
+from apps.rail.timetable import Timetable, TimetableMissing
+from tests.rail import feedgen
 
 
 def run(name: str, *args: str | Path) -> str:
@@ -85,3 +86,11 @@ def test_request_urls_are_not_logged() -> None:
     """The download's presigned URL, in httpx's INFO lines, stays out of Django's logs."""
     assert logging.getLogger("httpx").getEffectiveLevel() >= logging.WARNING
     assert logging.getLogger("httpcore").getEffectiveLevel() >= logging.WARNING
+
+
+def test_serve_stdio_runs_the_train_tools_on_stdio(monkeypatch: pytest.MonkeyPatch) -> None:
+    """serve_stdio serves the same MCP server /mcp lists, over stdin and stdout."""
+    transports: list[str] = []
+    monkeypatch.setattr(server.mcp, "run", transports.append)
+    call_command("serve_stdio")
+    assert transports == ["stdio"]

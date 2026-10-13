@@ -2,6 +2,7 @@
 
 import json
 import re
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -10,8 +11,8 @@ from mcp_auth.testing import MCPAuthContract
 
 from apps.mcp.resources import MIME_TYPE, RESOURCES
 from apps.mcp.tools import TOOLS, ToolError, _run_train_tool
+from apps.rail import server
 from tests.factories import UserFactory
-from traintracker import server
 
 
 class TestMCPAuth(MCPAuthContract):
@@ -99,7 +100,7 @@ def test_only_show_board_draws_the_board(rpc: Any) -> None:
 
 def test_the_board_is_production_s_board(rpc: Any) -> None:
     """The board is read as it is: one document, its own bridge, nothing loaded."""
-    from traintracker import ui
+    from apps.rail import ui
 
     (content,) = rpc("resources/read", {"uri": ui.BOARD_URI})["contents"]
     assert content["mimeType"] == MIME_TYPE
@@ -183,6 +184,39 @@ def test_traintrackr_errors_reach_the_model(rpc: Any) -> None:
     assert result["content"][0]["text"]
 
 
+@pytest.mark.usefixtures("train_tools")
+def test_each_account_has_its_own_bucket_of_calls(rpc: Any, monkeypatch: Any) -> None:
+    """Past its burst an account is told how long to wait; other accounts are not."""
+    from apps.mcp import tools
+    from apps.rail.ratelimit import RateLimiter
+
+    buckets = RateLimiter(per_minute=60, burst=2, clock=lambda: 0.0)
+    monkeypatch.setattr(tools, "limiter", lambda: buckets)
+    call = {"name": "find_station", "arguments": {"query": "Cambridge"}}
+    for _ in range(2):
+        assert "isError" not in rpc("tools/call", call)
+    refused = rpc("tools/call", call)
+    assert refused["isError"] is True
+    assert refused["content"][0]["text"] == "Too many requests. Try again in 1 second."
+    other = tools._run_train_tool(SimpleNamespace(pk=-1), "find_station", {"query": "Ely"})
+    assert other["result"]
+
+
+@pytest.mark.usefixtures("train_tools")
+def test_a_journey_plan_costs_three_calls(monkeypatch: Any) -> None:
+    """Planning a journey scans the day's trains several times over, so it costs more."""
+    from apps.mcp import tools
+    from apps.rail.ratelimit import RateLimiter
+
+    buckets = RateLimiter(per_minute=60, burst=4, clock=lambda: 0.0)
+    monkeypatch.setattr(tools, "limiter", lambda: buckets)
+    account = SimpleNamespace(pk=1)
+    tools._run_train_tool(account, "find_station", {"query": "Ely"})
+    tools._run_train_tool(account, "find_station", {"query": "Ely"})
+    with pytest.raises(ToolError, match="Try again in 1 second"):
+        tools._run_train_tool(account, "plan_journey", {"origin": "CBG", "destination": "ELY"})
+
+
 def test_a_call_that_takes_too_long_says_try_again(monkeypatch: Any) -> None:
     """A call over the time limit is cancelled and the model is told to retry."""
     from apps.rail import runtime
@@ -192,7 +226,7 @@ def test_a_call_that_takes_too_long_says_try_again(monkeypatch: Any) -> None:
 
     monkeypatch.setattr(runtime, "run", slow)
     with pytest.raises(ToolError, match="busy"):
-        _run_train_tool("find_station", {"query": "x"})
+        _run_train_tool(SimpleNamespace(pk=1), "find_station", {"query": "x"})
 
 
 def test_an_unexpected_error_tells_the_model_nothing_of_the_server(monkeypatch: Any) -> None:
@@ -209,7 +243,7 @@ def test_an_unexpected_error_tells_the_model_nothing_of_the_server(monkeypatch: 
 
     monkeypatch.setattr(runtime, "run", broken)
     with pytest.raises(ToolError) as caught:
-        _run_train_tool("find_station", {"query": "x"})
+        _run_train_tool(SimpleNamespace(pk=1), "find_station", {"query": "x"})
     assert str(caught.value) == "Something went wrong on the server. Try again."
 
 

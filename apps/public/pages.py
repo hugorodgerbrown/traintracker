@@ -18,9 +18,11 @@ FRAGMENTS = Path(__file__).parent / "templates" / "public" / "pages"
 
 # The link-preview card is 1200 by 630, the shape chat apps show above a
 # link's title, and has no transparent corners: a square icon fills the chat.
+# It shows the promise beside the board (DESIGN.md, "The front page").
 SHARE_IMAGE_ALT = (
-    "The departure board for London Liverpool Street: seven trains, with their "
-    "platforms and whether they are on time"
+    "Live UK train times in Claude and ChatGPT, beside the departure board for "
+    "London Liverpool Street: seven trains, with their platforms and whether "
+    "they are on time"
 )
 
 # path -> (fragment, link text, title, description)
@@ -28,9 +30,9 @@ PAGES = {
     "/": (
         "public/pages/index.html",
         "Home",
-        "Traintrackr: ask your AI chat when your train leaves",
-        "Live departures, platforms and journeys for every National Rail station, "
-        "answered in Claude or ChatGPT.",
+        "Traintrackr: live GB train times in Claude and ChatGPT",
+        "A connector that answers questions about National Rail trains: platforms, "
+        "live departures and journeys with changes.",
     ),
     "/docs": (
         "public/pages/docs.html",

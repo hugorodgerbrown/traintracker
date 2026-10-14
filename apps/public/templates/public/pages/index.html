@@ -1,11 +1,9 @@
 {# The front page, in the shape every Titan app shares (DESIGN.md, "The front page"). The header and footer are public/layout.html's. #}
 {# 2. Proposition: the promise, and one way in, named for the first job. Signing in on this site doesn't connect a chat, so the offer is the same signed in. #}
 <section class="hero">
-  <p class="eyebrow">For Claude and ChatGPT</p>
-  <h1>Ask your AI chat when your train leaves.</h1>
+  <h1>Live UK train times in Claude and ChatGPT</h1>
   <p class="lede">
-    Live departures, platforms and journeys for every National Rail station,
-    answered in the chat you already use.
+    Traintrackr enables AI chatbots to query live UK train information.
   </p>
   <a class="button" href="/docs#use-with-ai">Add it to Claude</a>
   <p class="hint">Free on every Claude plan. Sign in with your email, no password.</p>
@@ -86,37 +84,103 @@
   </figcaption>
 </figure>
 
-{# 4. How it works: three tiles. The design system has no icons, so each tile's mark is its step. #}
-<ol class="tiles" aria-label="How it works">
-  <li>
-    <span class="tile-step" aria-hidden="true">1</span>
-    <strong>Add</strong>
-    <span>Add Traintrackr to Claude or ChatGPT once, with one address.</span>
-  </li>
-  <li>
-    <span class="tile-step" aria-hidden="true">2</span>
-    <strong>Ask</strong>
-    <span>Ask about any train in plain words: platforms, delays, changes.</span>
-  </li>
-  <li>
-    <span class="tile-step" aria-hidden="true">3</span>
-    <strong>Go</strong>
-    <span>The answer has live times, or the departure board itself.</span>
-  </li>
-</ol>
-
-{# 5. From your AI chat: a sample chat (ask, answer, act), things to ask, and the address. #}
+{# 5. From your AI chat: the chat without and with it, things to ask, and the address. #}
 <section class="ai" aria-labelledby="ai-title">
   <p class="eyebrow">In your AI chat</p>
-  <h2 id="ai-title">Ask in plain words</h2>
+  <h2 id="ai-title">Why install Traintrackr?</h2>
+  <p>
+    Without a connector, Claude searches the web for departure boards. Most load
+    their times in the browser, and it can't read them.
+  </p>
   <figure class="chat">
-    <figcaption>In Claude, with Traintrackr</figcaption>
-    <p class="ask">When's the next train from Liverpool Street to Colchester?</p>
+    <figcaption>Without Traintrackr</figcaption>
+    <p class="ask">next trains from liverpool street</p>
+    <p class="tool">Read 3 pages</p>
+    <p>
+      I couldn't get a trustworthy live board for right now. The one feed that
+      answered returned departures starting at 17:35, about four hours after your
+      13:45, so it's either cached or showing evening peak. I don't want to give
+      you times that could be wrong.
+    </p>
+    <p>
+      If you just want to check it yourself, the live board is
+      <span class="link">National Rail - London Liverpool Street departures</span
+      >.
+    </p>
+  </figure>
+  <figure class="chat">
+    <figcaption>With Traintrackr</figcaption>
+    <p class="ask">next trains from Liverpool Street</p>
     <p class="tool">Used Traintrackr: Live departures</p>
-    <p>The 15:36 to Colchester Town, from platform 14. It's on time.</p>
-    <p class="ask">Show me the board</p>
-    <p class="tool">Used Traintrackr: Show board</p>
-    <p>Here's London Liverpool Street. It updates every minute.</p>
+    <p>Live board for <strong>London Liverpool Street</strong> as of 15:35:</p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Destination</th>
+            <th>Operator</th>
+            <th>Plat</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>15:36</td>
+            <td data-label="Destination">Colchester Town</td>
+            <td data-label="Operator">Greater Anglia</td>
+            <td data-label="Platform">14</td>
+            <td data-label="Status">On time</td>
+          </tr>
+          <tr>
+            <td>15:36</td>
+            <td data-label="Destination">Stansted Airport</td>
+            <td data-label="Operator">Greater Anglia</td>
+            <td data-label="Platform">4</td>
+            <td data-label="Status">On time</td>
+          </tr>
+          <tr>
+            <td>15:38</td>
+            <td data-label="Destination">Hertford East</td>
+            <td data-label="Operator">Greater Anglia</td>
+            <td data-label="Platform">3</td>
+            <td data-label="Status">On time</td>
+          </tr>
+          <tr>
+            <td>15:43</td>
+            <td data-label="Destination">Cheshunt</td>
+            <td data-label="Operator">Overground</td>
+            <td data-label="Platform">1</td>
+            <td data-label="Status">On time</td>
+          </tr>
+          <tr>
+            <td>15:46</td>
+            <td data-label="Destination">Chingford</td>
+            <td data-label="Operator">Overground</td>
+            <td data-label="Platform">5</td>
+            <td data-label="Status">On time</td>
+          </tr>
+          <tr>
+            <td>15:48</td>
+            <td data-label="Destination">Braintree</td>
+            <td data-label="Operator">Greater Anglia</td>
+            <td data-label="Platform">13</td>
+            <td data-label="Status">On time</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p><strong>Heads up:</strong></p>
+    <ul>
+      <li>
+        The escalator at the Liverpool Street entrance is out of service. Use the
+        Bishopsgate entrance or the lift.
+      </li>
+    </ul>
+    <p>
+      Where are you heading? I can filter the board to your destination and check
+      the calling points.
+    </p>
   </figure>
   <p class="eyebrow">Try asking</p>
   <blockquote>
@@ -140,13 +204,6 @@
     the conversation, and doesn't keep them.
   </p>
 </section>
-
-{# 6. Facts: three true numbers, each removing a doubt. #}
-<ul class="facts" aria-label="In numbers">
-  <li><strong>£0</strong> <span>to use it</span></li>
-  <li><strong>0</strong> <span>passwords</span></li>
-  <li><strong>60s</strong> <span>between board updates</span></li>
-</ul>
 
 {# 7. Closing action: the promise in other words, and the same way in. #}
 <section class="closing">

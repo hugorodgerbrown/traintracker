@@ -147,7 +147,7 @@ def test_the_header_offers_the_account_when_signed_in(client: Client) -> None:
     """Signed in, the header's link changes its offer, not its shape."""
     client.force_login(UserFactory.create())
     header = client.get("/").content.decode().split("</header>", 1)[0]
-    assert '<a class="header-link" href="/app/account/">Your account</a>' in header
+    assert '<a class="header-link" href="/app/account/">Open the app</a>' in header
     assert "Sign in" not in header
 
 
@@ -194,44 +194,39 @@ def test_pages_set_the_link_preview_tags(client: Client, path: str) -> None:
 
 
 def test_the_front_page_has_the_shared_anatomy(client: Client) -> None:
-    """DESIGN.md's front page, top to bottom: proposition, product, how, AI chat, facts, close."""
+    """DESIGN.md's front page, top to bottom: proposition, product, AI chat, closing action."""
     text = _page(client, "/")
     order = [
         '<section class="hero">',
         '<figure class="departures">',
-        '<ol class="tiles"',
         '<section class="ai"',
-        '<ul class="facts"',
         '<section class="closing">',
     ]
     found = [text.index(section) for section in order]
     assert found == sorted(found)
-    # The promise is the H1, not the app's name, and one primary action is named
-    # for the first job, under the hero and again at the close.
-    assert "<h1>Ask your AI chat when your train leaves.</h1>" in text
+    assert "<h1>Live UK train times in Claude and ChatGPT</h1>" in text
+    # One primary action, named for the first job (connecting it, not signing in),
+    # under the H1 and again at the close.
     assert text.count('<a class="button" href="/docs#use-with-ai">Add it to Claude</a>') == 2
     assert "no password" in text
-    # Three tiles and three facts.
-    tiles = text.split('<ol class="tiles"', 1)[1].split("</ol>", 1)[0]
-    assert tiles.count("<li>") == 3
-    facts = text.split('<ul class="facts"', 1)[1].split("</ul>", 1)[0]
-    assert facts.count("<li>") == 3
 
 
-def test_the_front_page_ai_section_has_the_chat_the_asks_and_the_address(client: Client) -> None:
-    """A sample chat, things to try, this server's address to copy, the steps' link and privacy."""
+def test_the_front_page_ai_section_has_the_chats_the_asks_and_the_address(
+    client: Client,
+) -> None:
+    """Without and with Traintrackr, things to try, this server's address, the steps' link."""
     text = _page(client, "/")
     ai = text.split('<section class="ai"', 1)[1].split("</section>", 1)[0]
-    assert '<figure class="chat">' in ai
+    assert ai.index("Without Traintrackr") < ai.index("With Traintrackr") < ai.index("Try asking")
     found = [ai.index(prompt) for prompt in HOME_PROMPTS]
     assert found == sorted(found), "platforms first, then stops, then journeys"
-    assert ai.index('<figure class="chat">') < ai.index("Try asking") < found[0]
     # This server's own address, not the one the page was written for.
     assert f'<code id="mcp-url">{BASE}/mcp</code>' in ai
     assert 'data-copy="#mcp-url"' in ai
-    # Setup is on the docs page; the front page links there and nowhere else for it.
+    # The steps are on the docs page; the front page links there and nowhere else for them.
     assert '<a href="/docs#use-with-ai">How to add it to Claude or ChatGPT</a>' in ai
     assert "Customize" not in text
+    assert "Developer mode" not in text
     assert "never the conversation" in " ".join(ai.split())
 
 
@@ -244,8 +239,13 @@ def test_the_docs_have_the_connector_steps(client: Client) -> None:
     assert 'data-copy="#mcp-url"' in steps
     assert "not a page to open in your browser" in steps
     assert steps.index('id="claude"') < steps.index('id="chatgpt"')
-    # ChatGPT adds a server by URL only in developer mode.
+    # ChatGPT adds a server by URL only in developer mode, on the web, as
+    # OpenAI's guide has it: Settings, Apps, Advanced settings; then Create and Scan Tools.
     assert "Developer mode" in steps
+    assert "Advanced settings" in steps
+    assert "Scan Tools" in steps
+    assert "Security and login" not in steps
+    assert "Plugins" not in steps
     assert "directory" not in steps
     # The code's real lifetime (SIGN_IN_MAX_AGE_SECONDS).
     assert "lasts 15 minutes" in " ".join(steps.split())

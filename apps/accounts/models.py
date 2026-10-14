@@ -25,8 +25,9 @@ def email_key(email: str) -> str:
 
     A keyed one-way hash (HMAC-SHA256 with the secret key) of the trimmed,
     lowercased address: the same address always gives the same key, so an
-    account is found again, but the key can't be turned back into it
-    without the secret key.
+    account is found again, but the key can't be turned back into it.
+    With the secret key, a guessed address can be checked against a key;
+    without it, not even that.
     """
     return salted_hmac(EMAIL_KEY_SALT, email.strip().lower(), algorithm="sha256").hexdigest()
 

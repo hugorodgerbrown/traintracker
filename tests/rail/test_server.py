@@ -446,7 +446,7 @@ async def test_privacy_policy(
     policy = out["policy"]
     assert out["url"] == "https://tt.test/privacy"
     assert policy.startswith("# Privacy policy\n\n")
-    assert "- **A key made from your email address: a one-way code" in policy
+    assert "- **A one-way hash of your email address. The address itself is never" in policy
     assert "It does not keep your email address." in policy
     assert "They are not stored and not written to logs." in policy  # what was asked
     assert "support@traintrackr.live" in policy

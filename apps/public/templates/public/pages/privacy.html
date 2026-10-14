@@ -25,11 +25,9 @@
     <tbody>
       <tr>
         <td data-label="Data">
-          A key made from your email address: a one-way code that can't be
-          turned back into the address. Only someone who also had
-          Traintrackr's secret key could check whether a given address matches
-          it. The address itself is used to send the sign-in email, then
-          forgotten
+          A one-way hash of your email address. The address itself is never
+          stored: it is held in memory only while your sign-in code is sent.
+          The hash can't be turned back into the address, even by Traintrackr
         </td>
         <td data-label="Why">
           It is your account: to recognise you when you sign in, and to apply
@@ -54,7 +52,7 @@
       </tr>
       <tr>
         <td data-label="Data">
-          A sign-in request: the key made from your email address, with the
+          A sign-in request: the hash of your email address, with the
           code and link sent to it stored as hashes
         </td>
         <td data-label="Why">To check the code or link when you use it</td>
@@ -157,7 +155,7 @@
   <li>It uses no advertising, and its visitor counts can't identify you.</li>
   <li>
     It does not keep your email address. Once the sign-in email is sent, only
-    the key made from it remains, so Traintrackr can't email you unless you
+    its hash remains, so Traintrackr can't email you unless you
     write to support first.
   </li>
   <li>It does not sell or share your data for marketing.</li>
@@ -207,8 +205,8 @@
   You can ask for a copy of the data held about you, for it to be corrected or
   deleted, or for its use to be restricted, and you can object to its use. Email
   <a href="mailto:support@traintrackr.live">support@traintrackr.live</a> from
-  the address you sign in with: its key finds your account. Deleting an account
-  removes its key, passkeys and tokens, and disconnects your assistant.
+  the address you sign in with: its hash finds your account. Deleting an account
+  removes its hash, passkeys and tokens, and disconnects your assistant.
 </p>
 <p>
   You can complain to the Information Commissioner's Office at

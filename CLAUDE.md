@@ -108,6 +108,7 @@ choice in `docs/decisions/`.
 3. Every fragment view is `@require_htmx`; every outbox endpoint is
    `@login_required_json`.
 4. No secrets in source.
-5. Email addresses are lower-cased before storage and lookup.
+5. Email addresses are never stored: accounts and sign-in requests hold
+   `email_key(address)` (lower-cased, then keyed-hashed). Never log one.
 6. Sign-in secrets (codes, tokens) are stored only as hashes and never
    logged.

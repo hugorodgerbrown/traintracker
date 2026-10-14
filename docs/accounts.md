@@ -44,9 +44,16 @@ with Face ID, a fingerprint or a device PIN from then on.
 ## Signing in by email
 
 - **One flow for both.** The first redeemed link or code for an address
-  creates the account (`username` and `email` both the lowercased address,
-  no usable password). Nothing about an address is stored before then
+  creates the account (`username` the address's key, `email` blank, no
+  usable password). Nothing about an address is stored before then
   except the pending request.
+- **The address is never stored.** Accounts and sign-in requests hold its
+  key, `email_key(address)`: HMAC-SHA256 of the lowercased address with
+  `SECRET_KEY` (`apps/accounts/models.py`). The address is held in memory
+  only, long enough to send the email (`send_sign_in_email`'s arguments);
+  the session keeps a masked hint ("w•••@example.com") for the code page.
+  Rotating `SECRET_KEY` changes every key, so every account would be lost.
+  See [decisions/accounts-keep-a-key-not-an-email-address.md](decisions/accounts-keep-a-key-not-an-email-address.md).
 - **Link and code, either once.** Each email carries a link and a six-digit
   code, valid for `SIGN_IN_MAX_AGE_SECONDS` (15 minutes). Asking again ends
   the earlier request, so only the newest email works. Only hashes are
@@ -96,11 +103,15 @@ with Face ID, a fingerprint or a device PIN from then on.
 ## Staff and the admin
 
 The admin's password form redirects to `/signin/`. Make the first
-superuser with your email as the username, then sign in by email:
+superuser with your email's key as the username, then sign in by email:
 
 ```bash
-uv run python manage.py createsuperuser --username you@example.com --email you@example.com
+KEY=$(uv run python manage.py shell -c "from apps.accounts.models import email_key; print(email_key('you@example.com'))")
+uv run python manage.py createsuperuser --username "$KEY" --email ""
 ```
+
+Accounts show in the admin by key. To find someone's, compute their key
+the same way.
 
 ## Email
 
@@ -116,7 +127,7 @@ Read-only unless `--commit`:
 
 - `forget_account EMAIL` deletes the account, its passkeys, its connected
   apps' tokens and any sign-in request for the address (a request under
-  the privacy policy).
+  the privacy policy). It finds them by the address's key.
 - `block_account EMAIL` closes the account, or makes a closed one for an
   address that has none, so it can't sign in and its connected apps stop
   at once. Reopen it in the admin.

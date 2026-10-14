@@ -8,11 +8,10 @@ from apps.accounts.models import Passkey, SignInRequest
 
 @admin.register(SignInRequest)
 class SignInRequestAdmin(admin.ModelAdmin):
-    """Who asked to sign in and whether they did. The hashes stay hidden."""
+    """Sign-ins asked for and whether they were used. The hashes and email key stay hidden."""
 
-    list_display = ("email", "created_at", "expires_at", "used_at", "code_attempts")
-    search_fields = ("email",)
-    fields = ("email", "next_url", "created_at", "expires_at", "used_at", "code_attempts")
+    list_display = ("uuid", "created_at", "expires_at", "used_at", "code_attempts")
+    fields = ("uuid", "next_url", "created_at", "expires_at", "used_at", "code_attempts")
     readonly_fields = fields
 
     def has_add_permission(self, request: HttpRequest) -> bool:
@@ -26,7 +25,7 @@ class PasskeyAdmin(admin.ModelAdmin):
 
     list_display = ("name", "user", "backed_up", "created_at", "last_used_at")
     list_select_related = ("user",)
-    search_fields = ("name", "user__email")
+    search_fields = ("name",)
     fields = ("user", "name", "backed_up", "sign_count", "created_at", "last_used_at")
     readonly_fields = ("user", "backed_up", "sign_count", "created_at", "last_used_at")
 

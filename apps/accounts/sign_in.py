@@ -2,7 +2,9 @@
 
 There is no separate sign-up. The first redeemed link or code for an
 address creates its account; until then nothing is stored about it beyond
-the pending request. See docs/accounts.md.
+the pending request. Neither stores the address: both hold its key
+(``email_key``). The address is only held in memory, long enough to send
+the email. See docs/accounts.md.
 """
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ from django.db.models import F
 from django.utils import timezone
 from django.utils.crypto import salted_hmac
 
-from apps.accounts.models import SignInRequest
+from apps.accounts.models import SignInRequest, email_key
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +33,15 @@ CODE_DIGITS = 6
 def normalise_email(email: str) -> str:
     """Return ``email`` as stored and looked up: trimmed and lowercased."""
     return email.strip().lower()
+
+
+def mask_email(email: str) -> str:
+    """Return ``email`` with its name hidden ("w•••@example.com"), to show on a page.
+
+    Enough to spot a mistyped domain, and safe to keep in the session.
+    """
+    name, _, domain = normalise_email(email).partition("@")
+    return f"{name[:1]}•••@{domain}"
 
 
 def _hash_token(token: str) -> str:
@@ -58,7 +69,7 @@ def issue(email: str, next_url: str = "") -> tuple[SignInRequest, str, str]:
     with transaction.atomic():
         SignInRequest.objects.for_email(email).live().update(used_at=now)
         request = SignInRequest(
-            email=email,
+            email_key=email_key(email),
             token_hash=_hash_token(token),
             next_url=next_url[:2048],
             expires_at=now + timedelta(seconds=settings.SIGN_IN_MAX_AGE_SECONDS),
@@ -113,17 +124,13 @@ def user_for(request: SignInRequest) -> Any | None:
     """Return the account for a redeemed request, creating it on first sign-in.
 
     Returns None for a deactivated account: it can't be signed back in by
-    email. Existing accounts are found by username (the email, for accounts
-    made here) or by email (for ones made with ``createsuperuser``).
+    email. An account's username is its email key, the same key the request
+    holds, so the address is never needed here.
     """
     user_model = get_user_model()
-    email = request.email
-    user = (
-        user_model.objects.filter(username=email).first()
-        or user_model.objects.filter(email__iexact=email).order_by("pk").first()
-    )
+    user = user_model.objects.filter(username=request.email_key).first()
     if user is None:
-        user = user_model(username=email, email=email)
+        user = user_model(username=request.email_key, email="")
         user.set_unusable_password()
         user.save()
         logger.info("accounts.created user=%s", user.pk)

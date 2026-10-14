@@ -11,7 +11,7 @@ from typing import Any
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
-from apps.accounts.sign_in import normalise_email
+from apps.accounts.models import email_key
 
 
 class Command(BaseCommand):
@@ -26,12 +26,9 @@ class Command(BaseCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Close the address's account, making it if need be."""
-        email = normalise_email(options["email"])
+        key = email_key(options["email"])
         user_model = get_user_model()
-        user = (
-            user_model.objects.filter(username=email).first()
-            or user_model.objects.filter(email__iexact=email).order_by("pk").first()
-        )
+        user = user_model.objects.filter(username=key).first()
         if user is not None and user.is_staff:
             raise CommandError("That is a staff account: change it in the admin.")
         if not options["commit"]:
@@ -39,7 +36,7 @@ class Command(BaseCommand):
             self.stdout.write(f"Would {what} (dry run; pass --commit).")
             return
         if user is None:
-            user = user_model(username=email, email=email, is_active=False)
+            user = user_model(username=key, email="", is_active=False)
             user.set_unusable_password()
             user.save()
         else:

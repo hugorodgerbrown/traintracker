@@ -8,16 +8,17 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from apps.accounts import sign_in
-from apps.accounts.models import SignInRequest
+from apps.accounts.models import SignInRequest, email_key
 from tests.factories import UserFactory
 
 pytestmark = pytest.mark.django_db
 
 
 def test_issue_stores_hashes_only() -> None:
-    """Neither the token nor the code is stored as given."""
+    """Neither the address, the token nor the code is stored as given."""
     request, token, code = sign_in.issue("  Walker@Example.COM ", "/app/")
-    assert request.email == "walker@example.com"
+    assert request.email_key == email_key("walker@example.com")
+    assert "walker" not in str(request.__dict__).lower()
     assert len(code) == sign_in.CODE_DIGITS
     assert code.isdigit()
     assert token not in request.token_hash
@@ -90,22 +91,28 @@ def test_first_sign_in_creates_the_account() -> None:
     request, token, _ = sign_in.issue("new@example.com")
     user = sign_in.user_for(sign_in.redeem_token(token) or request)
     assert user is not None
-    assert user.username == user.email == "new@example.com"
+    assert user.username == email_key("new@example.com")
+    assert user.email == ""
     assert not user.has_usable_password()
 
 
-def test_existing_accounts_are_found_by_username_or_email() -> None:
-    """A createsuperuser account with a different username is found by its email."""
-    admin = get_user_model().objects.create_superuser("admin", "Boss@example.com")
+def test_existing_accounts_are_found_by_their_key() -> None:
+    """An account is found by its address's key, staff made with createsuperuser too."""
+    admin = get_user_model().objects.create_superuser(email_key("Boss@example.com"), "")
     request, _, _ = sign_in.issue("boss@example.com")
     assert sign_in.user_for(request) == admin
-    member = UserFactory.create(email="m@example.com")
+    member = UserFactory.create(address="m@example.com")
     request, _, _ = sign_in.issue("m@example.com")
     assert sign_in.user_for(request) == member
 
 
 def test_a_closed_account_cannot_sign_in() -> None:
     """An inactive account stays out."""
-    UserFactory.create(email="gone@example.com", is_active=False)
+    UserFactory.create(address="gone@example.com", is_active=False)
     request, _, _ = sign_in.issue("gone@example.com")
     assert sign_in.user_for(request) is None
+
+
+def test_mask_email_hides_the_name() -> None:
+    """Only the first letter of the name shows, with the whole domain."""
+    assert sign_in.mask_email(" Walker@Example.com") == "w•••@example.com"

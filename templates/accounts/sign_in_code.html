@@ -4,7 +4,7 @@
 {% block extra_js %}<script src="{% static 'js/code_input.js' %}" defer></script>{% endblock %}
 {% block content %}
   <h1>Check your email</h1>
-  <p>A link and a six-digit code are on their way to <strong>{{ email }}</strong>. Open the link, or type the code here. Either works once, for {{ minutes }} minutes.</p>
+  <p>A link and a six-digit code are on their way to <strong>{{ email_hint }}</strong>. Open the link, or type the code here. Either works once, for {{ minutes }} minutes.</p>
   {% for e in form.non_field_errors %}<p class="error" role="alert">{{ e }}</p>{% endfor %}
   <form method="post" action="{% url 'accounts:sign_in_code' %}">
     {% csrf_token %}

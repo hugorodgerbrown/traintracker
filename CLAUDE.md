@@ -69,6 +69,12 @@ respect `--verbosity`, exit non-zero on failure.
 
 ## Design system
 
+[DESIGN.md](DESIGN.md) holds the rules every Titan app shares, copied from
+the template unchanged. The front page (`apps/public/templates/public/pages/index.html`)
+follows its section 12, "The front page". Traintrackr has no `/app/` and no
+design page (`apps/design`), so where DESIGN.md names `app.css` or the design
+page, read `static/css/site.css` and the artifact below.
+
 The project's design system is the "Traintrackr" Design System artifact:
 https://claude.ai/artifact/BXsWTZk9w2ESAwKwKDPgab
 

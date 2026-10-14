@@ -28,15 +28,15 @@ PAGES = {
     "/": (
         "public/pages/index.html",
         "Home",
-        "Traintrackr: live GB train times in Claude and ChatGPT",
-        "A connector that answers questions about National Rail trains: platforms, "
-        "live departures and journeys with changes.",
+        "Traintrackr: ask your AI chat when your train leaves",
+        "Live departures, platforms and journeys for every National Rail station, "
+        "answered in Claude or ChatGPT.",
     ),
     "/docs": (
         "public/pages/docs.html",
         "Docs",
         "Docs · Traintrackr",
-        "What Traintrackr can answer, three worked examples, and its limits.",
+        "How to add it to Claude or ChatGPT, what it can answer, worked examples and its limits.",
     ),
     "/privacy": (
         "public/pages/privacy.html",
@@ -52,9 +52,10 @@ PAGES = {
     ),
 }
 
-# Header links to pages that are not in PAGES: path -> link text. They come
-# after the pages' own links.
-EXTRA_NAV = {"/board": "Boards"}
+# Footer links to places that are not in PAGES: path -> link text. They come
+# after the pages' own links. Every Titan footer links to the connector steps
+# as "Use with Claude" (DESIGN.md, "The front page").
+EXTRA_NAV = {"/docs#use-with-ai": "Use with Claude", "/board": "Boards"}
 
 
 def fields(settings: Settings, site_url: str) -> dict[str, str]:

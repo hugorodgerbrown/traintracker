@@ -1,18 +1,181 @@
 <h1>Traintrackr docs</h1>
 <p class="lede">
-  What Traintrackr can answer, three worked examples, and its limits.
+  How to add Traintrackr to your AI chat, what it can answer, three worked
+  examples, and its limits.
 </p>
 
-<h2 id="connect">Connecting</h2>
+{# Every Titan app's connector steps, in the same words (DESIGN.md, "The front page"); the front page and the footer link here. #}
+<section id="use-with-ai">
+  <h2>Use it from Claude or ChatGPT</h2>
+  <p>
+    Traintrackr is a connector: you add it once, and your AI chat uses it when
+    you ask about trains. You need this address:
+  </p>
+  <div class="copy" id="url">
+    <code id="mcp-url">{{ mcp_url }}</code>
+    <button type="button" data-copy="#mcp-url" hidden>Copy address</button>
+    <p role="status"></p>
+  </div>
+  <p>It is for your AI chat to use, not a page to open in your browser.</p>
+
+  <h3 id="claude">Claude</h3>
+  <p>It is free, and works on every Claude plan.</p>
+  <ol>
+    <li>
+      On <a href="https://claude.ai">claude.ai</a> or in the Claude desktop
+      app, open <strong>Customize</strong>, then <strong>Connectors</strong>.
+    </li>
+    <li>
+      Choose <strong>+</strong>, then <strong>Add custom connector</strong>.
+    </li>
+    <li>
+      Give it the name <em>Traintrackr</em>, paste the address into the URL
+      field, leave <strong>Advanced settings</strong> empty and choose
+      <strong>Add</strong>.
+    </li>
+    <li>
+      Choose <strong>Connect</strong>. Claude opens the Traintrackr sign-in
+      page: enter your email address, then the six-digit code sent to it.
+    </li>
+    <li>
+      Start a new chat and ask about a train. If Claude doesn't use
+      Traintrackr, open the <strong>+</strong> menu under the message box,
+      choose <strong>Connectors</strong> and turn Traintrackr on.
+    </li>
+  </ol>
+
+  <h3 id="chatgpt">ChatGPT</h3>
+  <p>
+    ChatGPT adds connectors through developer mode, on the web only, in Plus,
+    Pro, Business, Enterprise and Edu plans. In a workspace, an admin turns
+    developer mode on, or allows you to.
+  </p>
+  <ol>
+    <li>
+      In ChatGPT on the web, open <strong>Settings</strong>, then
+      <strong>Apps</strong>, then <strong>Advanced settings</strong>, and turn
+      on <strong>Developer mode</strong>.
+    </li>
+    <li>
+      Back in <strong>Apps</strong>, choose <strong>Create</strong>. Give it the
+      name <em>Traintrackr</em>, paste the address and choose
+      <strong>OAuth</strong>.
+    </li>
+    <li>
+      Choose <strong>Scan Tools</strong>. ChatGPT opens the Traintrackr sign-in
+      page: enter your email address, then the six-digit code sent to it. Then
+      choose <strong>Create</strong>.
+    </li>
+    <li>
+      Traintrackr is now under <strong>Settings</strong>, <strong>Apps</strong>,
+      marked <strong>Dev</strong>. Start a new chat and ask.
+    </li>
+  </ol>
+
+  <p>
+    There is no password: each sign-in sends a six-digit code that lasts 15
+    minutes and works once. Traintrackr sees only the stations and times your
+    chat asks about, never the conversation; the
+    <a href="/privacy">privacy policy</a> says what is kept. To disconnect, remove the connector in your AI chat's settings.
+  </p>
+</section>
+
+<h2 id="compare">Why use a connector?</h2>
 <p>
-  The connector address is <code>{{ mcp_url }}</code>. The
-  <a href="/#claude">home page</a> has the steps for Claude and ChatGPT.
+  Without a connector, Claude searches the web for departure boards. Most load
+  their times in the browser, and it can't read them.
 </p>
-<p>
-  You sign in with an email address. Traintrackr sends a six-digit code that
-  lasts 10 minutes and works once. There is no password, and the address is not
-  kept: the <a href="/privacy">privacy policy</a> says what is.
-</p>
+<figure class="chat">
+  <figcaption>Without Traintrackr</figcaption>
+  <p class="ask">next trains from liverpool street</p>
+  <p class="tool">Read 3 pages</p>
+  <p>
+    I couldn't get a trustworthy live board for right now. The one feed that
+    answered returned departures starting at 17:35, about four hours after your
+    13:45, so it's either cached or showing evening peak. I don't want to give
+    you times that could be wrong.
+  </p>
+  <p>
+    If you just want to check it yourself, the live board is
+    <span class="link">National Rail - London Liverpool Street departures</span
+    >.
+  </p>
+</figure>
+<figure class="chat">
+  <figcaption>With Traintrackr</figcaption>
+  <p class="ask">next trains from Liverpool Street</p>
+  <p class="tool">Used Traintrackr: Live departures</p>
+  <p>Live board for <strong>London Liverpool Street</strong> as of 15:35:</p>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Destination</th>
+          <th>Operator</th>
+          <th>Plat</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>15:36</td>
+          <td data-label="Destination">Colchester Town</td>
+          <td data-label="Operator">Greater Anglia</td>
+          <td data-label="Platform">14</td>
+          <td data-label="Status">On time</td>
+        </tr>
+        <tr>
+          <td>15:36</td>
+          <td data-label="Destination">Stansted Airport</td>
+          <td data-label="Operator">Greater Anglia</td>
+          <td data-label="Platform">4</td>
+          <td data-label="Status">On time</td>
+        </tr>
+        <tr>
+          <td>15:38</td>
+          <td data-label="Destination">Hertford East</td>
+          <td data-label="Operator">Greater Anglia</td>
+          <td data-label="Platform">3</td>
+          <td data-label="Status">On time</td>
+        </tr>
+        <tr>
+          <td>15:43</td>
+          <td data-label="Destination">Cheshunt</td>
+          <td data-label="Operator">Overground</td>
+          <td data-label="Platform">1</td>
+          <td data-label="Status">On time</td>
+        </tr>
+        <tr>
+          <td>15:46</td>
+          <td data-label="Destination">Chingford</td>
+          <td data-label="Operator">Overground</td>
+          <td data-label="Platform">5</td>
+          <td data-label="Status">On time</td>
+        </tr>
+        <tr>
+          <td>15:48</td>
+          <td data-label="Destination">Braintree</td>
+          <td data-label="Operator">Greater Anglia</td>
+          <td data-label="Platform">13</td>
+          <td data-label="Status">On time</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p><strong>Heads up:</strong></p>
+  <ul>
+    <li>
+      The escalator at the Liverpool Street entrance is out of service. Use the
+      Bishopsgate entrance or the lift.
+    </li>
+  </ul>
+  <p>
+    Where are you heading? I can filter the board to your destination and check
+    the calling points.
+  </p>
+</figure>
+
 
 <h2 id="examples">Worked examples</h2>
 

@@ -21,7 +21,7 @@ from apps.rail.settings import rail_settings
 
 logger = logging.getLogger(__name__)
 
-# The header's links after Home, which is the icon and name at the left.
+# The footer's links. Home is the icon and name at the header's left.
 NAV = [
     *((path, text) for path, (_, text, _, _) in pages.PAGES.items() if path != "/"),
     *pages.EXTRA_NAV.items(),
@@ -44,7 +44,7 @@ def fields() -> dict[str, str]:
 
 
 def page_context(path: str, title: str, description: str, current: str) -> dict[str, Any]:
-    """What every page inside the layout needs: titles, sharing and the header."""
+    """What every page inside the layout needs: titles, sharing and the footer's links."""
     return {
         "title": title,
         "description": description,

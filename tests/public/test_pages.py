@@ -11,12 +11,14 @@ from collections.abc import Iterator
 import pytest
 from django.contrib.staticfiles import finders
 from django.test import Client
+from django.utils import timezone
 from mcp import Client as MCPClient
 from mcp.types import Tool
 
 from apps.public import pages as site
 from apps.public import views
 from apps.rail import server
+from tests.factories import UserFactory
 from tests.public.fakes import BASE
 
 pytestmark = pytest.mark.django_db
@@ -128,15 +130,37 @@ def test_pages_are_served(client: Client, path: str) -> None:
     assert client.head(path).status_code == 200
 
 
-def test_home_is_the_icon_not_a_nav_item(client: Client) -> None:
-    """The icon and name at the left go home; the nav lists the other pages."""
+def test_the_header_is_the_icon_and_one_link(client: Client) -> None:
+    """The icon and name go home; the one link on the right signs in. No menu."""
     text = client.get("/docs").content.decode()
-    home = re.search(r'<a class="name" href="/"[^>]*>(.*?)</a>', text)
+    header = text.split("<header>", 1)[1].split("</header>", 1)[0]
+    home = re.search(r'<a class="name" href="/"[^>]*>(.*?)</a>', header)
     assert home
     assert home.group(1).startswith(f'<img src="{ICON}"')
-    nav = text.split("<nav", 1)[1].split("</nav>", 1)[0]
-    assert 'href="/"' not in nav
-    assert 'aria-current="page"' in client.get("/").content.decode().split("<nav", 1)[0]
+    assert "<nav" not in header
+    assert header.count("<a ") == 2
+    assert '<a class="header-link" href="/signin/">Sign in</a>' in header
+    assert 'aria-current="page"' in client.get("/").content.decode().split("</header>", 1)[0]
+
+
+def test_the_header_offers_the_account_when_signed_in(client: Client) -> None:
+    """Signed in, the header's link changes its offer, not its shape."""
+    client.force_login(UserFactory.create())
+    header = client.get("/").content.decode().split("</header>", 1)[0]
+    assert '<a class="header-link" href="/app/account/">Open the app</a>' in header
+    assert "Sign in" not in header
+
+
+def test_the_footer_has_the_other_pages_and_the_copyright(client: Client) -> None:
+    """The pages the header no longer lists, the connector steps, then the copyright."""
+    text = client.get("/").content.decode()
+    footer = text.split("<footer>", 1)[1].split("</footer>", 1)[0]
+    for link in ("/docs", "/docs#use-with-ai", "/board", "/privacy", "/terms"):
+        assert f'<a href="{link}"' in footer, link
+    assert '<a href="/docs#use-with-ai">Use with Claude</a>' in footer
+    # Any data credit sits above the copyright.
+    assert footer.index("Powered by National Rail Enquiries") < footer.index("All rights reserved.")
+    assert f"&copy; {timezone.localdate().year} Hugo Rodger-Brown. All rights reserved." in footer
 
 
 @pytest.mark.parametrize("path", list(site.PAGES))
@@ -151,8 +175,9 @@ def test_pages_set_the_link_preview_tags(client: Client, path: str) -> None:
     assert meta["og:site_name"] == "Traintrackr"
     assert meta["twitter:card"] == "summary_large_image"
     assert meta["og:image:alt"] == site.SHARE_IMAGE_ALT
-    # Previews are fetched with no page address to resolve against: both are absolute.
-    assert meta["og:url"] == f"{BASE}{path}"
+    # No og:url (DESIGN.md, "The front page"): the chat already has the link.
+    assert "og:url" not in meta
+    # Previews are fetched with no page address to resolve against: it is absolute.
     assert meta["og:image"] == f"{BASE}{SHARE_IMAGE}"
     assert all(meta.values()), "an empty tag"
     assert "{{" not in text, "an unfilled field"
@@ -168,26 +193,62 @@ def test_pages_set_the_link_preview_tags(client: Client, path: str) -> None:
     assert image[25] == 2
 
 
-def test_the_landing_page_has_the_address_and_the_examples(client: Client) -> None:
-    """What it answers, then how to add it to Claude and ChatGPT, with this server's address."""
+def test_the_front_page_has_the_shared_anatomy(client: Client) -> None:
+    """DESIGN.md's front page, top to bottom: proposition, product, AI chat, closing action."""
     text = _page(client, "/")
-    # This server's own address, not the one the page was written for.
-    assert f'<code id="mcp-url">{BASE}/mcp</code>' in text
-    assert 'data-copy="#mcp-url"' in text
-    found = [text.index(prompt) for prompt in HOME_PROMPTS]
+    order = [
+        '<section class="hero">',
+        '<figure class="departures">',
+        '<section class="ai"',
+        '<section class="closing">',
+    ]
+    found = [text.index(section) for section in order]
+    assert found == sorted(found)
+    assert "<h1>Live UK train times in Claude and ChatGPT</h1>" in text
+    # One primary action, named for the first job (connecting it, not signing in),
+    # under the H1 and again at the close.
+    assert text.count('<a class="button" href="/docs#use-with-ai">Add it to Claude</a>') == 2
+    assert "no password" in text
+
+
+def test_the_front_page_ai_section_has_the_chats_the_asks_and_the_address(
+    client: Client,
+) -> None:
+    """Without and with Traintrackr, things to try, this server's address, the steps' link."""
+    text = _page(client, "/")
+    ai = text.split('<section class="ai"', 1)[1].split("</section>", 1)[0]
+    assert ai.index("Without Traintrackr") < ai.index("With Traintrackr") < ai.index("Try asking")
+    found = [ai.index(prompt) for prompt in HOME_PROMPTS]
     assert found == sorted(found), "platforms first, then stops, then journeys"
-    # What it answers comes before how to set it up. The address sits in the
-    # Claude step that uses it, not above the steps, where it reads as a link.
-    assert text.index('id="examples"') < text.index('id="claude"') < text.index('id="url"')
-    assert text.index('id="url"') < text.index('id="chatgpt"')
-    assert "not a page to open in your browser" in text
-    assert "Claude" in text
-    assert "ChatGPT" in text
-    # ChatGPT adds a server by URL only in developer mode. The page describes
-    # how to add it, not where it is listed.
-    assert "Developer mode" in text
-    assert "directory" not in text
-    assert "coming soon" not in text
+    # This server's own address, not the one the page was written for.
+    assert f'<code id="mcp-url">{BASE}/mcp</code>' in ai
+    assert 'data-copy="#mcp-url"' in ai
+    # The steps are on the docs page; the front page links there and nowhere else for them.
+    assert '<a href="/docs#use-with-ai">How to add it to Claude or ChatGPT</a>' in ai
+    assert "Customize" not in text
+    assert "Developer mode" not in text
+    assert "never the conversation" in " ".join(ai.split())
+
+
+def test_the_docs_have_the_connector_steps(client: Client) -> None:
+    """The steps every Titan app shares, at #use-with-ai, with this server's address."""
+    text = _page(client, "/docs")
+    steps = text.split('<section id="use-with-ai">', 1)[1].split("</section>", 1)[0]
+    assert "<h2>Use it from Claude or ChatGPT</h2>" in steps
+    assert f'<code id="mcp-url">{BASE}/mcp</code>' in steps
+    assert 'data-copy="#mcp-url"' in steps
+    assert "not a page to open in your browser" in steps
+    assert steps.index('id="claude"') < steps.index('id="chatgpt"')
+    # ChatGPT adds a server by URL only in developer mode, on the web, as
+    # OpenAI's guide has it: Settings, Apps, Advanced settings; then Create and Scan Tools.
+    assert "Developer mode" in steps
+    assert "Advanced settings" in steps
+    assert "Scan Tools" in steps
+    assert "Security and login" not in steps
+    assert "Plugins" not in steps
+    assert "directory" not in steps
+    # The code's real lifetime (SIGN_IN_MAX_AGE_SECONDS).
+    assert "lasts 15 minutes" in " ".join(steps.split())
 
 
 def test_the_landing_page_shows_an_example_board(client: Client) -> None:

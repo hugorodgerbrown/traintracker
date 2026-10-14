@@ -100,7 +100,7 @@ def test_the_picker_is_a_form_that_works_without_javascript(client: Client) -> N
     assert 'name="to"' in text
     assert 'data-suggest="/api/stations"' in text
     assert '<a href="/board/LST">London Liverpool Street departures</a>' in text
-    assert '<a href="/board" aria-current="page">Boards</a>' in text
+    assert '<a href="/board" aria-current="page">Boards</a>' in text  # in the footer
     # The form sends to this site.
     assert "form-action 'self'" in r["Content-Security-Policy"]
 
@@ -240,8 +240,11 @@ def test_a_board_can_be_shared_and_embedded(client: Client) -> None:
     assert 'title="London Liverpool Street platform 9 departures"' in frame
     assert 'data-copy="#board-link"' in text
     assert 'data-copy="#embed-code"' in text
-    # The link preview names the board, at its own address.
-    assert f'<meta property="og:url" content="{BASE}/board/LST/9" />' in body
+    # The link preview names the board. No og:url: the chat already has the link.
+    assert (
+        '<meta property="og:title" content="London Liverpool Street platform 9 departures' in body
+    )
+    assert "og:url" not in body
     assert "<title>London Liverpool Street platform 9 departures · Traintrackr</title>" in body
     policy = r["Content-Security-Policy"]
     assert "frame-ancestors 'none'" in policy

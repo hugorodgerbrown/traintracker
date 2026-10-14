@@ -1,18 +1,85 @@
 <h1>Traintrackr docs</h1>
 <p class="lede">
-  What Traintrackr can answer, three worked examples, and its limits.
+  How to add Traintrackr to your AI chat, what it can answer, three worked
+  examples, and its limits.
 </p>
 
-<h2 id="connect">Connecting</h2>
-<p>
-  The connector address is <code>{{ mcp_url }}</code>. The
-  <a href="/#claude">home page</a> has the steps for Claude and ChatGPT.
-</p>
-<p>
-  You sign in with an email address. Traintrackr sends a six-digit code that
-  lasts 10 minutes and works once. There is no password, and the address is not
-  kept: the <a href="/privacy">privacy policy</a> says what is.
-</p>
+{# Every Titan app's connector steps, in the same words (DESIGN.md, "The front page"); the front page and the footer link here. #}
+<section id="use-with-ai">
+  <h2>Use it from Claude or ChatGPT</h2>
+  <p>
+    Traintrackr is a connector: you add it once, and your AI chat uses it when
+    you ask about trains. You need this address:
+  </p>
+  <div class="copy" id="url">
+    <code id="mcp-url">{{ mcp_url }}</code>
+    <button type="button" data-copy="#mcp-url" hidden>Copy address</button>
+    <p role="status"></p>
+  </div>
+  <p>It is for your AI chat to use, not a page to open in your browser.</p>
+
+  <h3 id="claude">Claude</h3>
+  <p>It is free, and works on every Claude plan.</p>
+  <ol>
+    <li>
+      On <a href="https://claude.ai">claude.ai</a> or in the Claude desktop
+      app, open <strong>Customize</strong>, then <strong>Connectors</strong>.
+    </li>
+    <li>
+      Choose <strong>+</strong>, then <strong>Add custom connector</strong>.
+    </li>
+    <li>
+      Give it the name <em>Traintrackr</em>, paste the address into the URL
+      field, leave <strong>Advanced settings</strong> empty and choose
+      <strong>Add</strong>.
+    </li>
+    <li>
+      Choose <strong>Connect</strong>. Claude opens the Traintrackr sign-in
+      page: enter your email address, then the six-digit code sent to it.
+    </li>
+    <li>
+      Start a new chat and ask about a train. If Claude doesn't use
+      Traintrackr, open the <strong>+</strong> menu under the message box,
+      choose <strong>Connectors</strong> and turn Traintrackr on.
+    </li>
+  </ol>
+
+  <h3 id="chatgpt">ChatGPT</h3>
+  <p>
+    ChatGPT adds connectors through developer mode, on the web only. Business,
+    Enterprise and Edu plans can use every tool; Pro can use only the ones that
+    read, which is all of Traintrackr's. In a workspace, an admin turns
+    developer mode on, or allows you to.
+  </p>
+  <ol>
+    <li>
+      In ChatGPT on the web, open <strong>Settings</strong>, then
+      <strong>Apps</strong>, then <strong>Advanced settings</strong>, and turn
+      on <strong>Developer mode</strong>.
+    </li>
+    <li>
+      Back in <strong>Apps</strong>, choose <strong>Create</strong>. Give it the
+      name <em>Traintrackr</em>, paste the address and choose
+      <strong>OAuth</strong>.
+    </li>
+    <li>
+      Choose <strong>Scan Tools</strong>. ChatGPT opens the Traintrackr sign-in
+      page: enter your email address, then the six-digit code sent to it. Then
+      choose <strong>Create</strong>.
+    </li>
+    <li>
+      Traintrackr is now under <strong>Settings</strong>, <strong>Apps</strong>,
+      marked <strong>Dev</strong>. Start a new chat and ask.
+    </li>
+  </ol>
+
+  <p>
+    There is no password: each sign-in sends a six-digit code that lasts 15
+    minutes and works once. Traintrackr sees only the stations and times your
+    chat asks about, never the conversation; the
+    <a href="/privacy">privacy policy</a> says what is kept. To disconnect, remove the connector in your AI chat's settings.
+  </p>
+</section>
 
 <h2 id="examples">Worked examples</h2>
 

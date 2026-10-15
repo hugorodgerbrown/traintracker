@@ -268,7 +268,7 @@ def test_account_page_lists_my_passkeys(signed_in: Client, user: Any) -> None:
     PasskeyFactory.create(user=user, name="My phone")
     PasskeyFactory.create(name="Someone else's")
     content = signed_in.get(reverse("accounts:account")).content.decode()
-    assert f"Signed in as</span><br><strong>{user.masked_email}</strong>" in content
+    assert f"Signed in as <strong>{user.masked_email}</strong>" in content
     assert "My phone" in content
     assert "Someone else" not in content
     assert "data-sign-out" in content

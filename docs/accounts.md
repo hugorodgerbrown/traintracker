@@ -163,7 +163,7 @@ Read-only unless `--commit`:
 
 - `forget_account EMAIL` deletes the account, its passkeys, its connected
   apps' tokens and any sign-in request for the address (a request under
-  the privacy policy).
+  the privacy policy). It finds them by the address's key.
 - `block_account EMAIL` closes the account, or makes a closed one for an
   address that has none, so it can't sign in and its connected apps stop
   at once. Reopen it in the admin.

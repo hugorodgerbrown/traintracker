@@ -7,7 +7,8 @@
 {% endblock %}
 {% block content %}
   <h1>Your account</h1>
-  <p>Signed in as <strong>{{ email }}</strong>.</p>
+  <p>Signed in as <strong>{{ signed_in_as }}</strong>.</p>
+  <p class="hint">Your email address isn't kept: only this masked form, and a one-way hash that finds your account when you sign in again.</p>
   <p>To use Traintrackr, add it as a connector in Claude or ChatGPT. You can see and disconnect them on <a href="{% url 'oauth2_provider:connected-apps' %}">connected apps</a>.</p>
   <form method="post" action="{% url 'accounts:sign_out' %}" data-sign-out>
     {% csrf_token %}

@@ -9,22 +9,22 @@ tokens with it.
 from datetime import timedelta
 from typing import Any
 
-from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandParser
 from django.db.models import Max, QuerySet
 from django.db.models.functions import Coalesce, Greatest
 from django.utils import timezone
 
+from apps.accounts.models import User
+
 IDLE_DAYS = 180
 
 
-def idle_accounts() -> QuerySet[Any]:
+def idle_accounts() -> QuerySet[User]:
     """Return the non-staff accounts with no sign-in and no token for IDLE_DAYS."""
     cutoff = timezone.now() - timedelta(days=IDLE_DAYS)
     epoch = timezone.now() - timedelta(days=365 * 100)
-    return (
-        get_user_model()
-        .objects.filter(is_staff=False, is_superuser=False)
+    idle: QuerySet[User] = (
+        User.objects.filter(is_staff=False, is_superuser=False)
         .annotate(
             last_used=Greatest(
                 Coalesce("last_login", "date_joined"),
@@ -33,6 +33,7 @@ def idle_accounts() -> QuerySet[Any]:
         )
         .filter(last_used__lt=cutoff)
     )
+    return idle
 
 
 class Command(BaseCommand):
@@ -46,7 +47,7 @@ class Command(BaseCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Count, and with --commit delete, the idle accounts."""
-        idle = get_user_model().objects.filter(pk__in=idle_accounts().values("pk"))
+        idle = User.objects.filter(pk__in=idle_accounts().values("pk"))
         if not options["commit"]:
             self.stdout.write(f"{idle.count()} idle accounts (dry run; pass --commit).")
             return

@@ -9,8 +9,7 @@ from django.core.cache import cache
 from django.test import Client
 from django.urls import reverse
 
-from apps.accounts import admin as accounts_admin
-from apps.accounts import sign_in
+from apps.accounts import models, sign_in
 from apps.accounts.models import REVIEWER_CODE_DIGITS, ReviewerAccount
 from tests.factories import ReviewerAccountFactory
 
@@ -83,7 +82,7 @@ def test_admin_lists_codes_and_gives_new_ones(
     client.force_login(staff)
     account = ReviewerAccountFactory.create()
     old = account.code
-    monkeypatch.setattr(accounts_admin, "new_reviewer_code", lambda: "111111")
+    monkeypatch.setattr(models, "new_reviewer_code", lambda: "111111")
     listing = client.get(reverse("admin:accounts_revieweraccount_changelist"))
     assert old in listing.content.decode()
     client.post(
@@ -97,3 +96,28 @@ def test_admin_lists_codes_and_gives_new_ones(
 def test_code_lengths_match() -> None:
     """A reviewer code fits the code form."""
     assert REVIEWER_CODE_DIGITS == sign_in.CODE_DIGITS
+
+
+def test_a_new_code_ends_sign_ins_started_with_the_old_one() -> None:
+    """A browser that asked before the code changed can't use the old code."""
+    account = ReviewerAccountFactory.create()
+    old = account.code
+    request, _, _ = sign_in.issue(account.email)
+    account.give_new_code()
+    assert sign_in.redeem_code(str(request.uuid), old) is None
+
+
+def test_deleting_ends_sign_ins_it_started(client: Client) -> None:
+    """Deleting the account, one or many in the admin, ends its pending sign-ins."""
+    staff = get_user_model().objects.create_superuser("boss@example.com", "boss@example.com")
+    client.force_login(staff)
+    one, two = ReviewerAccountFactory.create(), ReviewerAccountFactory.create()
+    requests = [(sign_in.issue(a.email)[0], a.code) for a in (one, two)]
+    one.delete()
+    client.post(
+        reverse("admin:accounts_revieweraccount_changelist"),
+        {"action": "delete_selected", "_selected_action": [two.pk], "post": "yes"},
+    )
+    assert not ReviewerAccount.objects.exists()
+    for request, code in requests:
+        assert sign_in.redeem_code(str(request.uuid), code) is None

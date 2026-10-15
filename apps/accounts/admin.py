@@ -4,7 +4,7 @@ from django.contrib import admin, messages
 from django.db.models import QuerySet
 from django.http import HttpRequest
 
-from apps.accounts.models import Passkey, ReviewerAccount, SignInRequest, new_reviewer_code
+from apps.accounts.models import Passkey, ReviewerAccount, SignInRequest
 
 
 @admin.register(SignInRequest)
@@ -51,8 +51,12 @@ class ReviewerAccountAdmin(admin.ModelAdmin):
         """Replace each selected account's code, as after a review."""
         count = 0
         for account in queryset:
-            account.code = new_reviewer_code()
-            account.save(update_fields=["code", "updated_at"])
+            account.give_new_code()
             count += 1
         noun = "account" if count == 1 else "accounts"
         self.message_user(request, f"Gave {count} {noun} a new code.", messages.SUCCESS)
+
+    def delete_queryset(self, request: HttpRequest, queryset: QuerySet[ReviewerAccount]) -> None:
+        """Delete one by one, so each ends the sign-ins it had started."""
+        for account in queryset:
+            account.delete()

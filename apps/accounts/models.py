@@ -152,6 +152,26 @@ class ReviewerAccount(BaseModel):
             self.code = new_reviewer_code()
         super().save(*args, **kwargs)
 
+    def give_new_code(self) -> None:
+        """Replace the code, and end sign-ins already started with the old one."""
+        self.code = new_reviewer_code()
+        self.save(update_fields=["code", "updated_at"])
+        self.end_pending_sign_ins()
+
+    def end_pending_sign_ins(self) -> None:
+        """Stop this address's unused sign-in requests working.
+
+        A request holds the code it was issued with, so without this an old
+        code would keep working in a browser that asked for it until the
+        request expired.
+        """
+        SignInRequest.objects.for_email(self.email).live().update(used_at=timezone.now())
+
+    def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
+        """Delete the account, ending any sign-in it had started."""
+        self.end_pending_sign_ins()
+        return super().delete(*args, **kwargs)
+
     def to_string(self) -> str:
         """Return the address."""
         return self.email

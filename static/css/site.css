@@ -220,9 +220,32 @@ button {
   cursor: pointer;
 }
 
-button.quiet {
+button.quiet,
+button.mcp-auth-cancel {
   color: var(--accent);
   background: transparent;
+}
+
+/* The consent page's "Signed in as" line; its button reads as a link (mcp_auth/authorize.html). */
+.mcp-auth-account p {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.mcp-auth-account button {
+  width: auto;
+  margin: 0;
+  padding: 0;
+  font-weight: inherit;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.mcp-auth-account button:hover {
+  text-decoration-thickness: 2px;
 }
 
 blockquote {

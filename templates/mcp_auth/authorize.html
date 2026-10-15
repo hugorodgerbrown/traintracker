@@ -1,21 +1,5 @@
-{% extends "mcp_auth/base.html" %}
+{% extends "mcp_auth/authorize.html" %}
+{# mcp_auth's shared consent page, in Traintrackr's words. #}
 {% block title %}Connect {{ application.name|default:"an app" }} · Traintrackr{% endblock %}
-{% block body %}
-{% if not error %}
-  <h1>Connect {{ application.name|default:"this app" }} to Traintrackr?</h1>
-  <p>It will be able to look up train times for you. After you connect, you go back to <strong>{{ redirect_host }}</strong>.</p>
-  {% if redirect_is_loopback %}
-    <p><strong>That address is a program on your own computer, not a website.</strong> Only connect if you started it.</p>
-  {% endif %}
-  {% for e in form.non_field_errors %}<p class="error" role="alert">{{ e }}</p>{% endfor %}
-  <form method="post">
-    {% csrf_token %}
-    {% for field in form %}{% if field.is_hidden %}{{ field }}{% endif %}{% endfor %}
-    <button type="submit" name="allow" value="Authorize">Connect</button>
-    <button type="submit" class="quiet">Cancel</button>
-  </form>
-{% else %}
-  <h1>This connection can't go ahead</h1>
-  <p>{{ error.description|default:error.error }}</p>
-{% endif %}
-{% endblock %}
+{% block heading %}Connect {{ application.name|default:"this app" }} to Traintrackr?{% endblock %}
+{% block description %}It will be able to look up train times for you.{% endblock %}

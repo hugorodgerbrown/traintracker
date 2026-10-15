@@ -1,0 +1,5 @@
+{% extends "public_base.html" %}
+{# A page you come back to while signed in (the account, connected apps): the site's header, so the icon goes home, and its footer. #}
+{% block header %}<a class="skip" href="#main">Skip to content</a>
+{% include "public/_header.html" %}{% endblock %}
+{% block footer %}{% include "public/_footer.html" %}{% endblock %}

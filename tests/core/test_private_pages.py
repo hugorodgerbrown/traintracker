@@ -42,3 +42,18 @@ def test_a_view_that_chose_its_caching_keeps_it(db: None) -> None:
 def test_a_signed_out_page_is_left_alone() -> None:
     """Visitors' pages keep the browser's default caching."""
     assert not _respond(AnonymousUser()).has_header("Cache-Control")
+
+
+class _UnreadableUser:
+    """A user whose session can't be loaded, as in a database outage."""
+
+    @property
+    def is_authenticated(self) -> bool:
+        """Fail the way a session lookup does when the database is down."""
+        raise AssertionError("request.user was read")
+
+
+def test_a_response_with_a_cache_policy_never_reads_the_user() -> None:
+    """/livez (never_cache) must answer without loading the session."""
+    response = _respond(_UnreadableUser(), cache_control="no-cache")
+    assert response["Cache-Control"] == "no-cache"

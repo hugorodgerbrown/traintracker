@@ -34,6 +34,8 @@ class PrivatePagesMiddleware:
     def __call__(self, request: HttpRequest) -> HttpResponse:
         """Add the never-cache headers to a signed-in user's uncached response."""
         response = self.get_response(request)
-        if request.user.is_authenticated and not response.has_header("Cache-Control"):
+        # Check the header first: reading request.user loads the session from
+        # the database, which /livez (never_cache) must not do.
+        if not response.has_header("Cache-Control") and request.user.is_authenticated:
             add_never_cache_headers(response)
         return response

@@ -93,6 +93,33 @@ with Face ID, a fingerprint or a device PIN from then on.
   origin(s), both from `SITE_URL` by default. A passkey only works on the
   host it was made for: moving to a custom domain means users add new ones.
 
+## The reviewer account
+
+The Claude and ChatGPT directories review Traintrackr by connecting it with
+a test account, and both refuse a sign-in that needs an inbox, an SMS or any
+other verification step. So one address can sign in with a fixed code:
+
+| Setting | Value |
+| --- | --- |
+| `REVIEWER_EMAIL` | An address with no mailbox behind it, e.g. `reviewer@<our domain>` |
+| `REVIEWER_CODE` | Six random digits: `python -c "import secrets; print(f'{secrets.randbelow(10**6):06d}')"` |
+
+Both are secrets on the Render web service (`render.yaml`). With either
+unset, or a code that isn't six digits, the account is off and the address
+signs in like any other.
+
+- **Nothing else changes.** The reviewer uses the normal pages: email on
+  `/signin/`, then the code on `/signin/code/`. That address is sent no
+  email; `issue()` gives its request the fixed code instead of a random one.
+- **Same limits.** Five wrong codes end a request, and the address gets five
+  requests an hour, so the code can't be guessed in any useful time.
+- **What it can reach.** An ordinary account: the train tools read public
+  rail data, so the worst a leaked code allows is someone else's train
+  times. Change `REVIEWER_CODE` after a review, or unset it between reviews.
+- **What to give the reviewers.** The address, the code, and: "Enter the
+  email on the sign-in page, then type the code on the next page. No email
+  is sent."
+
 ## Staff and the admin
 
 The admin's password form redirects to `/signin/`. Make the first

@@ -27,7 +27,8 @@
         <td data-label="Data">
           A one-way hash of your email address. The address itself is never
           stored: it is held in memory only while your sign-in code is sent.
-          The hash can't be turned back into the address, even by Traintrackr
+          The hash can't be turned back into the address: Traintrackr can only
+          check whether an address it is given matches it
         </td>
         <td data-label="Why">
           It is your account: to recognise you when you sign in, and to apply
@@ -82,9 +83,14 @@
       <tr>
         <td data-label="Data">
           A session, while you are signed in to this website's sign-in and
-          account pages
+          account pages. Once you ask for a sign-in email, it also holds the
+          masked form of your address until you finish signing in or the
+          session ends
         </td>
-        <td data-label="Why">To keep you signed in on those pages</td>
+        <td data-label="Why">
+          To keep you signed in on those pages, and to show where your code was
+          sent
+        </td>
         <td data-label="Kept for">90 days, or until you sign out</td>
       </tr>
       <tr>
@@ -164,7 +170,8 @@
   <li>
     It does not keep your email address. Once the sign-in email is sent, only
     its hash and its masked form remain, so Traintrackr can't email you unless
-    you write to support first.
+    you write to support first. Email you send to support is kept as the table
+    above says.
   </li>
   <li>It does not sell or share your data for marketing.</li>
   <li>

@@ -60,6 +60,15 @@ def kept_email(email: str) -> str:
     return normalise_email(email) if settings.ACCOUNTS_KEEP_EMAIL else ""
 
 
+def account_name(user: Any) -> str:
+    """Return how mcp-auth's consent page names ``user``: its masked address.
+
+    ``MCP_AUTH["ACCOUNT_NAME"]`` points here, so the page never shows the
+    key that is the username.
+    """
+    return str(user)
+
+
 class UserQuerySet(models.QuerySet["User"]):
     """Queries over accounts."""
 

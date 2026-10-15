@@ -6,9 +6,17 @@ from typing import Any
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 from django.utils import timezone
+from mcp_auth.accounts import account_name as mcp_account_name
 
 from apps.accounts.checks import email_key_is_set
-from apps.accounts.models import Passkey, SignInRequest, User, email_key, mask_email
+from apps.accounts.models import (
+    Passkey,
+    SignInRequest,
+    User,
+    account_name,
+    email_key,
+    mask_email,
+)
 from tests.factories import PasskeyFactory, SignInRequestFactory, UserFactory
 
 pytestmark = pytest.mark.django_db
@@ -84,3 +92,9 @@ def test_user_to_string() -> None:
     """An account reads as its masked address, or its username without one."""
     assert str(UserFactory.create(address="walker@example.com")) == "w•••@example.com"
     assert str(UserFactory.create(username="admin", masked_email="")) == "admin"
+
+
+def test_the_consent_page_names_the_masked_address() -> None:
+    """mcp-auth's consent page names an account by its masked address, never its key."""
+    user = UserFactory.create(address="walker@example.com")
+    assert account_name(user) == mcp_account_name(user) == "w•••@example.com"

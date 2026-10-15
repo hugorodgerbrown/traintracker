@@ -284,6 +284,8 @@ MCP_AUTH = {
     # template's default): the tools only read public rail data, and
     # Traintrackr is listed in the Claude and ChatGPT directories.
     "CAN_CONNECT": "mcp_auth.policy.active_user",
+    # The consent page's "Signed in as": the masked address, not the key.
+    "ACCOUNT_NAME": "apps.accounts.models.account_name",
     # ChatGPT's callbacks as well as Claude's and loopback.
     "REDIRECT_URI_PATTERNS": DEFAULT_REDIRECT_URI_PATTERNS + CHATGPT_REDIRECT_URI_PATTERNS,
     "CONSENT_FORM_ACTION": [

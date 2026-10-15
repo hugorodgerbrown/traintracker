@@ -116,4 +116,5 @@ choice in `docs/decisions/`.
 4. No secrets in source.
 5. Email addresses are lower-cased before storage and lookup.
 6. Sign-in secrets (codes, tokens) are stored only as hashes and never
-   logged.
+   logged. The one exception is a reviewer account's fixed code, which
+   staff read in the admin (docs/accounts.md).

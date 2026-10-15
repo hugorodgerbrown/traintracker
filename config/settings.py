@@ -179,13 +179,6 @@ SESSION_COOKIE_AGE = 60 * 60 * 24 * 90
 SIGN_IN_MAX_AGE_SECONDS = 15 * 60
 SIGN_IN_MAX_CODE_ATTEMPTS = 5
 
-# The account the Claude and ChatGPT directory reviewers sign in with. Both
-# directories refuse a sign-in that needs an inbox, so this one address is
-# sent no email and takes REVIEWER_CODE, a fixed six digits, instead. Unset
-# either to turn it off (docs/accounts.md, "The reviewer account").
-REVIEWER_EMAIL: str = config("REVIEWER_EMAIL", default="")
-REVIEWER_CODE: str = config("REVIEWER_CODE", default="")
-
 # Passkeys (WebAuthn). The relying party is this site's host name; a
 # passkey only works on the host it was made for.
 WEBAUTHN_RP_ID: str = config("WEBAUTHN_RP_ID", default=urlsplit(SITE_URL).hostname or "localhost")

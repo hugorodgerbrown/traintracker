@@ -46,12 +46,6 @@ services:
       # The token OpenAI's plugin portal issued for the domain check.
       - key: OPENAI_APPS_CHALLENGE
         sync: false
-      # The directory reviewers' sign-in (docs/accounts.md): an address
-      # with no inbox, and a fixed six-digit code. Unset to turn it off.
-      - key: REVIEWER_EMAIL
-        sync: false
-      - key: REVIEWER_CODE
-        sync: false
       # The cron job below refreshes the timetable; the web service only reads it.
       - key: TIMETABLE_AUTO_REFRESH
         value: "0"

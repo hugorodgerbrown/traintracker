@@ -36,7 +36,7 @@ with Face ID, a fingerprint or a device PIN from then on.
 | `apps/accounts/passkeys.py` | WebAuthn options and verification (py_webauthn) |
 | `apps/accounts/views.py` | The sign-in, code, link, sign-out, account and passkey endpoints |
 | `apps/accounts/tasks.py` | `send_sign_in_email`, enqueued by the view (`django.tasks`) |
-| `apps/accounts/models.py` | `SignInRequest`, `Passkey` |
+| `apps/accounts/models.py` | `SignInRequest`, `Passkey`, `ReviewerAccount` |
 | `static/js/passkeys.js`, `webauthn_json.js` | The browser side of both ceremonies |
 | `static/js/code_input.js` | The code as six digit boxes; a pasted or autofilled code fills them all |
 | `apps/core/ratelimit.py` | Cache-backed limits on emails, codes and passkey challenges |
@@ -93,32 +93,30 @@ with Face ID, a fingerprint or a device PIN from then on.
   origin(s), both from `SITE_URL` by default. A passkey only works on the
   host it was made for: moving to a custom domain means users add new ones.
 
-## The reviewer account
+## Reviewer accounts
 
-The Claude and ChatGPT directories review Traintrackr by connecting it with
-a test account, and both refuse a sign-in that needs an inbox, an SMS or any
-other verification step. So one address can sign in with a fixed code:
+App directories (OpenAI's for ChatGPT, Anthropic's for Claude) review an
+app by signing in to a test account, and refuse one that needs an inbox, an
+SMS or any other verification step. A reviewer account is an address that
+signs in with a fixed code instead:
 
-| Setting | Value |
-| --- | --- |
-| `REVIEWER_EMAIL` | An address with no mailbox behind it, e.g. `reviewer@<our domain>` |
-| `REVIEWER_CODE` | Six random digits: `python -c "import secrets; print(f'{secrets.randbelow(10**6):06d}')"` |
+1. In the admin, add a **Reviewer account** with an address that has no
+   mailbox behind it, such as `reviewer@` at the site's own domain. Its six-digit
+   code is made when you save it.
+2. Give the reviewers the address, the code, and: "Enter the email on the
+   sign-in page, then type the code on the next page. No email is sent."
+3. After the review, select the account and run **Give the selected
+   accounts a new code**, or delete it.
 
-Both are secrets on the Render web service (`render.yaml`). With either
-unset, or a code that isn't six digits, the account is off and the address
-signs in like any other.
-
-- **Nothing else changes.** The reviewer uses the normal pages: email on
-  `/signin/`, then the code on `/signin/code/`. That address is sent no
-  email; `issue()` gives its request the fixed code instead of a random one.
-- **Same limits.** Five wrong codes end a request, and the address gets five
+- **Nothing else changes.** The reviewer uses `/signin/` and
+  `/signin/code/` like anyone else. `sign_in.issue()` gives that address's
+  request the fixed code, and the view sends it no email. The account
+  itself is made on first sign-in, as for anyone.
+- **Same limits.** Five wrong codes end a request, and an address gets five
   requests an hour, so the code can't be guessed in any useful time.
-- **What it can reach.** An ordinary account: the train tools read public
-  rail data, so the worst a leaked code allows is someone else's train
-  times. Change `REVIEWER_CODE` after a review, or unset it between reviews.
-- **What to give the reviewers.** The address, the code, and: "Enter the
-  email on the sign-in page, then type the code on the next page. No email
-  is sent."
+- **The code is kept as it is,** not hashed like an emailed code, so staff
+  can read it in the admin. It is a shared test credential for an account
+  with no one's data in it, not a person's secret.
 
 ## Staff and the admin
 

@@ -10,7 +10,6 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
-import re
 import secrets
 from datetime import timedelta
 from typing import Any
@@ -22,7 +21,7 @@ from django.db.models import F
 from django.utils import timezone
 from django.utils.crypto import salted_hmac
 
-from apps.accounts.models import SignInRequest
+from apps.accounts.models import ReviewerAccount, SignInRequest
 
 logger = logging.getLogger(__name__)
 
@@ -47,30 +46,20 @@ def _hash_code(request_uuid: str, code: str) -> str:
 
 
 def reviewer_code(email: str) -> str | None:
-    """Return the fixed code if ``email`` is the directory reviewers' address, else None.
+    """Return the fixed code if ``email`` is a reviewer account's, else None.
 
-    The reviewers have no inbox to read, so their address is sent no email
-    and signs in with ``REVIEWER_CODE`` (see docs/accounts.md). A code that
-    isn't six digits turns the account off rather than weakening it.
+    Reviewers have no inbox to read, so their address is sent no email and
+    signs in with the code staff set up in the admin (see docs/accounts.md).
     """
-    reviewer = normalise_email(settings.REVIEWER_EMAIL)
-    if not reviewer or normalise_email(email) != reviewer:
-        return None
-    code = settings.REVIEWER_CODE.strip()
-    if not re.fullmatch(rf"\d{{{CODE_DIGITS}}}", code):
-        logger.warning(
-            "accounts.reviewer_code_invalid: REVIEWER_CODE must be %s digits", CODE_DIGITS
-        )
-        return None
-    return code
+    return ReviewerAccount.objects.for_email(email).values_list("code", flat=True).first()
 
 
 def issue(email: str, next_url: str = "") -> tuple[SignInRequest, str, str]:
     """Create a sign-in request for ``email``; return it with its link token and code.
 
     Earlier unused requests for the same address stop working, so only the
-    newest email in someone's inbox signs them in.
-    The reviewers' address gets its fixed code (``reviewer_code``).
+    newest email in someone's inbox signs them in. A reviewer account's
+    address gets its fixed code (``reviewer_code``).
     """
     email = normalise_email(email)
     token = secrets.token_urlsafe(32)

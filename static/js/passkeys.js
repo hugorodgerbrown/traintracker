@@ -7,11 +7,9 @@
  * (apps/accounts/passkeys.py); every request here is same-origin with the
  * CSRF token.
  *
- * Sign-in also starts conditional mediation where supported: focusing the
- * email field offers saved passkeys in the browser's autofill. Autofill and
- * the button can then run at once; the server keeps a challenge for each,
- * and their requests go out one at a time so neither overwrites the other's
- * session.
+ * Nothing asks for a passkey until the button is pressed: no autofill
+ * (conditional mediation) request on page load, which some browsers and
+ * password managers show as a prompt before anyone has asked for one.
  */
 (function () {
   'use strict';
@@ -60,26 +58,12 @@
 
   // ---------- sign in ----------
 
-  let signInQueue = Promise.resolve();
-
-  /** postJSON, but after every earlier sign-in request has answered. */
-  function queuedPostJSON(url, body) {
-    const send = () => postJSON(url, body);
-    const result = signInQueue.then(send, send);
-    signInQueue = result.catch(() => undefined);
-    return result;
-  }
-
-  async function signIn(section, mediation, signal) {
-    const options = await queuedPostJSON(section.dataset.optionsUrl);
+  async function signIn(section) {
+    const options = await postJSON(section.dataset.optionsUrl);
     if (!options.ok) throw new Error('options ' + options.status);
-    const credential = await navigator.credentials.get({
-      publicKey: codec.requestOptions(options.data),
-      mediation: mediation,
-      signal: signal,
-    });
+    const credential = await navigator.credentials.get({ publicKey: codec.requestOptions(options.data) });
     if (!credential) return;
-    const result = await queuedPostJSON(section.dataset.verifyUrl, {
+    const result = await postJSON(section.dataset.verifyUrl, {
       credential: codec.credentialToJSON(credential),
       next: section.dataset.next || '',
     });
@@ -102,24 +86,16 @@
 
   function setUpSignIn(section) {
     section.hidden = false;
-    let conditional = null;
-
-    async function startConditional() {
-      const PKC = self.PublicKeyCredential;
-      if (typeof PKC.isConditionalMediationAvailable !== 'function') return;
-      if (!(await PKC.isConditionalMediationAvailable())) return;
-      conditional = new AbortController();
-      signIn(section, 'conditional', conditional.signal).catch((error) => showError(section, describe(error)));
-    }
-
-    section.querySelector('[data-passkey-button]').addEventListener('click', () => {
-      // Only one WebAuthn request at a time: stop the autofill one first.
-      if (conditional) conditional.abort();
-      conditional = null;
+    const button = section.querySelector('[data-passkey-button]');
+    button.addEventListener('click', () => {
       showError(section, '');
-      signIn(section, 'optional').catch((error) => showError(section, describe(error)));
+      button.disabled = true;
+      signIn(section)
+        .catch((error) => showError(section, describe(error)))
+        .finally(() => {
+          button.disabled = false;
+        });
     });
-    startConditional().catch(() => undefined);
   }
 
   // ---------- add a passkey ----------

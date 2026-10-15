@@ -52,11 +52,11 @@ def signed_in_user(client: Client) -> Any:
 
 
 def test_sign_in_page_offers_email_and_passkey(client: Client) -> None:
-    """The page has the email field (with passkey autofill) and the hidden passkey card."""
+    """The page has the email field and the hidden passkey card, which asks only when pressed."""
     response = client.get(SIGN_IN, {"next": "/app/account/"})
     content = response.content.decode()
     assert response.status_code == 200
-    assert 'autocomplete="email webauthn"' in content
+    assert 'autocomplete="email"' in content
     assert "data-passkey-sign-in" in content
     assert 'value="/app/account/"' in content
 

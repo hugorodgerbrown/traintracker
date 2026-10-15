@@ -1,10 +1,13 @@
-"""Account models: an emailed sign-in request, and a passkey.
+"""Account models: an emailed sign-in request, a passkey, and a reviewer account.
 
 There is no profile model: an account is a plain ``auth.User`` whose
 username is its lowercased email address (``apps.accounts.sign_in``).
 """
 
 from __future__ import annotations
+
+import secrets
+from typing import Any
 
 from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser
@@ -100,3 +103,88 @@ class Passkey(BaseModel):
     def to_string(self) -> str:
         """Return the passkey's name."""
         return self.name
+
+
+# The same length as an emailed code (sign_in.CODE_DIGITS), so the code
+# form takes it.
+REVIEWER_CODE_DIGITS = 6
+
+
+def new_reviewer_code() -> str:
+    """Return a random code for a reviewer account."""
+    return f"{secrets.randbelow(10**REVIEWER_CODE_DIGITS):0{REVIEWER_CODE_DIGITS}d}"
+
+
+class ReviewerAccountQuerySet(models.QuerySet["ReviewerAccount"]):
+    """Queries over reviewer accounts."""
+
+    def for_email(self, email: str) -> ReviewerAccountQuerySet:
+        """Return the reviewer account for ``email``, if there is one."""
+        return self.filter(email=email.strip().lower())
+
+
+class ReviewerAccount(BaseModel):
+    """An address that signs in with a fixed code, for app directory reviewers.
+
+    OpenAI's and Anthropic's reviews need a test account with no email or
+    other verification step. This address is sent no email: on the code page
+    it takes ``code``, which is made on the first save. The code is kept as
+    it is, unlike an emailed one, so staff can read it here and paste it into
+    the submission form. It is a shared test credential, not a person's
+    secret; give a new one after each review (the admin action). Deleting
+    the row turns the address back into an ordinary one.
+    """
+
+    email = models.EmailField(unique=True)
+    code = models.CharField(max_length=REVIEWER_CODE_DIGITS, editable=False)
+
+    objects = ReviewerAccountQuerySet.as_manager()
+
+    class Meta(BaseModel.Meta):
+        """Model metadata."""
+
+        ordering = ["email"]
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Lowercase the address, and make a code if there isn't one.
+
+        Changing the address ends the old one's pending sign-ins, which hold
+        this code: it is no longer a reviewer address.
+        """
+        self.email = self.email.strip().lower()
+        if not self.code:
+            self.code = new_reviewer_code()
+        update_fields = kwargs.get("update_fields")
+        email_saved = update_fields is None or "email" in update_fields
+        previous = (
+            ReviewerAccount.objects.filter(pk=self.pk).values_list("email", flat=True).first()
+            if self.pk and email_saved
+            else None
+        )
+        super().save(*args, **kwargs)
+        if previous and previous != self.email:
+            SignInRequest.objects.for_email(previous).live().update(used_at=timezone.now())
+
+    def give_new_code(self) -> None:
+        """Replace the code, and end sign-ins already started with the old one."""
+        self.code = new_reviewer_code()
+        self.save(update_fields=["code", "updated_at"])
+        self.end_pending_sign_ins()
+
+    def end_pending_sign_ins(self) -> None:
+        """Stop this address's unused sign-in requests working.
+
+        A request holds the code it was issued with, so without this an old
+        code would keep working in a browser that asked for it until the
+        request expired.
+        """
+        SignInRequest.objects.for_email(self.email).live().update(used_at=timezone.now())
+
+    def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
+        """Delete the account, ending any sign-in it had started."""
+        self.end_pending_sign_ins()
+        return super().delete(*args, **kwargs)
+
+    def to_string(self) -> str:
+        """Return the address."""
+        return self.email

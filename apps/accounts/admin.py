@@ -1,9 +1,10 @@
-"""Admin for accounts: sign-in requests (read-only) and passkeys."""
+"""Admin for accounts: sign-in requests (read-only), passkeys and reviewer accounts."""
 
-from django.contrib import admin
+from django.contrib import admin, messages
+from django.db.models import QuerySet
 from django.http import HttpRequest
 
-from apps.accounts.models import Passkey, SignInRequest
+from apps.accounts.models import Passkey, ReviewerAccount, SignInRequest
 
 
 @admin.register(SignInRequest)
@@ -33,3 +34,29 @@ class PasskeyAdmin(admin.ModelAdmin):
     def has_add_permission(self, request: HttpRequest) -> bool:
         """Passkeys are made by the browser ceremony only."""
         return False
+
+
+@admin.register(ReviewerAccount)
+class ReviewerAccountAdmin(admin.ModelAdmin):
+    """Addresses app directory reviewers sign in with, and their fixed codes."""
+
+    list_display = ("email", "code", "created_at", "updated_at")
+    search_fields = ("email",)
+    fields = ("email", "code", "created_at", "updated_at")
+    readonly_fields = ("code", "created_at", "updated_at")
+    actions = ("give_new_code",)
+
+    @admin.action(description="Give the selected accounts a new code")
+    def give_new_code(self, request: HttpRequest, queryset: QuerySet[ReviewerAccount]) -> None:
+        """Replace each selected account's code, as after a review."""
+        count = 0
+        for account in queryset:
+            account.give_new_code()
+            count += 1
+        noun = "account" if count == 1 else "accounts"
+        self.message_user(request, f"Gave {count} {noun} a new code.", messages.SUCCESS)
+
+    def delete_queryset(self, request: HttpRequest, queryset: QuerySet[ReviewerAccount]) -> None:
+        """Delete one by one, so each ends the sign-ins it had started."""
+        for account in queryset:
+            account.delete()

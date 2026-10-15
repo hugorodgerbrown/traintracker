@@ -6,7 +6,7 @@ import factory
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from apps.accounts.models import Passkey, SignInRequest
+from apps.accounts.models import Passkey, ReviewerAccount, SignInRequest
 
 
 class UserFactory(factory.django.DjangoModelFactory):
@@ -49,3 +49,14 @@ class PasskeyFactory(factory.django.DjangoModelFactory):
     credential_id = factory.Sequence(lambda n: f"credential-{n}")
     public_key = b"not-a-real-key"
     name = "Passkey on iPhone"
+
+
+class ReviewerAccountFactory(factory.django.DjangoModelFactory):
+    """A reviewer account; its code is made on save."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = ReviewerAccount
+
+    email = factory.Sequence(lambda n: f"reviewer{n}@example.com")

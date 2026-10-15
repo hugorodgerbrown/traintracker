@@ -1,7 +1,8 @@
 """Background tasks for accounts: the sign-in email.
 
 Views enqueue; they never send mail themselves, so a slow mail server
-can't hold a request (settings.TASKS chooses where the task runs).
+can't hold a request (settings.TASKS chooses where the task runs: on a
+thread of its own, apps.core.task_backends.ThreadBackend).
 """
 
 from urllib.parse import urlsplit

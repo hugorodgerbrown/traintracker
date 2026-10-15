@@ -3,7 +3,6 @@
 from typing import Any
 
 import pytest
-from django.contrib.auth import get_user_model
 from django.core import mail
 from django.core.cache import cache
 from django.test import Client
@@ -11,7 +10,7 @@ from django.urls import reverse
 
 from apps.accounts import models, sign_in
 from apps.accounts.models import REVIEWER_CODE_DIGITS, ReviewerAccount
-from tests.factories import ReviewerAccountFactory
+from tests.factories import ReviewerAccountFactory, UserFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -78,7 +77,7 @@ def test_admin_lists_codes_and_gives_new_ones(
     client: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Staff read the code in the admin, and the action replaces it."""
-    staff = get_user_model().objects.create_superuser("boss@example.com", "boss@example.com")
+    staff = UserFactory.create(is_staff=True, is_superuser=True)
     client.force_login(staff)
     account = ReviewerAccountFactory.create()
     old = account.code
@@ -109,7 +108,7 @@ def test_a_new_code_ends_sign_ins_started_with_the_old_one() -> None:
 
 def test_deleting_ends_sign_ins_it_started(client: Client) -> None:
     """Deleting the account, one or many in the admin, ends its pending sign-ins."""
-    staff = get_user_model().objects.create_superuser("boss@example.com", "boss@example.com")
+    staff = UserFactory.create(is_staff=True, is_superuser=True)
     client.force_login(staff)
     one, two = ReviewerAccountFactory.create(), ReviewerAccountFactory.create()
     requests = [(sign_in.issue(a.email)[0], a.code) for a in (one, two)]

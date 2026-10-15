@@ -6,8 +6,8 @@
 #
 # - titan: shared by every Titan app (debug off, the Python version, hosts
 #   and origins under the parent domain, the SMTP relay).
-# - traintracker: this app's own (DATABASE_URL, DJANGO_SECRET_KEY, the mail
-#   key and sender, SITE_URL and FIVEBAR_DOMAIN).
+# - traintracker: this app's own (DATABASE_URL, DJANGO_SECRET_KEY,
+#   ACCOUNTS_EMAIL_KEY, the mail key and sender, SITE_URL and FIVEBAR_DOMAIN).
 #
 # Both are referenced here, not declared, so a Blueprint sync never
 # overwrites them. To override a shared value for this app only, set it on
@@ -31,9 +31,12 @@ services:
     # One worker, with threads: the train tools share one event loop, one
     # Darwin budget and one journey network per process, and the network is
     # held in memory once (docs/decisions/the-train-tools-run-on-one-event-loop.md).
+    # The access log has each request's path but not its query string or
+    # referrer, which can carry an email address (the admin's user search).
     startCommand: >-
       uv run --no-sync gunicorn config.wsgi --bind 0.0.0.0:$PORT
       --workers 1 --threads 8 --timeout 90 --access-logfile -
+      --access-logformat '%(h)s %(t)s "%(m)s %(U)s %(H)s" %(s)s %(b)s %(L)s "%(a)s"'
     # Answers 200 while the process is up; no sign-in, no database query.
     # (/healthz also reads the database, for uptime monitors and titan.)
     healthCheckPath: /livez

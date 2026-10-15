@@ -36,7 +36,8 @@ with Face ID, a fingerprint or a device PIN from then on.
 | `apps/accounts/passkeys.py` | WebAuthn options and verification (py_webauthn) |
 | `apps/accounts/views.py` | The sign-in, code, link, sign-out, account and passkey endpoints |
 | `apps/accounts/tasks.py` | `send_sign_in_email`, enqueued by the view (`django.tasks`) |
-| `apps/accounts/models.py` | `SignInRequest`, `Passkey`, `ReviewerAccount` |
+| `apps/accounts/models.py` | `User`, `SignInRequest`, `Passkey`, `ReviewerAccount`; `email_key()` and `mask_email()` |
+| `apps/accounts/checks.py` | Fails the system checks (so `migrate`, so a deploy) without `ACCOUNTS_EMAIL_KEY` |
 | `static/js/passkeys.js`, `webauthn_json.js` | The browser side of both ceremonies |
 | `static/js/code_input.js` | The code as six digit boxes; a pasted or autofilled code fills them all |
 | `apps/core/ratelimit.py` | Cache-backed limits on emails, codes and passkey challenges |
@@ -44,9 +45,20 @@ with Face ID, a fingerprint or a device PIN from then on.
 ## Signing in by email
 
 - **One flow for both.** The first redeemed link or code for an address
-  creates the account (`username` and `email` both the lowercased address,
-  no usable password). Nothing about an address is stored before then
-  except the pending request.
+  creates the account (no usable password). Nothing about an address is
+  stored before then except the pending request.
+- **No address is kept.** The account's `username` is `email_key(address)`,
+  an HMAC-SHA256 of the lower-cased address keyed with `ACCOUNTS_EMAIL_KEY`,
+  and `email` is blank. `masked_email` (`h•••@example.com`) is what the
+  account page, the code and link pages and passkeys show. The request holds
+  the same key and masked address; the address itself is only the sign-in
+  task's argument, in memory while the email is sent. Set
+  `ACCOUNTS_KEEP_EMAIL = True` to keep it as the username and email too, for
+  an app that emails people later; the privacy notice follows the setting.
+  Why: docs/decisions/accounts-keep-a-key-not-an-email-address.md.
+- **Never change `ACCOUNTS_EMAIL_KEY`.** It is not `SECRET_KEY`, which can
+  be rotated freely. Changing or losing this one cuts every account off from
+  its address. titan makes it once; keep a copy.
 - **Link and code, either once.** Each email carries a link and a six-digit
   code, valid for `SIGN_IN_MAX_AGE_SECONDS` (15 minutes). Asking again ends
   the earlier request, so only the newest email works. Only hashes are
@@ -98,11 +110,16 @@ with Face ID, a fingerprint or a device PIN from then on.
 ## Staff and the admin
 
 The admin's password form redirects to `/signin/`. Make the first
-superuser with your email as the username, then sign in by email:
+superuser with your email, then sign in by email: that first sign-in finds
+the account by the address `createsuperuser` stored, then keys it and
+blanks the address like any other.
 
 ```bash
 uv run python manage.py createsuperuser --username you@example.com --email you@example.com
 ```
+
+The admin lists accounts by masked address. Type a whole address into the
+user search to find its account (the search turns it into the username).
 
 ## Reviewer accounts
 
@@ -146,7 +163,7 @@ Read-only unless `--commit`:
 
 - `forget_account EMAIL` deletes the account, its passkeys, its connected
   apps' tokens and any sign-in request for the address (a request under
-  the privacy policy).
+  the privacy policy). It finds them by the address's key.
 - `block_account EMAIL` closes the account, or makes a closed one for an
   address that has none, so it can't sign in and its connected apps stop
   at once. Reopen it in the admin.

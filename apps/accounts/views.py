@@ -9,7 +9,7 @@ Public (outside the installed app's /app/ scope):
   /signout/                   POST
 
 In the app:
-  /app/account/                          email and passkeys
+  /app/account/                          who you're signed in as, and passkeys
   /app/account/passkeys/options/         POST: registration challenge (JSON)
   /app/account/passkeys/                 POST: verify and save (JSON)
   /app/account/passkeys/<uuid>/delete/   POST
@@ -47,9 +47,10 @@ from apps.core.redirects import safe_next
 logger = logging.getLogger(__name__)
 
 # The session remembers which request this browser started, so the code
-# only works here.
+# only works here, and the masked address, for "check your email" (never
+# the address itself).
 SESSION_REQUEST = "accounts.sign_in_request"
-SESSION_EMAIL = "accounts.sign_in_email"
+SESSION_EMAIL_HINT = "accounts.sign_in_email_hint"
 _BACKEND = "django.contrib.auth.backends.ModelBackend"
 
 
@@ -68,7 +69,7 @@ def _complete_sign_in(request: HttpRequest, sign_in_request: SignInRequest) -> H
     first = user.last_login is None
     login(request, user, backend=_BACKEND)
     request.session.pop(SESSION_REQUEST, None)
-    request.session.pop(SESSION_EMAIL, None)
+    request.session.pop(SESSION_EMAIL_HINT, None)
     url = safe_next(request, sign_in_request.next_url)
     return redirect(analytics.mark(url, analytics.SIGNED_UP) if first else url)
 
@@ -96,7 +97,7 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
         if sign_in.reviewer_code(email) is None:
             send_sign_in_email.enqueue(email=email, link=link, code=code)
         request.session[SESSION_REQUEST] = str(sign_in_request.uuid)
-        request.session[SESSION_EMAIL] = email
+        request.session[SESSION_EMAIL_HINT] = sign_in_request.masked_email
         return redirect("accounts:sign_in_code")
 
     status = 400 if request.method == "POST" else 200
@@ -125,7 +126,11 @@ def sign_in_code(request: HttpRequest) -> HttpResponse:
             form.add_error(
                 "code", "That code didn't work. Check the newest email, or use its link."
             )
-    context = {"form": form, "email": request.session.get(SESSION_EMAIL, ""), "minutes": _minutes()}
+    context = {
+        "form": form,
+        "masked_email": request.session.get(SESSION_EMAIL_HINT, ""),
+        "minutes": _minutes(),
+    }
     return render(request, "accounts/sign_in_code.html", context, status=status)
 
 
@@ -139,7 +144,7 @@ def sign_in_link(request: HttpRequest, token: str) -> HttpResponse:
             return render(
                 request, "accounts/link_invalid.html", {"minutes": _minutes()}, status=410
             )
-        return render(request, "accounts/sign_in_link.html", {"email": pending.email})
+        return render(request, "accounts/sign_in_link.html", {"masked_email": pending.masked_email})
 
     redeemed = sign_in.redeem_token(token)
     if redeemed is None:
@@ -226,12 +231,12 @@ def passkey_sign_in(request: HttpRequest) -> JsonResponse:
 @require_GET
 @login_required
 def account(request: HttpRequest) -> HttpResponse:
-    """The signed-in user's email address and passkeys."""
+    """Who the user is signed in as (the masked address), and their passkeys."""
     user = signed_in_user(request)
     return render(
         request,
         "accounts/account.html",
-        {"passkeys": Passkey.objects.for_user(user), "email": getattr(user, "email", "")},
+        {"passkeys": Passkey.objects.for_user(user), "signed_in_as": str(user)},
     )
 
 

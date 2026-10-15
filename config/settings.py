@@ -170,6 +170,7 @@ AUTH_PASSWORD_VALIDATORS = [
 # outside the admin's own (unused) form. See docs/accounts.md. Nobody signs
 # in to Traintrackr for its own sake: it happens on the way to connecting
 # Claude or ChatGPT, and the account page is where that ends otherwise.
+AUTH_USER_MODEL = "accounts.User"
 LOGIN_URL = "accounts:sign_in"
 LOGIN_REDIRECT_URL = "accounts:account"
 LOGOUT_REDIRECT_URL = "accounts:sign_in"
@@ -179,6 +180,18 @@ SESSION_COOKIE_AGE = 60 * 60 * 24 * 90
 # end a request.
 SIGN_IN_MAX_AGE_SECONDS = 15 * 60
 SIGN_IN_MAX_CODE_ATTEMPTS = 5
+
+# No email address is stored: an account is found by the address's key, an
+# HMAC made with this secret, and shows a masked address (h•••@example.com).
+# It is not SECRET_KEY, so that one can be rotated freely; changing or
+# losing this one cuts every account off, so keep a copy. titan makes it.
+# Set ACCOUNTS_KEEP_EMAIL to keep the address as well, for an app that has
+# to email people later; the privacy notice follows it. See
+# docs/decisions/accounts-keep-a-key-not-an-email-address.md.
+ACCOUNTS_EMAIL_KEY: str = config(
+    "ACCOUNTS_EMAIL_KEY", default="insecure-local-development-only" if DEBUG else ""
+)
+ACCOUNTS_KEEP_EMAIL = False
 
 # Passkeys (WebAuthn). The relying party is this site's host name; a
 # passkey only works on the host it was made for.
@@ -271,6 +284,8 @@ MCP_AUTH = {
     # template's default): the tools only read public rail data, and
     # Traintrackr is listed in the Claude and ChatGPT directories.
     "CAN_CONNECT": "mcp_auth.policy.active_user",
+    # The consent page's "Signed in as": the masked address, not the key.
+    "ACCOUNT_NAME": "apps.accounts.models.account_name",
     # ChatGPT's callbacks as well as Claude's and loopback.
     "REDIRECT_URI_PATTERNS": DEFAULT_REDIRECT_URI_PATTERNS + CHATGPT_REDIRECT_URI_PATTERNS,
     "CONSENT_FORM_ACTION": [

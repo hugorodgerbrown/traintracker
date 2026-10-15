@@ -165,7 +165,10 @@ the account and sign-in pages, `docs.html`, `index.html`, the README and
 3. Every fragment view is `@require_htmx`; every outbox endpoint is
    `@login_required_json`.
 4. No secrets in source.
-5. Email addresses are lower-cased before storage and lookup.
+5. Email addresses are lower-cased before they are keyed, stored or looked
+   up, and stored only where `ACCOUNTS_KEEP_EMAIL` is on: otherwise an
+   account holds `email_key(address)` and `masked_email`
+   (docs/decisions/accounts-keep-a-key-not-an-email-address.md).
 6. Sign-in secrets (codes, tokens) are stored only as hashes and never
    logged. The one exception is a reviewer account's fixed code, which
    staff read in the admin (docs/accounts.md).

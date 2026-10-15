@@ -8,11 +8,9 @@ promises this on request.
 
 from typing import Any
 
-from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
-from apps.accounts.models import SignInRequest
-from apps.accounts.sign_in import normalise_email
+from apps.accounts.models import SignInRequest, User
 
 
 class Command(BaseCommand):
@@ -27,11 +25,8 @@ class Command(BaseCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Find, and with --commit delete, the account and its sign-in requests."""
-        email = normalise_email(options["email"])
-        users = get_user_model().objects.filter(username=email) | get_user_model().objects.filter(
-            email__iexact=email
-        )
-        requests = SignInRequest.objects.filter(email=email)
+        users = User.objects.for_email(options["email"])
+        requests = SignInRequest.objects.for_email(options["email"])
         if not users.exists() and not requests.exists():
             raise CommandError("No account or sign-in request has that address.")
         if users.filter(is_staff=True).exists():

@@ -10,7 +10,7 @@ from django.core.management import CommandError, call_command
 from django.utils import timezone
 from oauth2_provider.models import AccessToken
 
-from apps.accounts.models import Passkey, SignInRequest
+from apps.accounts.models import Passkey, SignInRequest, email_key
 from apps.accounts.sign_in import user_for
 from tests.factories import PasskeyFactory, SignInRequestFactory, UserFactory
 
@@ -25,8 +25,8 @@ def run(*args: str) -> str:
 
 
 def account(email: str, **fields: Any) -> Any:
-    """An account made by signing in: username and email both the address."""
-    return UserFactory.create(username=email, email=email, **fields)
+    """An account made by signing in with ``email``."""
+    return UserFactory.create(address=email, **fields)
 
 
 def test_forget_is_a_dry_run_by_default() -> None:
@@ -40,7 +40,7 @@ def test_forget_deletes_the_account_its_passkeys_and_requests() -> None:
     """--commit leaves nothing about the address, and nothing about anyone else."""
     user = account("a@example.com")
     PasskeyFactory.create(user=user)
-    SignInRequestFactory.create(email="a@example.com")
+    SignInRequestFactory.create(address="a@example.com")
     other = account("b@example.com")
     run("forget_account", "a@example.com", "--commit")
     assert list(get_user_model().objects.all()) == [other]
@@ -64,15 +64,17 @@ def test_block_closes_an_account() -> None:
     run("block_account", "a@example.com", "--commit")
     user.refresh_from_db()
     assert not user.is_active
-    assert user_for(SignInRequestFactory.build(email="a@example.com")) is None
+    assert user_for(SignInRequestFactory.build(address="a@example.com")) is None
 
 
 def test_block_stops_an_address_that_has_no_account_yet() -> None:
     """Its first sign-in finds a closed account, not a new open one."""
     assert "Would make a closed account" in run("block_account", "new@example.com")
     run("block_account", "New@Example.com", "--commit")
-    assert user_for(SignInRequestFactory.build(email="new@example.com")) is None
-    assert get_user_model().objects.get().username == "new@example.com"
+    assert user_for(SignInRequestFactory.build(address="new@example.com")) is None
+    blocked = get_user_model().objects.get()
+    assert (blocked.username, blocked.email) == (email_key("new@example.com"), "")
+    assert blocked.masked_email == "n•••@example.com"
 
 
 def test_block_refuses_staff() -> None:

@@ -10,7 +10,7 @@ https://traintrackr.live/mcp
 
 ## Use it
 
-**Claude.** In claude.ai, open **Settings → Connectors → Add custom connector**. Name it *Traintrackr*, paste the connector address, and leave the OAuth fields empty. Choose **Connect**: Claude opens the Traintrackr sign-in page, where you enter your email address and then open the link, or type the six-digit code, in the email it sends. A connector added in claude.ai also works in Claude Desktop and the mobile apps.
+**Claude.** Traintrackr is listed in Claude's connector directory: open [claude.ai/directory/traintrackr](https://claude.ai/directory/traintrackr), or in claude.ai open **Customize → Connectors**, choose the **+** next to Connectors and find *Traintrackr* in the directory. Choose **Connect**: Claude opens the Traintrackr sign-in page, where you enter your email address and then open the link, or type the six-digit code, in the email it sends. A connector added in claude.ai also works in Claude Desktop and the mobile apps. To add it by address instead, choose **Add custom connector**, name it *Traintrackr* and paste the connector address.
 
 **ChatGPT.** ChatGPT adds it through developer mode, on the web, in Plus, Pro, Business, Enterprise and Edu plans; in a workspace, an admin may have to allow developer mode first. Turn on **Settings → Security and login → Developer mode**, then at [chatgpt.com/plugins](https://chatgpt.com/plugins) choose **+**, name it *Traintrackr*, paste the connector address and choose OAuth. Sign in with your email address as above. In a new chat, choose **+ → Developer mode** and select Traintrackr.
 

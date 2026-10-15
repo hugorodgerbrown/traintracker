@@ -246,7 +246,11 @@ def test_the_docs_have_the_connector_steps(client: Client) -> None:
     assert "Scan Tools" in steps
     assert "Security and login" not in steps
     assert "Plugins" not in steps
-    assert "directory" not in steps
+    # Claude lists Traintrackr in its connector directory: the steps lead with it,
+    # and keep adding it by address for anyone who wants to.
+    claude = steps.split('id="claude"', 1)[1].split('id="chatgpt"', 1)[0]
+    assert '<a href="https://claude.ai/directory/traintrackr"' in claude
+    assert claude.index("directory/traintrackr") < claude.index("Add custom connector")
     # The code's real lifetime (SIGN_IN_MAX_AGE_SECONDS).
     assert "lasts 15 minutes" in " ".join(steps.split())
 

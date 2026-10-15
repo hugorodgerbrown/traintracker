@@ -6,8 +6,8 @@
 #
 # - titan: shared by every Titan app (debug off, the Python version, hosts
 #   and origins under the parent domain, the SMTP relay).
-# - traintracker: this app's own (DATABASE_URL, DJANGO_SECRET_KEY, the mail
-#   key and sender, SITE_URL and FIVEBAR_DOMAIN).
+# - traintracker: this app's own (DATABASE_URL, DJANGO_SECRET_KEY,
+#   ACCOUNTS_EMAIL_KEY, the mail key and sender, SITE_URL and FIVEBAR_DOMAIN).
 #
 # Both are referenced here, not declared, so a Blueprint sync never
 # overwrites them. To override a shared value for this app only, set it on

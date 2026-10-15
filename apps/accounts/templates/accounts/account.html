@@ -8,7 +8,7 @@
 {% block content %}
   <section class="card stack">
     <h1>Account</h1>
-    <p><span class="meta">Signed in as</span><br><strong>{{ email }}</strong></p>
+    <p><span class="meta">Signed in as</span><br><strong>{{ signed_in_as }}</strong></p>
     <form method="post" action="{% url 'accounts:sign_out' %}" data-sign-out>
       {% csrf_token %}
       <button class="button button--secondary" type="submit">Sign out</button>

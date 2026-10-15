@@ -8,16 +8,18 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from apps.accounts import sign_in
-from apps.accounts.models import SignInRequest
+from apps.accounts.models import SignInRequest, email_key
 from tests.factories import UserFactory
 
 pytestmark = pytest.mark.django_db
 
 
 def test_issue_stores_hashes_only() -> None:
-    """Neither the token nor the code is stored as given."""
+    """Neither the token, the code nor the address is stored as given."""
     request, token, code = sign_in.issue("  Walker@Example.COM ", "/app/")
-    assert request.email == "walker@example.com"
+    assert request.email == ""
+    assert request.email_key == email_key("walker@example.com")
+    assert request.masked_email == "w•••@example.com"
     assert len(code) == sign_in.CODE_DIGITS
     assert code.isdigit()
     assert token not in request.token_hash
@@ -90,22 +92,74 @@ def test_first_sign_in_creates_the_account() -> None:
     request, token, _ = sign_in.issue("new@example.com")
     user = sign_in.user_for(sign_in.redeem_token(token) or request)
     assert user is not None
-    assert user.username == user.email == "new@example.com"
+    assert user.username == email_key("new@example.com")
+    assert user.email == ""
+    assert user.masked_email == "n•••@example.com"
     assert not user.has_usable_password()
 
 
-def test_existing_accounts_are_found_by_username_or_email() -> None:
-    """A createsuperuser account with a different username is found by its email."""
+def test_signing_in_again_finds_the_same_account() -> None:
+    """The address's key finds its account, whatever the case it is typed in."""
+    member = UserFactory.create(address="m@example.com")
+    request, _, _ = sign_in.issue(" M@Example.com")
+    assert sign_in.user_for(request) == member
+
+
+def test_a_createsuperuser_account_is_found_by_email_then_keyed() -> None:
+    """A createsuperuser account keeps its address until the first sign-in keys it."""
     admin = get_user_model().objects.create_superuser("admin", "Boss@example.com")
+    UserFactory.create(address="other@example.com")
     request, _, _ = sign_in.issue("boss@example.com")
     assert sign_in.user_for(request) == admin
-    member = UserFactory.create(email="m@example.com")
-    request, _, _ = sign_in.issue("m@example.com")
-    assert sign_in.user_for(request) == member
+    admin.refresh_from_db()
+    assert (admin.username, admin.email, admin.masked_email) == (
+        email_key("boss@example.com"),
+        "",
+        "b•••@example.com",
+    )
+    request, _, _ = sign_in.issue("boss@example.com")
+    assert sign_in.user_for(request) == admin
+
+
+def test_keeping_addresses_stores_them(settings: Any) -> None:
+    """With ACCOUNTS_KEEP_EMAIL the address is the username and the email, and is masked too."""
+    settings.ACCOUNTS_KEEP_EMAIL = True
+    request, _, _ = sign_in.issue("Kept@example.com")
+    assert request.email == "kept@example.com"
+    user = sign_in.user_for(request)
+    assert user is not None
+    assert user.username == user.email == "kept@example.com"
+    assert user.masked_email == "k•••@example.com"
+    assert sign_in.user_for(sign_in.issue("kept@example.com")[0]) == user
+
+
+def test_keeping_addresses_adopts_a_createsuperuser_account(settings: Any) -> None:
+    """With ACCOUNTS_KEEP_EMAIL a createsuperuser account is found by its address too."""
+    settings.ACCOUNTS_KEEP_EMAIL = True
+    admin = get_user_model().objects.create_superuser("admin", "Boss@example.com")
+    assert sign_in.user_for(sign_in.issue("boss@example.com")[0]) == admin
+    admin.refresh_from_db()
+    assert admin.username == admin.email == "boss@example.com"
 
 
 def test_a_closed_account_cannot_sign_in() -> None:
     """An inactive account stays out."""
-    UserFactory.create(email="gone@example.com", is_active=False)
+    UserFactory.create(address="gone@example.com", is_active=False)
     request, _, _ = sign_in.issue("gone@example.com")
     assert sign_in.user_for(request) is None
+
+
+@pytest.mark.parametrize("keep_before", [False, True])
+def test_changing_keep_email_keeps_the_accounts(settings: Any, keep_before: bool) -> None:
+    """Turning ACCOUNTS_KEEP_EMAIL on or off later restores, not duplicates, an account."""
+    settings.ACCOUNTS_KEEP_EMAIL = keep_before
+    user = sign_in.user_for(sign_in.issue("walker@example.com")[0])
+    settings.ACCOUNTS_KEEP_EMAIL = not keep_before
+    assert sign_in.user_for(sign_in.issue("walker@example.com")[0]) == user
+    assert get_user_model().objects.count() == 1
+    assert user is not None
+    user.refresh_from_db()
+    if keep_before:
+        assert (user.username, user.email) == (email_key("walker@example.com"), "")
+    else:
+        assert user.username == user.email == "walker@example.com"

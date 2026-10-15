@@ -8,3 +8,7 @@ class AccountsConfig(AppConfig):
 
     name = "apps.accounts"
     label = "accounts"
+
+    def ready(self) -> None:
+        """Register the system checks."""
+        from apps.accounts import checks  # noqa: F401

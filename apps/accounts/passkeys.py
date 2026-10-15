@@ -75,8 +75,10 @@ def registration_options(user: Any, session: SessionBase) -> dict[str, Any]:
         rp_id=settings.WEBAUTHN_RP_ID,
         rp_name=settings.WEBAUTHN_RP_NAME,
         user_id=_user_handle(user),
-        user_name=user.email or user.get_username(),
-        user_display_name=user.email or user.get_username(),
+        # What password managers list the passkey under: the masked address
+        # (or the address, where it's kept), never the key.
+        user_name=user.email or str(user),
+        user_display_name=user.email or str(user),
         authenticator_selection=AuthenticatorSelectionCriteria(
             resident_key=ResidentKeyRequirement.REQUIRED,
             user_verification=UserVerificationRequirement.REQUIRED,

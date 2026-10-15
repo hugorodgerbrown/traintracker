@@ -3,7 +3,7 @@
 {% block content %}
   <section class="card stack">
     <h1>Sign in</h1>
-    <p>Continue as <strong>{{ email }}</strong>.</p>
+    <p>Continue as <strong>{{ masked_email }}</strong>.</p>
     {# A button, not an automatic sign-in: mail scanners open links, and would use this one up. #}
     <form method="post">
       {% csrf_token %}

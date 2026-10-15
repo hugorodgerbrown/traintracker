@@ -3,6 +3,10 @@
 Views enqueue; they never send mail themselves, so a slow mail server
 can't hold a request (settings.TASKS chooses where the task runs: on a
 thread of its own, apps.core.task_backends.ThreadBackend).
+
+The address is only this task's argument, so with the thread backend it
+stays in memory. A queue-backed backend would store it until the email is
+sent, and the privacy notice would have to say so.
 """
 
 from urllib.parse import urlsplit

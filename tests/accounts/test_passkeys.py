@@ -65,7 +65,7 @@ def test_registration_options_name_the_site_and_skip_my_passkeys(
     response = signed_in.post(reverse("accounts:passkey_register_options"))
     options = response.json()
     assert options["rp"] == {"id": settings.WEBAUTHN_RP_ID, "name": settings.WEBAUTHN_RP_NAME}
-    assert options["user"]["name"] == user.email
+    assert options["user"]["name"] == user.masked_email
     assert options["challenge"]
     assert [c["id"] for c in options["excludeCredentials"]] == ["AQID"]
     assert options["authenticatorSelection"]["userVerification"] == "required"

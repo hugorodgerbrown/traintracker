@@ -5,7 +5,7 @@
 {% block content %}
   <section class="card stack">
     <h1>Check your email</h1>
-    <p>We sent a link and a code to <strong>{{ email }}</strong>. Open the link, or type the code here. Both work once, for {{ minutes }} minutes.</p>
+    <p>We sent a link and a code to <strong>{{ masked_email }}</strong>. Open the link, or type the code here. Both work once, for {{ minutes }} minutes.</p>
     {# The code is one field without JavaScript; code_input.js turns it into six digit boxes. #}
     <form class="stack" method="post" action="{% url 'accounts:sign_in_code' %}">
       {% csrf_token %}

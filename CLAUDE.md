@@ -12,6 +12,7 @@ merge. Deploying is `titan deploy` (`render.yaml`).
 ```
 config/            settings (one module, env-driven), urls, wsgi/asgi
 apps/core/         BaseModel, IdempotencyMiddleware + IdempotencyRecord,
+                   PrivatePagesMiddleware (signed-in pages never cached),
                    decorators (require_htmx, login_required_json), rate
                    limits, livez and healthz
 apps/accounts/     email link or code sign-in, passkeys, the account

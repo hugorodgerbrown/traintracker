@@ -121,6 +121,8 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     # After authentication: the replay fingerprint includes the user.
     "apps.core.idempotency.IdempotencyMiddleware",
+    # After authentication: signed-in pages are never cached.
+    "apps.core.private_pages.PrivatePagesMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]

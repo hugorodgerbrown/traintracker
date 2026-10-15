@@ -154,14 +154,13 @@ def sign_in_link(request: HttpRequest, token: str) -> HttpResponse:
 
 @require_POST
 def sign_out(request: HttpRequest) -> HttpResponse:
-    """Sign out, and tell the browser to drop its HTTP cache of signed-in pages.
+    """Sign out and go to the sign-in page.
 
-    pwa.js clears the service worker's page cache before the form posts.
+    Nothing needs clearing: signed-in pages are never cached
+    (apps/core/private_pages.py).
     """
     logout(request)
-    response = redirect(settings.LOGOUT_REDIRECT_URL)
-    response["Clear-Site-Data"] = '"cache"'
-    return response
+    return redirect(settings.LOGOUT_REDIRECT_URL)
 
 
 def admin_login(request: HttpRequest) -> HttpResponse:

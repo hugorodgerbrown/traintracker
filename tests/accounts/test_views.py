@@ -241,12 +241,23 @@ def test_code_guesses_are_rate_limited(client: Client) -> None:
 # ---------- signing out, and the admin ----------
 
 
-def test_sign_out_clears_the_cache_and_goes_home(signed_in: Client) -> None:
-    """Signing out ends the session and tells the browser to drop cached pages."""
+def test_sign_out_goes_straight_to_sign_in(signed_in: Client) -> None:
+    """Signing out ends the session without asking the browser to clear its cache.
+
+    Clear-Site-Data held the redirect for many seconds in Chrome; signed-in
+    pages are never cached instead.
+    """
     response = signed_in.post(reverse("accounts:sign_out"))
     assert response["Location"] == reverse("accounts:sign_in")
-    assert response["Clear-Site-Data"] == '"cache"'
+    assert not response.has_header("Clear-Site-Data")
     assert signed_in_user(signed_in) is None
+
+
+def test_the_account_page_is_never_cached(signed_in: Client) -> None:
+    """After signing out, Back can't show the account page from the HTTP cache."""
+    response = signed_in.get(reverse("accounts:account"))
+    assert "no-store" in response["Cache-Control"]
+    assert "private" in response["Cache-Control"]
 
 
 def test_admin_sign_in_is_the_normal_sign_in(client: Client) -> None:

@@ -73,7 +73,10 @@ respect `--verbosity`, exit non-zero on failure.
 the template unchanged. The front page (`apps/public/templates/public/pages/index.html`)
 follows its section 12, "The front page". Traintrackr has no `/app/` and no
 design page (`apps/design`), so where DESIGN.md names `app.css` or the design
-page, read `static/css/site.css` and the artifact below.
+page, read `static/css/site.css` and the artifact below. Signed in, the header's
+link reads **Your account** (DESIGN.md's "Open the app"), since the account page
+is the only signed-in page; it and connected apps carry the site's header and
+footer (`templates/site_base.html`, `public/_header.html`, `public/_footer.html`).
 
 The project's design system is the "Traintrackr" Design System artifact:
 https://claude.ai/artifact/BXsWTZk9w2ESAwKwKDPgab

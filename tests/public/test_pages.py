@@ -147,8 +147,23 @@ def test_the_header_offers_the_account_when_signed_in(client: Client) -> None:
     """Signed in, the header's link changes its offer, not its shape."""
     client.force_login(UserFactory.create())
     header = client.get("/").content.decode().split("</header>", 1)[0]
-    assert '<a class="header-link" href="/app/account/">Open the app</a>' in header
+    # Traintrackr has no app beyond the account page, so the link names it.
+    assert '<a class="header-link" href="/app/account/">Your account</a>' in header
     assert "Sign in" not in header
+
+
+@pytest.mark.parametrize("path", ["/app/account/", "/oauth/connected/"])
+def test_signed_in_pages_have_the_site_header_and_footer(client: Client, path: str) -> None:
+    """The account and connected-apps pages: the icon goes home, and the footer has its links."""
+    client.force_login(UserFactory.create())
+    text = client.get(path).content.decode()
+    header = text.split("<header>", 1)[1].split("</header>", 1)[0]
+    assert 'class="name" href="/"' in header
+    footer = text.split("<footer>", 1)[1].split("</footer>", 1)[0]
+    for link in ("/docs", "/board", "/privacy", "/terms"):
+        assert f'<a href="{link}"' in footer, link
+    assert "All rights reserved." in footer
+    assert "{#" not in text, "a template comment left in the page"
 
 
 def test_the_footer_has_the_other_pages_and_the_copyright(client: Client) -> None:

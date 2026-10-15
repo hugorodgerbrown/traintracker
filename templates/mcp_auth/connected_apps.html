@@ -1,5 +1,9 @@
 {% extends "mcp_auth/base.html" %}
 {% block title %}Connected apps · Traintrackr{% endblock %}
+{# A page you come back to while signed in, so it has the site's header and footer, as the account page does (site_base.html). #}
+{% block header %}<a class="skip" href="#main">Skip to content</a>
+{% include "public/_header.html" %}{% endblock %}
+{% block footer %}{% include "public/_footer.html" %}{% endblock %}
 {% block body %}
   <h1>Connected apps</h1>
   {% for app in apps %}

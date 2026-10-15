@@ -1,0 +1,18 @@
+    {# The site footer (DESIGN.md, "The website has a footer"): the links, the data credit, then the copyright. #}
+    <footer>
+      <nav aria-label="Site">
+        <ul>
+          {% for path, text, here in nav %}<li><a href="/{{ path }}"{% if here %} aria-current="page"{% endif %}>{{ text }}</a></li>
+          {% endfor %}
+        </ul>
+      </nav>
+      {# TODO(hugo): add the "Powered by National Rail" logo here once National Rail gives permission (TRA-9). #}
+      <p>
+        Live train times:
+        <a href="https://www.nationalrail.co.uk/">Powered by National Rail Enquiries</a>. <a href="/docs#data">Data sources</a>.
+        Traintrackr is not run by, or endorsed by, National Rail Enquiries or
+        Network Rail. Contact:
+        <a href="mailto:support@traintrackr.live">support@traintrackr.live</a>.
+      </p>
+      <p>&copy; {% now "Y" %} Hugo Rodger-Brown. All rights reserved.</p>
+    </footer>

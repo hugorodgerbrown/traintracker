@@ -1,6 +1,7 @@
 {% load static %}<!doctype html>
 {# The sign-in, account and connect pages: one narrow column, the site's stylesheet. #}
-{# No header, no fivebar: they live at one-time addresses and are never shared. #}
+{# No fivebar: they live at one-time addresses and are never shared. #}
+{# The sign-in pages have no header; the account and connected-apps pages add the site's (site_base.html). #}
 <html lang="en-GB">
   <head>
     <meta charset="utf-8">
@@ -14,8 +15,10 @@
     {% block extra_js %}{% endblock %}
   </head>
   <body>
+    {% block header %}{% endblock %}
     <main class="sign-in" id="main">
       {% block content %}{% endblock %}
     </main>
+    {% block footer %}{% endblock %}
   </body>
 </html>

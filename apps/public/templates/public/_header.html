@@ -1,0 +1,6 @@
+{% load static %}
+    {# One link on the right, and no menu: the other pages are in the footer (DESIGN.md, "The front page"). #}
+    <header>
+      <a class="name" href="/" aria-label="Traintrackr home" aria-current="{% if current == '/' %}page{% else %}false{% endif %}"><img src="{% static 'icons/icon.svg' %}" alt="" width="32" height="32" />Traintrackr</a>
+      {% if user.is_authenticated %}<a class="header-link" href="/app/account/"{% if current == "/app/account/" %} aria-current="page"{% endif %}>Your account</a>{% else %}<a class="header-link" href="/signin/">Sign in</a>{% endif %}
+    </header>

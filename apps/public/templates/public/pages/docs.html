@@ -9,29 +9,24 @@
   <h2>Use it from Claude or ChatGPT</h2>
   <p>
     Traintrackr is a connector: you add it once, and your AI chat uses it when
-    you ask about trains. You need this address:
+    you ask about trains. In Claude, add it from the connector directory;
+    anywhere else, add it by its address.
   </p>
-  <div class="copy" id="url">
-    <code id="mcp-url">{{ mcp_url }}</code>
-    <button type="button" data-copy="#mcp-url" hidden>Copy address</button>
-    <p role="status"></p>
-  </div>
-  <p>It is for your AI chat to use, not a page to open in your browser.</p>
 
   <h3 id="claude">Claude</h3>
-  <p>It is free, and works on every Claude plan.</p>
+  <p>
+    Traintrackr is listed in Claude's connector directory. It is free, and
+    works on every Claude plan.
+  </p>
   <ol>
     <li>
-      On <a href="https://claude.ai">claude.ai</a> or in the Claude desktop
-      app, open <strong>Customize</strong>, then <strong>Connectors</strong>.
-    </li>
-    <li>
-      Choose <strong>+</strong>, then <strong>Add custom connector</strong>.
-    </li>
-    <li>
-      Give it the name <em>Traintrackr</em>, paste the address into the URL
-      field, leave <strong>Advanced settings</strong> empty and choose
-      <strong>Add</strong>.
+      Open
+      <a href="https://claude.ai/directory/traintrackr"
+        >Traintrackr in Claude's connector directory</a
+      >. Or, on <a href="https://claude.ai">claude.ai</a> or in the Claude
+      desktop app, open <strong>Customize</strong>, then
+      <strong>Connectors</strong>, choose <strong>+</strong>, then
+      <strong>Browse connectors</strong>, and search for <em>Traintrackr</em>.
     </li>
     <li>
       Choose <strong>Connect</strong>. Claude opens the Traintrackr sign-in
@@ -43,6 +38,21 @@
       choose <strong>Connectors</strong> and turn Traintrackr on.
     </li>
   </ol>
+  <p class="hint">
+    A connector added on claude.ai also works in the desktop and mobile apps.
+    To add it by address instead, choose <strong>+</strong>, then
+    <strong>Add custom connector</strong>, name it <em>Traintrackr</em> and
+    paste the address below.
+  </p>
+
+  <h3 id="address">The address</h3>
+  <p>ChatGPT and other AI chats add Traintrackr by this address:</p>
+  <div class="copy" id="url">
+    <code id="mcp-url">{{ mcp_url }}</code>
+    <button type="button" data-copy="#mcp-url" hidden>Copy address</button>
+    <p role="status"></p>
+  </div>
+  <p>It is for your AI chat to use, not a page to open in your browser.</p>
 
   <h3 id="chatgpt">ChatGPT</h3>
   <p>

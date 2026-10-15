@@ -447,7 +447,7 @@ async def test_privacy_policy(
     assert out["url"] == "https://tt.test/privacy"
     assert policy.startswith("# Privacy policy\n\n")
     assert "- **A one-way hash of your email address. The address itself is never" in policy
-    assert "It does not keep your email address." in policy
+    assert "Your account does not keep your email address." in policy
     assert "They are not stored and not written to logs." in policy  # what was asked
     assert "support@traintrackr.live" in policy
     # The page's markup and its notes to the maintainer stay out.

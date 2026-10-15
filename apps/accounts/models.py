@@ -154,9 +154,11 @@ class ReviewerAccount(BaseModel):
         self.email = self.email.strip().lower()
         if not self.code:
             self.code = new_reviewer_code()
+        update_fields = kwargs.get("update_fields")
+        email_saved = update_fields is None or "email" in update_fields
         previous = (
             ReviewerAccount.objects.filter(pk=self.pk).values_list("email", flat=True).first()
-            if self.pk
+            if self.pk and email_saved
             else None
         )
         super().save(*args, **kwargs)

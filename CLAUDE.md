@@ -105,6 +105,12 @@ rules: [docs/testing.md](docs/testing.md).
 Run `uv run tox` and fix every failure. Record a non-obvious architectural
 choice in `docs/decisions/`.
 
+Keep the docs in sync with the code in the same PR, never in a follow-up. A
+change to what is stored, logged or sent anywhere updates every page that
+describes it: `privacy.html` and `terms.html` in `apps/public/templates/public/pages/`,
+the account and sign-in pages, `docs.html`, `index.html`, the README and
+`docs/accounts.md`. Each page says what the code on its own branch does.
+
 ## Invariants
 
 1. No `mark_safe()` / `|safe` on content from outside the code.

@@ -16,9 +16,8 @@
       {{ form.non_field_errors }}
       <label class="field">
         <span class="field__label">Email address</span>
-        {# "webauthn" lets the browser offer a saved passkey as the user focuses the field. #}
         <input type="email" name="email" value="{{ form.email.value|default_if_none:'' }}"
-               autocomplete="email webauthn" inputmode="email" required autofocus>
+               autocomplete="email" inputmode="email" required autofocus>
       </label>
       {{ form.email.errors }}
       {{ form.next }}
@@ -26,7 +25,7 @@
     </form>
     <p class="meta">By continuing you agree to the <a href="{% url 'public:terms' %}">terms</a>. Our <a href="{% url 'public:privacy' %}">privacy notice</a> says what we keep.</p>
   </section>
-  {# Shown by passkeys.js only where the browser supports passkeys. #}
+  {# Shown by passkeys.js only where the browser supports passkeys. Nothing asks for one until the button is pressed. #}
   <section class="card stack" data-passkey-sign-in
            data-options-url="{% url 'accounts:passkey_sign_in_options' %}"
            data-verify-url="{% url 'accounts:passkey_sign_in' %}"

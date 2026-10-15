@@ -92,7 +92,9 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
         next_url = safe_next(request, form.cleaned_data["next"])
         sign_in_request, token, code = sign_in.issue(email, next_url)
         link = settings.SITE_URL + reverse("accounts:sign_in_link", args=[token])
-        send_sign_in_email.enqueue(email=email, link=link, code=code)
+        # A reviewer account has no inbox: the reviewer types its fixed code.
+        if sign_in.reviewer_code(email) is None:
+            send_sign_in_email.enqueue(email=email, link=link, code=code)
         request.session[SESSION_REQUEST] = str(sign_in_request.uuid)
         request.session[SESSION_EMAIL] = email
         return redirect("accounts:sign_in_code")

@@ -69,6 +69,12 @@ respect `--verbosity`, exit non-zero on failure.
 
 ## Design system
 
+[DESIGN.md](DESIGN.md) holds the rules every Titan app shares, copied from
+the template unchanged. The front page (`apps/public/templates/public/pages/index.html`)
+follows its section 12, "The front page". Traintrackr has no `/app/` and no
+design page (`apps/design`), so where DESIGN.md names `app.css` or the design
+page, read `static/css/site.css` and the artifact below.
+
 The project's design system is the "Traintrackr" Design System artifact:
 https://claude.ai/artifact/BXsWTZk9w2ESAwKwKDPgab
 
@@ -88,6 +94,46 @@ The system was built from this repository's code, so the code is the source and
 the artifact documents it. When a change alters a token, a component or a rule
 the README states, say so in the PR and offer to update the artifact to match.
 
+## Linear
+
+Traintrackr predates the Titan team's one-project-per-app layout: its
+issues live in its own Linear team, Traintrackr (issue keys `TRA-`), and
+every change maps to an issue there: one issue per PR, one PR per issue. Why:
+[docs/decisions/every-change-starts-as-a-linear-issue.md](docs/decisions/every-change-starts-as-a-linear-issue.md).
+
+- If the project doesn't exist yet (a new app), create it in the Titan
+  team first, named after the app, then file the first issue in it.
+- The issue is the sign-off. Before writing code, Claude creates it in
+  the app's project with the scope: what changes, what doesn't, how
+  we'll know it's done, and the decision behind it. Work starts once the
+  person agrees the scope, not before.
+- If the scope changes during the work, say so on the issue before the
+  PR goes up, so the issue records what was built and why.
+- The PR title is `TRA-42: what it does` and its body starts
+  `Closes TRA-42`, so Linear links the two and closes the issue on merge.
+- Reversing an earlier decision is a new issue that links the old one
+  and says why it changed. Never rewrite the old issue: the history is
+  the point.
+- Dependabot's PRs are the one exception: they need no issue.
+- Without the Linear MCP server, say so and give the issue as Markdown
+  for the person to file; don't start unticketed work.
+
+## Branches
+
+Every new branch starts by pulling in the template, so the app never
+drifts far from it and the template's changes are reviewed apart from the
+branch's own work.
+
+- Before any other change, on a clean tree, run `copier update --trust`.
+- Resolve any conflicts it leaves, keeping the app's deliberate
+  differences (their reasons are in `docs/decisions/`), then run
+  `uv run tox`.
+- Commit the result on its own as the branch's first commit, for example
+  `TRA-42: Update from the Titan template`, before starting the issue's
+  work.
+- If the update changes nothing, there is nothing to commit: skip it,
+  never make an empty commit.
+
 ## Tests
 
 pytest for anything the test client or an MCP client can see; Vitest and
@@ -96,8 +142,16 @@ rules: [docs/testing.md](docs/testing.md).
 
 ## Before opening a PR
 
-Run `uv run tox` and fix every failure. Record a non-obvious architectural
-choice in `docs/decisions/`.
+Run `uv run tox` and fix every failure. Check the PR names its Linear
+issue and its first commit is the template update, if there was one
+(above). Record a non-obvious architectural choice in
+`docs/decisions/`.
+
+Keep the docs in sync with the code in the same PR, never in a follow-up. A
+change to what is stored, logged or sent anywhere updates every page that
+describes it: `privacy.html` and `terms.html` in `apps/public/templates/public/pages/`,
+the account and sign-in pages, `docs.html`, `index.html`, the README and
+`docs/accounts.md`. Each page says what the code on its own branch does.
 
 ## Invariants
 
@@ -110,5 +164,10 @@ choice in `docs/decisions/`.
 4. No secrets in source.
 5. Email addresses are never stored: accounts and sign-in requests hold
    `email_key(address)` (lower-cased, then keyed-hashed). Never log one.
+   The one exception is `ReviewerAccount`, a test address with no person
+   behind it.
 6. Sign-in secrets (codes, tokens) are stored only as hashes and never
-   logged.
+   logged. The one exception is a reviewer account's fixed code, which
+   staff read in the admin (docs/accounts.md).
+7. Who may connect an MCP client (`MCP_AUTH["CAN_CONNECT"]`) only widens in
+   a PR that says so.

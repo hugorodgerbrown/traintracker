@@ -212,8 +212,10 @@ DEFAULT_FROM_EMAIL: str = config(
 )
 
 # Background tasks (django.tasks). Email is sent from a task so a slow mail
-# server never holds a request; the immediate backend runs it in-process.
-TASKS = {"default": {"BACKEND": "django.tasks.backends.immediate.ImmediateBackend"}}
+# server never holds a request: the thread backend runs each task on its own
+# thread in this process and returns at once (tests run them inline). Swap in
+# a queue-backed backend (and a worker) when the volume needs one.
+TASKS = {"default": {"BACKEND": "apps.core.task_backends.ThreadBackend"}}
 
 # Rate limits count per client address. Behind Render's proxy the client is
 # the last X-Forwarded-For entry; locally there is no proxy.

@@ -12,15 +12,14 @@
   <form method="post" action="{% url 'accounts:sign_in' %}">
     {% csrf_token %}
     <label for="email">Email address</label>
-    {# "webauthn" lets the browser offer a saved passkey as the field is focused. #}
     <input id="email" type="email" name="email" value="{{ form.email.value|default_if_none:'' }}"
-           autocomplete="email webauthn" inputmode="email" required autofocus>
+           autocomplete="email" inputmode="email" required autofocus>
     {% for e in form.email.errors %}<p class="error" role="alert">{{ e }}</p>{% endfor %}
     {{ form.next }}
     <p class="hint">The link and code work once, for {{ minutes|default:15 }} minutes. See the <a href="/privacy">privacy policy</a> and the <a href="/terms">terms</a>.</p>
     <button type="submit">Email me a link and code</button>
   </form>
-  {# Shown by passkeys.js only where the browser supports passkeys. #}
+  {# Shown by passkeys.js only where the browser supports passkeys. Nothing asks for one until the button is pressed. #}
   <div data-passkey-sign-in
        data-options-url="{% url 'accounts:passkey_sign_in_options' %}"
        data-verify-url="{% url 'accounts:passkey_sign_in' %}"

@@ -18,9 +18,11 @@ FRAGMENTS = Path(__file__).parent / "templates" / "public" / "pages"
 
 # The link-preview card is 1200 by 630, the shape chat apps show above a
 # link's title, and has no transparent corners: a square icon fills the chat.
+# It shows the promise beside the board (DESIGN.md, "The front page").
 SHARE_IMAGE_ALT = (
-    "The departure board for London Liverpool Street: seven trains, with their "
-    "platforms and whether they are on time"
+    "Live UK train times in Claude and ChatGPT, beside the departure board for "
+    "London Liverpool Street: seven trains, with their platforms and whether "
+    "they are on time"
 )
 
 # path -> (fragment, link text, title, description)
@@ -36,7 +38,7 @@ PAGES = {
         "public/pages/docs.html",
         "Docs",
         "Docs · Traintrackr",
-        "What Traintrackr can answer, three worked examples, and its limits.",
+        "How to add it to Claude or ChatGPT, what it can answer, worked examples and its limits.",
     ),
     "/privacy": (
         "public/pages/privacy.html",
@@ -52,9 +54,10 @@ PAGES = {
     ),
 }
 
-# Header links to pages that are not in PAGES: path -> link text. They come
-# after the pages' own links.
-EXTRA_NAV = {"/board": "Boards"}
+# Footer links to places that are not in PAGES: path -> link text. They come
+# after the pages' own links. Every Titan footer links to the connector steps
+# as "Use with Claude" (DESIGN.md, "The front page").
+EXTRA_NAV = {"/docs#use-with-ai": "Use with Claude", "/board": "Boards"}
 
 
 def fields(settings: Settings, site_url: str) -> dict[str, str]:

@@ -1,4 +1,4 @@
-"""Tests for accounts migration 0002: stored email addresses become their keys."""
+"""Tests for accounts migration 0003: stored email addresses become their keys."""
 
 from datetime import timedelta
 from typing import Any
@@ -11,8 +11,8 @@ from django.utils import timezone
 
 from apps.accounts.models import email_key
 
-BEFORE = [("accounts", "0001_initial")]
-AFTER = [("accounts", "0002_keep_email_keys_not_addresses")]
+BEFORE = [("accounts", "0002_reviewer_account")]
+AFTER = [("accounts", "0003_keep_email_keys_not_addresses")]
 
 
 def migrate(targets: list[tuple[str, str]]) -> Any:

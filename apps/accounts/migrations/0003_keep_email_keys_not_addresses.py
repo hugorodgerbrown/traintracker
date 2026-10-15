@@ -80,7 +80,7 @@ def drop_addresses_from_sessions(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("accounts", "0001_initial"),
+        ("accounts", "0002_reviewer_account"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
         ("sessions", "0001_initial"),
     ]

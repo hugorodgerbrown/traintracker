@@ -17,7 +17,7 @@ with Face ID, a fingerprint or a device PIN from then on.
 ```
                  ┌──────────── /signin/ ─────────────┐
                  │  email ──▶ SignInRequest (hashes)  │──▶ email: link + 6-digit code
-                 │  passkey button / autofill         │
+                 │  passkey button                    │
                  └──────┬─────────────────────┬──────┘
           link, any browser                code, this browser only
    /signin/link/<token>/ ── Continue (POST)    /signin/code/ ── POST code
@@ -36,7 +36,7 @@ with Face ID, a fingerprint or a device PIN from then on.
 | `apps/accounts/passkeys.py` | WebAuthn options and verification (py_webauthn) |
 | `apps/accounts/views.py` | The sign-in, code, link, sign-out, account and passkey endpoints |
 | `apps/accounts/tasks.py` | `send_sign_in_email`, enqueued by the view (`django.tasks`) |
-| `apps/accounts/models.py` | `SignInRequest`, `Passkey` |
+| `apps/accounts/models.py` | `SignInRequest`, `Passkey`, `ReviewerAccount` |
 | `static/js/passkeys.js`, `webauthn_json.js` | The browser side of both ceremonies |
 | `static/js/code_input.js` | The code as six digit boxes; a pasted or autofilled code fills them all |
 | `apps/core/ratelimit.py` | Cache-backed limits on emails, codes and passkey challenges |
@@ -91,9 +91,11 @@ with Face ID, a fingerprint or a device PIN from then on.
   device it was made on ("Passkey on iPhone").
 - Discoverable credentials with user verification required: a passkey alone
   signs someone in, so it has to be the person, not just the device.
-- Sign-in needs no email: the browser offers every passkey it holds for the
-  site, from the button or from the email field's autofill (conditional
-  mediation).
+- Sign-in needs no email: pressing "Sign in with a passkey" makes the
+  browser offer every passkey it holds for the site. Nothing asks before
+  the button is pressed: no autofill (conditional mediation) request on
+  page load, which some browsers and password managers show as a prompt
+  nobody asked for.
 - A passkey deleted here but still on a device answers 404 with its id;
   the page asks the browser to forget it (`signalUnknownCredential`).
 - `WEBAUTHN_RP_ID` is the site's host name and `WEBAUTHN_ORIGINS` its
@@ -113,13 +115,41 @@ uv run python manage.py createsuperuser --username "$KEY" --email ""
 Accounts show in the admin by key. To find someone's, compute their key
 the same way.
 
+## Reviewer accounts
+
+App directories (OpenAI's for ChatGPT, Anthropic's for Claude) review an
+app by signing in to a test account, and refuse one that needs an inbox, an
+SMS or any other verification step. A reviewer account is an address that
+signs in with a fixed code instead:
+
+1. In the admin, add a **Reviewer account** with an address that has no
+   mailbox behind it, such as `reviewer@traintrackr.live`. Its six-digit
+   code is made when you save it.
+2. Give the reviewers the address, the code, and: "Enter the email on the
+   sign-in page, then type the code on the next page. No email is sent."
+3. After the review, select the account and run **Give the selected
+   accounts a new code**, or delete it.
+
+- **Nothing else changes.** The reviewer uses `/signin/` and
+  `/signin/code/` like anyone else. `sign_in.issue()` gives that address's
+  request the fixed code, and the view sends it no email. The account
+  itself is made on first sign-in, as for anyone.
+- **Same limits.** Five wrong codes end a request, and an address gets five
+  requests an hour, so the code can't be guessed in any useful time.
+- **The code is kept as it is,** not hashed like an emailed code, so staff
+  can read it in the admin. It is a shared test credential for an account
+  with no one's data in it, not a person's secret.
+
 ## Email
 
 Sent through `MAILERS["default"]`: the console in development, SMTP in
 production (`EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`,
 `EMAIL_HOST_PASSWORD`, `DEFAULT_FROM_EMAIL`). Views only enqueue
-`send_sign_in_email`; `TASKS` uses the immediate backend, which runs it in
-the request. Swap in a queue-backed backend and a worker when volume needs it.
+`send_sign_in_email`; `TASKS` uses `apps.core.task_backends.ThreadBackend`,
+which sends it on a thread of its own, so the page answers while the mail
+relay is still talking. A failed send is logged (`django.tasks`, ERROR).
+Tests run tasks inline, so mail is in the outbox before the response. Swap in
+a queue-backed backend and a worker when volume needs it.
 
 ## Closing and forgetting accounts
 

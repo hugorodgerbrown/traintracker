@@ -1,10 +1,11 @@
 """Background tasks for accounts: the sign-in email.
 
 Views enqueue; they never send mail themselves, so a slow mail server
-can't hold a request (settings.TASKS chooses where the task runs).
+can't hold a request (settings.TASKS chooses where the task runs: on a
+thread of its own, apps.core.task_backends.ThreadBackend).
 
 The task's arguments are the one place the email address goes, so it is
-not stored: the immediate backend keeps them in memory. A queue-backed
+not stored: the thread backend keeps them in memory. A queue-backed
 backend would write them to its queue until the email is sent; clear
 them once it is, or the address is stored after all.
 """

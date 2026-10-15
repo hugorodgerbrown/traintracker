@@ -4,7 +4,7 @@
 {% include "public/_head.html" %}
     <meta property="og:title" content="{{ title }}" />
     <meta property="og:description" content="{{ description }}" />
-    <meta property="og:url" content="{{ page_url }}" />
+    {# No og:url (DESIGN.md, "The front page"): the chat already has the link. #}
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Traintrackr" />
     <meta property="og:image" content="{{ share_image }}" />
@@ -17,27 +17,29 @@
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>
+    {# One link on the right, and no menu: the other pages are in the footer (DESIGN.md, "The front page"). #}
     <header>
       <a class="name" href="/" aria-label="Traintrackr home" aria-current="{% if current == '/' %}page{% else %}false{% endif %}"><img src="{% static 'icons/icon.svg' %}" alt="" width="32" height="32" />Traintrackr</a>
+      {% if user.is_authenticated %}<a class="header-link" href="/app/account/">Open the app</a>{% else %}<a class="header-link" href="/signin/">Sign in</a>{% endif %}
+    </header>
+    <main id="main">{% block content %}{% endblock %}</main>
+    {# The site footer (DESIGN.md, "The website has a footer"): the links, the data credit, then the copyright. #}
+    <footer>
       <nav aria-label="Site">
         <ul>
           {% for path, text, here in nav %}<li><a href="/{{ path }}"{% if here %} aria-current="page"{% endif %}>{{ text }}</a></li>
           {% endfor %}
         </ul>
       </nav>
-    </header>
-    <main id="main">{% block content %}{% endblock %}</main>
-    <footer>
       {# TODO(hugo): add the "Powered by National Rail" logo here once National Rail gives permission (TRA-9). #}
       <p>
         Live train times:
         <a href="https://www.nationalrail.co.uk/">Powered by National Rail Enquiries</a>. <a href="/docs#data">Data sources</a>.
-      </p>
-      <p>
         Traintrackr is not run by, or endorsed by, National Rail Enquiries or
         Network Rail. Contact:
         <a href="mailto:support@traintrackr.live">support@traintrackr.live</a>.
       </p>
+      <p>&copy; {% now "Y" %} Hugo Rodger-Brown. All rights reserved.</p>
     </footer>
   </body>
 </html>

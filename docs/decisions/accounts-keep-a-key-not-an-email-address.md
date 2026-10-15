@@ -41,5 +41,10 @@ again.
   privacy policy still lists it and `forget_account` still deletes it.
 - A queue-backed task backend would write the address to its queue; clear
   task arguments once sent if one is adopted (`apps/accounts/tasks.py`).
-- Migration `accounts.0002` keys every existing account and request; the
+- Migration `accounts.0003` keys every existing account and request; the
   addresses can't be brought back.
+- A `ReviewerAccount` keeps its address as it is, on purpose: it is a test
+  address with no mailbox and no person behind it, and staff read it in the
+  admin. Its pending sign-ins are still found by key
+  (`SignInRequest.objects.for_email`), and the account it signs in to is
+  keyed like any other.

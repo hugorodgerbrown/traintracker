@@ -8,3 +8,9 @@ class McpConfig(AppConfig):
 
     name = "apps.mcp"
     label = "mcp"
+
+    def ready(self) -> None:
+        """Let ChatGPT connect although its client metadata prefers private_key_jwt."""
+        from .cimd import accept_public_fallback
+
+        accept_public_fallback()

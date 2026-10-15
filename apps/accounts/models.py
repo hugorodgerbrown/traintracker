@@ -146,11 +146,22 @@ class ReviewerAccount(BaseModel):
         ordering = ["email"]
 
     def save(self, *args: Any, **kwargs: Any) -> None:
-        """Lowercase the address, and make a code if there isn't one."""
+        """Lowercase the address, and make a code if there isn't one.
+
+        Changing the address ends the old one's pending sign-ins, which hold
+        this code: it is no longer a reviewer address.
+        """
         self.email = self.email.strip().lower()
         if not self.code:
             self.code = new_reviewer_code()
+        previous = (
+            ReviewerAccount.objects.filter(pk=self.pk).values_list("email", flat=True).first()
+            if self.pk
+            else None
+        )
         super().save(*args, **kwargs)
+        if previous and previous != self.email:
+            SignInRequest.objects.for_email(previous).live().update(used_at=timezone.now())
 
     def give_new_code(self) -> None:
         """Replace the code, and end sign-ins already started with the old one."""

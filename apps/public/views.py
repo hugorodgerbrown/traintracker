@@ -73,12 +73,3 @@ def page(request: HttpRequest, path: str) -> HttpResponse:
 def favicon(request: HttpRequest) -> HttpResponse:
     """Browsers ask for /favicon.ico whatever the page links to: the PNG."""
     return redirect(static("icons/icon-32.png"), permanent=True)
-
-
-@require_safe
-def openai_challenge(request: HttpRequest) -> HttpResponse:
-    """The token OpenAI's portal issued to prove the domain, as bare text."""
-    token = rail_settings().openai_apps_challenge
-    if not token:
-        raise Http404
-    return HttpResponse(token, content_type="text/plain; charset=utf-8")

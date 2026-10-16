@@ -105,17 +105,6 @@ def test_the_favicon_is_the_png(client: Client) -> None:
     assert response["Location"].endswith("icon-32.png")
 
 
-def test_the_openai_challenge(client: Client, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Only once OPENAI_APPS_CHALLENGE is set, and then as bare text."""
-    monkeypatch.delenv("OPENAI_APPS_CHALLENGE", raising=False)
-    monkeypatch.setenv("TRAINTRACKER_NO_DOTENV", "1")
-    assert client.get("/.well-known/openai-apps-challenge").status_code == 404
-    monkeypatch.setenv("OPENAI_APPS_CHALLENGE", "token-123")
-    response = client.get("/.well-known/openai-apps-challenge")
-    assert response.content == b"token-123"
-    assert response["Content-Type"].startswith("text/plain")
-
-
 def test_the_shared_boards_fetch_through_the_server(monkeypatch: pytest.MonkeyPatch) -> None:
     """Outside the tests, a board comes from the server's own public_board."""
     monkeypatch.undo()

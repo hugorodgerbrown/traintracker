@@ -8,21 +8,23 @@ apart from the site's pages.
 Off unless both ``FIVEBAR_DOMAIN`` and ``FIVEBAR_TOKEN`` (a token made in
 fivebar to send events and nothing else) are set.
 
-The event goes from a small pool of background threads with a short
-timeout, so a call never waits on fivebar, and a failure is logged and
-dropped. It carries the tool's name, whether it answered or failed, the
-connected app's name, and a keyed hash of the user's id that tells
-accounts apart without naming one. Never the arguments, the result, an
-address or anything the person wrote.
+The event goes from two background daemon threads with a short timeout,
+so a call never waits on fivebar, a failure is logged and dropped, and a
+stopping process never waits for events still queued. It carries the
+tool's name, whether it answered or failed, the connected app's name,
+and a keyed hash of the user's id that tells accounts apart without
+naming one. Never the arguments, the result, an address or anything the
+person wrote.
 See docs/decisions/visitors-are-counted-by-fivebar.md.
 """
 
 import json
 import logging
+import queue
 import threading
 import urllib.error
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Callable
 from typing import Any
 
 from django.conf import settings
@@ -39,8 +41,51 @@ ERROR = "error"
 # Every tool's event is named under this, e.g. /mcp/add_note.
 PREFIX = "/mcp/"
 
+
+class _Sender:
+    """Daemon threads that run queued sends, started by the first one.
+
+    Not a ThreadPoolExecutor: Python joins its threads at exit once they
+    have drained its queue, so while fivebar is down a stopping worker
+    would wait out every queued send's timeout. Daemon threads end with
+    the process, and the events still queued are dropped, as an outage
+    drops them anyway.
+    """
+
+    def __init__(self, workers: int) -> None:
+        """Hold the queue; no thread starts until the first send."""
+        self._workers = workers
+        self._queue: queue.SimpleQueue[tuple[Callable[..., None], tuple[Any, ...]]]
+        self._queue = queue.SimpleQueue()
+        self._started = False
+        self._lock = threading.Lock()
+
+    def submit(self, func: Callable[..., None], *args: Any) -> None:
+        """Queue ``func(*args)`` for a sender thread."""
+        self._start()
+        self._queue.put((func, args))
+
+    def _start(self) -> None:
+        """Start the threads once, in the process that sends (after any fork)."""
+        with self._lock:
+            if self._started:
+                return
+            for number in range(self._workers):
+                threading.Thread(target=self._run, name=f"fivebar-{number}", daemon=True).start()
+            self._started = True
+
+    def _run(self) -> None:
+        """Run queued sends for as long as the process lives."""
+        while True:
+            func, args = self._queue.get()
+            try:
+                func(*args)
+            except Exception:
+                logger.exception("fivebar.event failed")
+
+
 # Two threads per process are plenty: each send is one short POST.
-_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="fivebar")
+_pool = _Sender(workers=2)
 # At most this many events wait or are in flight per process. While fivebar
 # is slow or down, any more are dropped, so an outage can't grow the queue.
 MAX_PENDING = 200

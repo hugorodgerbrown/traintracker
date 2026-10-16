@@ -62,10 +62,14 @@ count it instead: `apps/mcp/events.py` sends one event per `tools/call`.
 - Off unless `FIVEBAR_TOKEN` is set as well as `FIVEBAR_DOMAIN`: a token
   made for the one site with **Send events** and not **Read stats**, so a
   leaked one reads nothing. It is made by hand; titan doesn't mint it.
-- Sent from a two-thread pool with a 2-second timeout, never on the
+- Sent from two daemon threads with a 2-second timeout, never on the
   request: a slow or failing fivebar is logged and dropped, and the call
   answers as fast as before. Not a django-tasks job, which would write a
-  row per call in production and run inline in development.
+  row per call in production and run inline in development. Not a
+  `ThreadPoolExecutor` either (RAS-55): Python joins its threads at exit
+  once they have drained the queue, so during an outage a stopping
+  worker waited out every queued send. Events still queued at exit are
+  dropped.
 - `id` is a keyed hash of the user's id (`salted_hmac` with the app's
   secret), so fivebar tells accounts apart without ever holding one.
   `client` is the connected OAuth app's name, lower-cased, so Claude's

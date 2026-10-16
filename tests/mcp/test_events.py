@@ -11,6 +11,7 @@ import pytest
 
 from apps.core.analytics import counts_mcp
 from apps.mcp import events, tools, views
+from apps.public.pages import page_text
 from tests.factories import UserFactory
 
 DOMAIN = "example.ultraniche.ai"
@@ -224,3 +225,10 @@ def test_the_endpoint_passes_the_connected_app(
     )
     inspect.unwrap(views.mcp)(request)  # past @mcp_endpoint: the auth contract covers it
     assert seen == ["claude"]
+
+
+def test_the_privacy_policy_says_what_tool_calls_send() -> None:
+    """The privacy page, and so the privacy_policy tool, says what fivebar receives."""
+    text = page_text("/privacy")
+    assert "uses one of Traintrackr's tools" in text
+    assert "never what you asked or what came back" in text

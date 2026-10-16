@@ -74,6 +74,9 @@ SILENCED_SYSTEM_CHECKS = [
 # fivebar counts visits without cookies; off until FIVEBAR_DOMAIN is set.
 # The sign-in pages never load it (one-time addresses). See apps/core/analytics.py.
 FIVEBAR_DOMAIN: str = config("FIVEBAR_DOMAIN", default="")
+# A fivebar token made to send events and nothing else: with FIVEBAR_DOMAIN,
+# each MCP tool call is counted as a server event. See apps/mcp/events.py.
+FIVEBAR_TOKEN: str = config("FIVEBAR_TOKEN", default="")
 
 # Content Security Policy: everything from this origin, nothing inline. The
 # other origin is fivebar's, and only while FIVEBAR_DOMAIN is set.
@@ -296,5 +299,8 @@ MCP_AUTH = {
         "https://platform.openai.com",
     ],
 }
+# The token OpenAI's platform issues to verify the domain before ChatGPT's
+# app directory lists the MCP server: off (a 404) unless set.
+OPENAI_APPS_CHALLENGE: str = config("OPENAI_APPS_CHALLENGE", default="")
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

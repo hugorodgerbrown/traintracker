@@ -17,7 +17,9 @@ apps/core/         BaseModel, IdempotencyMiddleware + IdempotencyRecord,
                    limits, livez and healthz
 apps/accounts/     email link or code sign-in, passkeys, the account
                    commands (docs/accounts.md)
-apps/mcp/          /mcp (Titan's view, mcp-auth) listing the train tools
+apps/mcp/          /mcp (Titan's view, mcp-auth) listing the train tools;
+                   events.py counts each tool call in fivebar as a server
+                   event while FIVEBAR_DOMAIN and FIVEBAR_TOKEN are set
 apps/rail/         the train tools (server.py), their event loop
                    (runtime.py), the timetable, planner and Darwin client,
                    the board MCP App (ui/), and the rail commands

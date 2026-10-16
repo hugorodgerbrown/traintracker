@@ -47,7 +47,12 @@ def test_context_has_no_path_while_off(settings: Any) -> None:
     settings.FIVEBAR_DOMAIN = ""
     request = RequestFactory().get("/signin/link/abc/")
     request.resolver_match = resolve("/signin/link/abc/")
-    assert analytics(request)["analytics"] == {"domain": "", "script": SCRIPT, "path": ""}
+    assert analytics(request)["analytics"] == {
+        "domain": "",
+        "script": SCRIPT,
+        "path": "",
+        "counts_mcp": False,
+    }
 
 
 def test_mark(settings: Any) -> None:

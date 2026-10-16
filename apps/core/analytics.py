@@ -3,8 +3,9 @@
 Off unless ``FIVEBAR_DOMAIN`` is set (titan sets it at go-live to the
 app's domain). Then every page, public or in the app, carries fivebar's
 tag in its ``<head>`` (``templates/includes/_analytics.html``) and the CSP
-lets its script load and send. There is no package and no server code: the
-script counts each page by itself.
+lets its script load and send. There is no package: the script counts
+each page by itself. MCP tool calls, which have no page, are sent from
+the server as events instead (apps/mcp/events.py).
 
 A page whose address holds a secret or an id (an emailed sign-in link's
 token, a record's uuid) is counted under its route instead, with the
@@ -20,7 +21,7 @@ See docs/decisions/visitors-are-counted-by-fivebar.md.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 
@@ -69,7 +70,15 @@ def counted_path(request: HttpRequest) -> str:
     return "/" + _CONVERTER.sub(r":\1", match.route)
 
 
-def analytics(request: HttpRequest) -> dict[str, dict[str, str]]:
+def counts_mcp() -> bool:
+    """Whether MCP tool calls are sent to fivebar (apps/mcp/events.py).
+
+    ``FIVEBAR_TOKEN`` is only a setting in a project with the MCP endpoint.
+    """
+    return bool(settings.FIVEBAR_DOMAIN and getattr(settings, "FIVEBAR_TOKEN", ""))
+
+
+def analytics(request: HttpRequest) -> dict[str, dict[str, Any]]:
     """Expose fivebar's settings to every template as ``analytics``."""
     domain = settings.FIVEBAR_DOMAIN
     return {
@@ -77,5 +86,6 @@ def analytics(request: HttpRequest) -> dict[str, dict[str, str]]:
             "domain": domain,
             "script": SCRIPT,
             "path": counted_path(request) if domain else "",
+            "counts_mcp": counts_mcp(),
         }
     }

@@ -345,3 +345,14 @@ def test_staff_only_policy() -> None:
     assert staff_only(SimpleNamespace(is_active=True, is_staff=True))
     assert not staff_only(SimpleNamespace(is_active=True, is_staff=False))
     assert not staff_only(SimpleNamespace(is_active=False, is_staff=True))
+
+
+def test_the_openai_apps_challenge(client: Client, settings: Any) -> None:
+    """A 404 until OPENAI_APPS_CHALLENGE is set, then the token as bare text."""
+    settings.OPENAI_APPS_CHALLENGE = ""
+    assert client.get("/.well-known/openai-apps-challenge").status_code == 404
+    settings.OPENAI_APPS_CHALLENGE = "token-123"
+    response = client.get("/.well-known/openai-apps-challenge")
+    assert response.status_code == 200
+    assert response.content == b"token-123"
+    assert response["Content-Type"] == "text/plain; charset=utf-8"

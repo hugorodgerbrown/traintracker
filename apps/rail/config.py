@@ -107,7 +107,6 @@ class Settings:
     rate_limit_per_minute: int = 30
     rate_limit_burst: int = 10
     usage_schema: str = "traintracker_usage"
-    openai_apps_challenge: str | None = None
     darwin_daily_limit: int = DARWIN_DAILY_LIMIT
     trainline_live_url: str = TRAINLINE_LIVE_URL
 
@@ -168,7 +167,6 @@ class Settings:
             rate_limit_per_minute=int(_env("RATE_LIMIT_PER_MINUTE") or 30),
             rate_limit_burst=int(_env("RATE_LIMIT_BURST") or 10),
             usage_schema=_env("USAGE_SCHEMA") or "traintracker_usage",
-            openai_apps_challenge=_env("OPENAI_APPS_CHALLENGE"),
             darwin_daily_limit=int(_env("DARWIN_DAILY_LIMIT") or DARWIN_DAILY_LIMIT),
             trainline_live_url=_env("TRAINLINE_LIVE_URL") or TRAINLINE_LIVE_URL,
         )

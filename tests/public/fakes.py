@@ -51,6 +51,29 @@ def _board(crs: str = "LST", name: str = "London Liverpool Street") -> Board:
     )
 
 
+def _scheduled(time: str, on: str) -> BoardService:
+    """A timetable train to Colchester at ``time`` on the date ``on``, as a short board has.
+
+    Args:
+        time: Its booked time.
+        on: The date it runs, YYYY-MM-DD.
+
+    Returns:
+        The service.
+    """
+    return BoardService(
+        service_id=f"tt:X{time}:{on}",
+        source="timetable",
+        origin=[StationRef(name="London Liverpool Street", crs="LST")],
+        destination=[StationRef(name="Colchester", crs="COL")],
+        scheduled=time,
+        date=on,
+        platform="10",
+        platform_source="booked",
+        status="scheduled",
+    )
+
+
 class FakeFetch:
     """A board fetch in place of Darwin's, which records what it was asked for.
 
@@ -67,6 +90,7 @@ class FakeFetch:
         """
         self.calls: list[tuple[str, str | None, str | None]] = []
         self.error = error
+        self.scheduled = False  # set, the board goes on with two timetable trains
 
     async def __call__(
         self, crs: str, to: str | None, platform: str | None
@@ -89,6 +113,8 @@ class FakeFetch:
         if self.error:
             raise ToolError(self.error)
         board = _board()
+        if self.scheduled:
+            board.services += [_scheduled("17:50", "2026-10-02"), _scheduled("06:05", "2026-10-03")]
         if platform:
             board.services = [s for s in board.services if s.platform == platform]
         if to:

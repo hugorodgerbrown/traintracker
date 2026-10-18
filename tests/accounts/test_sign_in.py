@@ -2,9 +2,12 @@
 
 from datetime import timedelta
 from typing import Any
+from unittest import mock
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError, connection, transaction
+from django.db.migrations.executor import MigrationExecutor
 from django.utils import timezone
 
 from apps.accounts import sign_in
@@ -34,6 +37,74 @@ def test_a_new_request_ends_the_previous_one() -> None:
     assert sign_in.redeem_token(first_token) is None
     first.refresh_from_db()
     assert first.used_at is not None
+
+
+def test_the_database_holds_one_unused_request_per_address() -> None:
+    """A second unused request for an address is refused, whoever writes it."""
+    request, _, _ = sign_in.issue("a@example.com")
+    duplicate = SignInRequest(
+        email_key=request.email_key,
+        masked_email=request.masked_email,
+        token_hash="other",
+        code_hash="other",
+        expires_at=request.expires_at,
+    )
+    with pytest.raises(IntegrityError), transaction.atomic():
+        duplicate.save()
+
+
+def test_issue_retries_when_a_request_at_the_same_moment_won() -> None:
+    """Losing the race to insert retires the winner and stores the newest request."""
+    real = sign_in._replace_request
+    winners: list[SignInRequest] = []
+
+    def collide(*args: Any) -> SignInRequest:
+        if not winners:
+            # Another request for the address commits first; this insert collides.
+            winners.append(real("a@example.com", "winner", "123456", ""))
+            raise IntegrityError
+        return real(*args)
+
+    with mock.patch.object(sign_in, "_replace_request", side_effect=collide):
+        request, _, _ = sign_in.issue("a@example.com")
+    winners[0].refresh_from_db()
+    assert winners[0].used_at is not None
+    assert SignInRequest.objects.for_email("a@example.com").unused().get() == request
+
+
+def test_issue_gives_up_after_its_attempts() -> None:
+    """A request that keeps colliding fails rather than looping for ever."""
+    with (
+        mock.patch.object(sign_in, "_replace_request", side_effect=IntegrityError),
+        pytest.raises(IntegrityError),
+    ):
+        sign_in.issue("a@example.com")
+    assert not SignInRequest.objects.exists()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_migration_keeps_only_the_newest_unused_request() -> None:
+    """Older unused requests for an address are retired so the constraint can be added."""
+    executor = MigrationExecutor(connection)
+    executor.migrate([("accounts", "0001_initial")])
+    old_apps = executor.loader.project_state([("accounts", "0001_initial")]).apps
+    model = old_apps.get_model("accounts", "SignInRequest")
+    expires_at = timezone.now() + timedelta(minutes=5)
+    rows = [
+        model.objects.create(
+            email_key="k",
+            masked_email="m",
+            token_hash=f"t{i}",
+            code_hash="c",
+            expires_at=expires_at,
+        )
+        for i in range(2)
+    ]
+    executor = MigrationExecutor(connection)
+    executor.loader.build_graph()
+    executor.migrate(executor.loader.graph.leaf_nodes())
+    unused = SignInRequest.objects.filter(email_key="k", used_at__isnull=True)
+    assert list(unused.values_list("pk", flat=True)) == [rows[1].pk]
 
 
 def test_token_works_once() -> None:

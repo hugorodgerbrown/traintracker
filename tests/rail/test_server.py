@@ -236,7 +236,11 @@ async def test_live_departures_via_darwin(tmp_path: Path, monkeypatch: pytest.Mo
         )
         out = await call(client, "live_departures", station="Liverpool Street", to="Marks Tey")
         assert out["source"] == "darwin"
-        assert len(out["services"]) == 3
+        # Darwin has three; the board goes on with scheduled trains (TRA-33).
+        sources = [s["source"] for s in out["services"]]
+        assert sources == ["darwin"] * 3 + ["timetable"] * 7
+        assert all(s["date"] for s in out["services"])
+        assert out["messages"][-1] == server.FILLED_NOTE
         assert all(s["calling_points"] is None for s in out["services"])
 
 
@@ -747,3 +751,109 @@ async def test_platform_departures_pages_through_board(
     assert route.calls[1].request.url.params["timeOffset"] == "15"  # 13:10 is 15 min away
     assert none["services"] == []
     assert "Platforms in use: 2, 7." in none["messages"][-1]
+
+
+# ------------------------------------------------------- filling short boards
+
+
+def _short_board(*services: BoardService) -> Board:
+    """A live Marks Tey board with only `services` on it."""
+    return Board(
+        station=StationRef(name="Marks Tey", crs="MKT"),
+        board="departures",
+        date="2026-10-02",
+        source="darwin",
+        services=list(services),
+    )
+
+
+def _live(time: str, to: str) -> BoardService:
+    """A live departure at `time` to the station `to`."""
+    return BoardService(
+        service_id=f"darwin:{time}",
+        source="darwin",
+        origin=[StationRef(name="Marks Tey", crs="MKT")],
+        destination=[StationRef(name=to, crs=to)],
+        scheduled=time,
+        expected="On time",
+    )
+
+
+LATE_EVENING = datetime(2026, 10, 2, 21, 30, tzinfo=UK_TZ)
+
+
+async def test_a_short_board_goes_on_with_scheduled_trains_after_the_live_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """From where Darwin's two hours end, up to the board's rows, each with its date."""
+    async with connect(tmp_path, monkeypatch):
+        b = _short_board(_live("22:50", "COL"))
+        st = stations.by_crs("MKT")
+        assert st is not None
+        await server._fill_scheduled(server.app(), b, st, None, 5, LATE_EVENING, False)
+    # 22:50 and 22:58 are inside the live window (21:30 to 23:29); the 23:30
+    # from Liverpool Street calls here at 00:20, the next day.
+    assert [(s.scheduled, s.source, s.date) for s in b.services] == [
+        ("22:50", "darwin", "2026-10-02"),
+        ("00:20", "timetable", "2026-10-03"),
+        ("06:50", "timetable", "2026-10-03"),
+        ("06:58", "timetable", "2026-10-03"),
+        ("07:50", "timetable", "2026-10-03"),
+    ]
+    assert b.messages == [server.FILLED_NOTE]
+
+
+async def test_a_train_already_on_the_board_is_not_added_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A live train at a scheduled one's time and destination is the same train."""
+    async with connect(tmp_path, monkeypatch):
+        b = _short_board(_live("00:20", "COL"))
+        st = stations.by_crs("MKT")
+        assert st is not None
+        await server._fill_scheduled(server.app(), b, st, None, 3, LATE_EVENING, False)
+    assert [s.scheduled for s in b.services] == ["00:20", "06:50", "06:58"]
+    # A live train after midnight is dated the next day too.
+    assert b.services[0].date == "2026-10-03"
+
+
+async def test_a_platform_board_fills_with_that_platforms_trains(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only scheduled trains booked for the platform are added."""
+    async with connect(tmp_path, monkeypatch):
+        b = _short_board()
+        st = stations.by_crs("MKT")
+        assert st is not None
+        await server._fill_scheduled(
+            server.app(), b, st, None, 2, LATE_EVENING, False, keep=lambda s: s.platform == "3"
+        )
+    assert [(s.scheduled, s.platform) for s in b.services] == [("06:58", "3"), ("07:58", "3")]
+
+
+async def test_a_full_board_and_a_missing_timetable_leave_the_board_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Nothing is added to a full board, and without a timetable nothing fails."""
+    async with connect(tmp_path, monkeypatch):
+        st = stations.by_crs("MKT")
+        assert st is not None
+        full = _short_board(_live("22:50", "COL"))
+        await server._fill_scheduled(server.app(), full, st, None, 1, LATE_EVENING, False)
+        drop_timetable(timetable_db())
+        short = _short_board(_live("22:50", "COL"))
+        await server._fill_scheduled(server.app(), short, st, None, 5, LATE_EVENING, False)
+    for b in (full, short):
+        assert [s.scheduled for s in b.services] == ["22:50"]
+        assert b.messages == []
+
+
+def test_a_late_train_is_dated_today() -> None:
+    """A booked time up to 12 hours before the board's start is today's, running late."""
+    late = _live("21:10", "COL")
+    undated = BoardService(
+        service_id="darwin:x", source="darwin", origin=[], destination=[], scheduled=None
+    )
+    server._date_live([late, undated], LATE_EVENING)
+    assert late.date == "2026-10-02"
+    assert undated.date is None

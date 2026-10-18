@@ -25,7 +25,7 @@ import re
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, cast
 from urllib.parse import quote
 
@@ -52,6 +52,8 @@ MAX_SUGGESTIONS = 8
 # What one client address may do: (at once, a minute). A page open on a screen
 # takes one a minute; this leaves room for an office of screens behind one address.
 BOARD_LIMIT = (30, 60.0)
+# What Expected says for a train from the timetable, not the live feed.
+SCHEDULED = "Scheduled"
 # What the feed says when a board can't be had; the pages say why.
 FEED_UNAVAILABLE = "Board temporarily unavailable."
 # A platform as the board's address has it: "9", "10A", "B".
@@ -163,18 +165,34 @@ def parse(station: str, then: str | None = None) -> BoardKey | None:
     return BoardKey(st.crs, platform=platform) if platform else None
 
 
-def _train(service: BoardService) -> dict[str, str]:
-    """What each column of the board says for one train.
+def _train(service: BoardService, board_date: str) -> dict[str, Any]:
+    """What each column of the board says for one train, and which day it runs.
 
-    The same as the chat's board app (ui/board.html) shows.
+    The same as the chat's board app (ui/board.html) shows. A train from the
+    timetable rather than the live feed says Scheduled in Expected, so it is
+    never read as a live time (TRA-33). `day` names the day it runs on where
+    that isn't the board's ("Monday 19 October"), and is empty otherwise.
     """
-    expected = "Cancelled" if service.status == "cancelled" else service.expected or ""
+    if service.source == "timetable":
+        expected = SCHEDULED
+    elif service.status == "cancelled":
+        expected = "Cancelled"
+    else:
+        expected = (service.expected or "").removesuffix("*")
     return {
         "time": service.scheduled or "",
         "place": " & ".join(p.name for p in service.destination),
         "platform": service.platform or "",
-        "expected": expected.removesuffix("*"),
+        "expected": expected,
+        "scheduled": service.source == "timetable",
+        "day": day_name(service.date) if service.date and service.date != board_date else "",
     }
+
+
+def day_name(iso: str) -> str:
+    """A date as a board's day divider says it: "Monday 19 October"."""
+    day = date.fromisoformat(iso)
+    return f"{day:%A} {day.day} {day:%B}"
 
 
 def minute_left(minute: int) -> float:
@@ -198,7 +216,7 @@ def payload(board: Board, platforms: list[str], key: BoardKey, updated: datetime
         "source": board.source,
         "updated": updated.strftime("%H:%M:%S"),
         "messages": board.messages[:3],
-        "trains": [_train(s) for s in board.services],
+        "trains": [_train(s, board.date) for s in board.services],
     }
 
 

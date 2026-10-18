@@ -12,14 +12,15 @@
         <caption>{{ kind }} from {{ board.station.name }}</caption>
         <thead><tr><th>Time</th><th>Destination</th><th>Plat</th><th>Expected</th></tr></thead>
         <tbody>
-{% for t in trains %}<tr><td>{{ t.time }}</td><td data-label="Destination">{{ t.place }}</td><td data-label="Platform">{{ t.platform }}</td><td data-label="Expected" data-expected="{{ t.expected }}">{{ t.said }}</td></tr>
+{% for t in trains %}{% if t.divider %}<tr class="day"><th colspan="4" scope="rowgroup">{{ t.day }}</th></tr>
+{% endif %}<tr{% if t.scheduled %} data-scheduled="1"{% endif %}{% if t.day %} data-day="{{ t.day }}"{% endif %}><td>{{ t.time }}</td><td data-label="Destination">{{ t.place }}</td><td data-label="Platform">{{ t.platform }}</td><td data-label="Expected" data-expected="{{ t.expected }}">{{ t.said }}</td></tr>
 {% endfor %}        </tbody>
       </table>
     </div>
     <p class="empty" data-empty="{{ empty }}"{% if trains %} hidden{% endif %}>{{ problem|default:empty }}</p>
     <p class="stale-note" hidden></p>
     <ul class="notes">{% for m in board.messages %}<li>{{ m }}</li>{% endfor %}</ul>
-    <p class="source"><span class="credit">{% if board.source == "darwin" %}<a href="https://www.nationalrail.co.uk/" target="_blank" rel="noopener">Powered by National Rail Enquiries</a>{% else %}Booked times: Network Rail data feeds (OGL v3.0){% endif %}</span>{% if mode == "embed" %} · <a href="/{{ board_path }}" target="_blank" rel="noopener">Traintrackr</a>{% endif %}
+    <p class="source"><span class="credit">{% if board.source == "darwin" %}<a href="https://www.nationalrail.co.uk/" target="_blank" rel="noopener">Powered by National Rail Enquiries</a>{% if mixed %} · Scheduled times: Network Rail data feeds (OGL v3.0){% endif %}{% else %}Scheduled times: Network Rail data feeds (OGL v3.0){% endif %}</span>{% if mode == "embed" %} · <a href="/{{ board_path }}" target="_blank" rel="noopener">Traintrackr</a>{% endif %}
       · <span class="updated">Updated {{ board.updated }}</span><span class="next"></span>
       <span class="status" role="status"></span></p>
     <button type="button" class="fullscreen quiet" hidden>Full screen</button>

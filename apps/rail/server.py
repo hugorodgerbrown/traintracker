@@ -44,6 +44,7 @@ from apps.rail.schemas import (
     StationRef,
 )
 from apps.rail.timetable import (
+    DAY,
     Timetable,
     TimetableMissing,
     Trip,
@@ -432,6 +433,39 @@ def _link_legs(journeys: list[Journey]) -> None:
         leg.trainline_url = _trainline(uid, date.fromisoformat(run), *ends, *leg._calls)
 
 
+def _timetable_services(
+    tt: Timetable,
+    st: stations.Station,
+    when: datetime,
+    window: int,
+    board: Literal["departures", "arrivals"],
+    other: stations.Station | None,
+    points: bool,
+    after: int = 0,
+) -> list[BoardService]:
+    """Booked trains at `st` from `after` minutes past `when` to `window` minutes past it.
+
+    In time order, each with the date it runs on, which is a later day than
+    `when`'s for a train after midnight.
+    """
+    day = when.date()
+    start = when.hour * 60 + when.minute
+    hits = tt.trips_at(st.crs, day, start + after, start + window, arriving=board == "arrivals")
+    services: list[tuple[int, BoardService]] = []
+    for trip, stop in hits:
+        idx = trip.stops.index(stop)
+        if other:
+            rest = trip.stops[idx + 1 :] if board == "departures" else trip.stops[:idx]
+            if not any(s.crs == other.crs for s in rest):
+                continue
+        t = minutes_on(day, trip, stop.dep if board == "departures" else stop.arr) or 0
+        service = _trip_board_service(trip, idx, day, board, points)
+        service.date = (day + timedelta(days=t // DAY)).isoformat()
+        services.append((t, service))
+    services.sort(key=lambda x: x[0])
+    return [s for _, s in services]
+
+
 def _timetable_board(
     tt: Timetable,
     st: stations.Station,
@@ -442,31 +476,99 @@ def _timetable_board(
     rows: int,
     points: bool,
 ) -> Board:
-    day = when.date()
-    start = when.hour * 60 + when.minute
-    hits = tt.trips_at(st.crs, day, start, start + window, arriving=board == "arrivals")
-    services: list[tuple[int, BoardService]] = []
-    for trip, stop in hits:
-        idx = trip.stops.index(stop)
-        if other:
-            rest = trip.stops[idx + 1 :] if board == "departures" else trip.stops[:idx]
-            if not any(s.crs == other.crs for s in rest):
-                continue
-        t = stop.dep if board == "departures" else stop.arr
-        services.append(
-            (minutes_on(day, trip, t) or 0, _trip_board_service(trip, idx, day, board, points))
-        )
-    services.sort(key=lambda x: x[0])
-    notes = ["Booked (timetabled) times; engineering-work changes appear once published."]
+    services = _timetable_services(tt, st, when, window, board, other, points)
+    notes = ["Scheduled (timetabled) times; engineering-work changes appear once published."]
     return Board(
         station=StationRef(name=st.name, crs=st.crs),
         board=board,
-        date=day.isoformat(),
+        date=when.date().isoformat(),
         source="timetable",
         filter=StationRef(name=other.name, crs=other.crs) if other else None,
-        services=[s for _, s in services[:rows]],
+        services=services[:rows],
         messages=notes,
     )
+
+
+LIVE_WINDOW = 120  # minutes of a live board that Darwin covers
+# How far past the start of a short board it looks for scheduled trains to fill
+# it: first a few hours, which is all a short board usually needs, then a day,
+# which covers the longest overnight gap (TRA-33).
+FILL_WINDOWS = (6 * 60, DAY)
+FILLED_NOTE = (
+    "Trains marked Scheduled are timetabled times: delays and cancellations show "
+    "once they are within two hours."
+)
+
+
+async def _fill_scheduled(
+    a: App,
+    b: Board,
+    st: stations.Station,
+    other: stations.Station | None,
+    rows: int,
+    start: datetime,
+    points: bool,
+    keep: Callable[[BoardService], bool] | None = None,
+) -> None:
+    """Fill a short live board with the scheduled trains after Darwin's window.
+
+    Darwin answers for two hours, so on a quiet line, or overnight anywhere, a
+    live board can be nearly empty. The rest of its `rows` come from the
+    timetable, starting where Darwin's window ends so a train is never on the
+    board twice. Each live train gets the date it runs on too, so a board that
+    crosses midnight can say so. Without a timetable, or when the server is
+    too busy to read it, the board stays as Darwin gave it.
+    """
+    if len(b.services) >= rows:
+        return
+    _date_live(b.services, start)
+    seen = {(s.scheduled, _end_crs(s, b.board)) for s in b.services}
+    found: list[BoardService] = []
+    for window in FILL_WINDOWS:
+
+        def booked(window: int = window) -> list[BoardService]:
+            tt = a.timetable()
+            return _timetable_services(
+                tt, st, start, window, b.board, other, points, after=LIVE_WINDOW
+            )
+
+        try:
+            found = await a.off_loop(booked)
+        except (TrainTrackerError, ToolError) as exc:
+            log.info("Board %s not filled: %s", st.crs, type(exc).__name__)
+            return
+        found = [
+            s
+            for s in found
+            if (s.scheduled, _end_crs(s, b.board)) not in seen and (keep is None or keep(s))
+        ]
+        if len(found) >= rows - len(b.services):
+            break
+    if found:
+        b.services.extend(found[: rows - len(b.services)])
+        if b.source == "darwin":
+            b.messages.append(FILLED_NOTE)
+
+
+def _end_crs(s: BoardService, board: Literal["departures", "arrivals"]) -> str:
+    """Where a train is going (departures) or coming from (arrivals), to match it by."""
+    ends = s.destination if board == "departures" else s.origin
+    return ends[0].crs or "" if ends else ""
+
+
+def _date_live(services: list[BoardService], start: datetime) -> None:
+    """Give each live train the date of its booked time, counted from `start`.
+
+    A booked time up to 12 hours before `start` is a late train from today; any
+    other is the next time the clock reads it.
+    """
+    now = start.hour * 60 + start.minute
+    for s in services:
+        if s.date or not s.scheduled:
+            continue
+        h, m = s.scheduled.split(":")
+        ahead = (int(h) * 60 + int(m) - now) % DAY
+        s.date = (start + timedelta(minutes=0 if ahead > DAY // 2 else ahead)).date().isoformat()
 
 
 # --------------------------------------------------------------------- tools
@@ -536,7 +638,9 @@ async def live_departures(
     """Live departure board for a GB railway station, covering the next two hours:
     expected times, platforms, delays and cancellations. The data comes from Darwin
     (National Rail Enquiries). If Darwin is offline, the board shows booked timetable
-    times and says so."""
+    times and says so. Where fewer than `rows` trains run in the two hours, the board
+    goes on with scheduled trains from the timetable, up to a day ahead: their source
+    is 'timetable' and their date says which day they run."""
     return await _live_board(
         app(),
         _station(station),
@@ -545,6 +649,7 @@ async def live_departures(
         rows,
         offset_minutes,
         include_calling_points,
+        fill=True,
     )
 
 
@@ -557,10 +662,13 @@ async def _live_board(
     offset_minutes: int,
     points: bool,
     until: Callable[[list[BoardService]], bool] | None = None,
+    fill: bool = False,
 ) -> Board:
     """Darwin, else booked times with a note saying why live data is missing.
 
-    `until` lets Darwin stop paging once enough services have been seen.
+    `until` lets Darwin stop paging once enough services have been seen. With
+    `fill`, a live board with fewer than `rows` trains goes on with scheduled
+    ones (_fill_scheduled).
     """
     notes: list[str] = []
     other_crs = other.crs if other else None
@@ -597,6 +705,8 @@ async def _live_board(
             if notes
             else "No live source is configured for this board; showing booked times."
         )
+    if fill:
+        await _fill_scheduled(a, b, st, other, rows, start, points)
     b.messages[:0] = notes
     if not points:
         for s in b.services:
@@ -634,7 +744,9 @@ async def live_arrivals(
 ) -> Board:
     """Live arrivals board for a GB railway station, covering the next two hours. The
     data comes from Darwin (National Rail Enquiries) where the server has its arrivals
-    feed; otherwise the board shows booked timetable times and says so."""
+    feed; otherwise the board shows booked timetable times and says so. Where fewer than
+    `rows` trains arrive in the two hours, the board goes on with scheduled trains from
+    the timetable, up to a day ahead, as live_departures does."""
     return await _live_board(
         app(),
         _station(station),
@@ -643,6 +755,7 @@ async def live_arrivals(
         rows,
         0,
         include_calling_points,
+        fill=True,
     )
 
 
@@ -669,7 +782,7 @@ async def show_board(
     trains without drawing anything. An app that can't draw the board gets the same
     answer as from those tools."""
     other = _station(calling_at) if calling_at else None
-    return await _live_board(app(), _station(station), board, other, rows, 0, False)
+    return await _live_board(app(), _station(station), board, other, rows, 0, False, fill=True)
 
 
 @_tool("Departure platform", LIVE)
@@ -794,9 +907,21 @@ async def public_board(crs: str, to: str | None, platform: str | None) -> tuple[
     a = app()
     st = _station(crs)
     if platform:
-        return await _platform_board(a, st, platform, PUBLIC_ROWS)
+        b, seen = await _platform_board(a, st, platform, PUBLIC_ROWS)
+        want = _norm_platform(platform)
+        await _fill_scheduled(
+            a,
+            b,
+            st,
+            None,
+            PUBLIC_ROWS,
+            datetime.now(UK_TZ),
+            False,
+            keep=lambda s: _norm_platform(s.platform or "") == want,
+        )
+        return b, seen
     other = _station(to) if to else None
-    b = await _live_board(a, st, "departures", other, PUBLIC_ROWS, 0, False)
+    b = await _live_board(a, st, "departures", other, PUBLIC_ROWS, 0, False, fill=True)
     _fill_booked_platforms(a, st.crs, b.services)
     return b, sorted({s.platform for s in b.services if s.platform}, key=_platform_sort)
 

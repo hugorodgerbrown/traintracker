@@ -88,8 +88,18 @@ def _figure_context(
         "problem": problem,
         "refresh": tt.REFRESH,
         "now": datetime.now(UK_TZ),
-        "trains": [t | {"said": tt.said(t["time"], t["expected"])} for t in data["trains"]],
+        "trains": _with_dividers(data["trains"]),
+        "mixed": data["source"] == "darwin" and any(t["scheduled"] for t in data["trains"]),
     }
+
+
+def _with_dividers(trains: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The trains as the table says them, each that starts a new day with its divider."""
+    out, day = [], ""
+    for t in trains:
+        out.append(t | {"said": tt.said(t["time"], t["expected"]), "divider": t["day"] != day})
+        day = t["day"]
+    return out
 
 
 def _board_page(

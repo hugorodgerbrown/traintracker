@@ -51,6 +51,11 @@ class BoardService(BaseModel):
     origin: list[StationRef]
     destination: list[StationRef]
     scheduled: str | None = Field(None, description="Booked time at this station (HH:MM).")
+    date: str | None = Field(
+        None,
+        description="The date of the booked time (YYYY-MM-DD), where it may be a later day "
+        "than the board's: on timetable trains, and on a live board that goes on with them.",
+    )
     expected: str | None = Field(None, description="Forecast/actual time or status text.")
     platform: str | None = None
     platform_source: PlatformSource | None = Field(

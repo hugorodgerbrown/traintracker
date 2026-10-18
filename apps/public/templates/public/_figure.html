@@ -4,7 +4,7 @@
   <div class="panel">
     <div class="station">
       <h1>{{ board.station.name }}</h1>
-      <span>{{ kind }}</span>
+      <span class="kind">{{ kind }}</span>
       <time class="clock" datetime="{{ now|date:'c' }}">{{ now|time:'H:i:s' }}</time>
     </div>
     <div class="trains">
@@ -13,7 +13,8 @@
         <thead><tr><th>Time</th><th>Destination</th><th>Plat</th><th>Expected</th></tr></thead>
         <tbody>
 {% for t in trains %}<tr><td>{{ t.time }}</td><td data-label="Destination">{{ t.place }}</td><td data-label="Platform">{{ t.platform }}</td><td data-label="Expected" data-expected="{{ t.expected }}">{{ t.said }}</td></tr>
-{% endfor %}        </tbody>
+{% if t.change %}<tr class="change" data-at="{{ t.change.at }}"><td>{{ t.change.time }}</td><td data-label="Destination">Change at {{ t.change.at }} for {{ t.change.place }}</td><td data-label="Platform">{{ t.change.platform }}</td><td data-label="Expected" data-expected="{{ t.change.expected }}">{{ t.change.said }}</td></tr>
+{% endif %}{% endfor %}        </tbody>
       </table>
     </div>
     <p class="empty" data-empty="{{ empty }}"{% if trains %} hidden{% endif %}>{{ problem|default:empty }}</p>

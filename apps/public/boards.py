@@ -40,7 +40,7 @@ PICKER_DESCRIPTION = "A live departure board for any station in Great Britain, t
 @cache
 def shared() -> tt.SharedBoards:
     """The process's boards, each fetched once a minute for every viewer."""
-    return tt.SharedBoards(server.public_board)
+    return tt.SharedBoards(server.public_board, server.public_changes)
 
 
 @cache
@@ -83,13 +83,21 @@ def _figure_context(
         "board_path": relative(key.path),
         "mode": mode,
         "board": data,
-        "kind": key.kind(),
+        "kind": data["kind"],
         "empty": key.empty(),
         "problem": problem,
         "refresh": tt.REFRESH,
         "now": datetime.now(UK_TZ),
-        "trains": [t | {"said": tt.said(t["time"], t["expected"])} for t in data["trains"]],
+        "trains": [_said(t) for t in data["trains"]],
     }
+
+
+def _said(train: dict[str, Any]) -> dict[str, Any]:
+    """A train with its Expected as the table says it, and its connection's."""
+    said = train | {"said": tt.said(train["time"], train["expected"])}
+    if change := train.get("change"):
+        said["change"] = change | {"said": tt.said(change["time"], change["expected"])}
+    return said
 
 
 def _board_page(

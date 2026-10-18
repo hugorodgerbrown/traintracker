@@ -2,6 +2,9 @@
 
 A board is a station's live departures (/board/LST), one platform's
 (/board/LST/9), or the trains calling at another station (/board/LST/COL).
+Where no train goes to that station in the next two hours, the board shows
+the journeys there with one change instead: each train with its connection
+(/board/LST/SUY, changing at Marks Tey).
 After the station, a station's code is a destination and anything else a
 platform; a board is for one or the other, never both. ``parse`` reads an
 address and ``BoardKey`` writes it.
@@ -35,7 +38,7 @@ from apps.rail import stations
 from apps.rail.config import UK_TZ
 from apps.rail.errors import StationNotFound
 from apps.rail.http import TTLCache
-from apps.rail.schemas import Board, BoardService
+from apps.rail.schemas import Board, BoardService, Journey, JourneyLeg
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +68,7 @@ EMBED_HEIGHT = 560
 CLOSE_ENOUGH = 70
 
 Fetch = Callable[[str, str | None, str | None], Awaitable[tuple[Board, list[str]]]]
+Changes = Callable[[str, str], Awaitable[list[Journey]]]
 
 
 class BoardUnavailable(Exception):
@@ -113,6 +117,11 @@ class BoardKey:
 
     def empty(self) -> str:
         """What the board says when it has no trains."""
+        if self.to:
+            return (
+                f"No trains to {station_name(self.to)}, direct or with one change, "
+                "in the next two hours."
+            )
         where = f" from platform {self.platform}" if self.platform else ""
         where += f" calling at {station_name(self.to)}" if self.to else ""
         return f"No departures{where} in the next two hours."
@@ -122,11 +131,16 @@ class BoardKey:
         """Which trains the board picks: "all", "platform" or "destination"."""
         return "destination" if self.to else "platform" if self.platform else "all"
 
-    def kind(self) -> str:
+    def kind(self, changes: list[str] | None = None) -> str:
         """What the board shows under the station's name.
 
-        For example "Platform 9 departures calling at Colchester".
+        For example "Platform 9 departures calling at Colchester", or, with the
+        stations its journeys change at, "Departures to Sudbury (Suffolk),
+        changing at Marks Tey".
         """
+        if changes:
+            where = f" at {changes[0]}" if len(set(changes)) == 1 else ""
+            return f"Departures to {station_name(self.to)}, changing{where}"
         text = f"Platform {self.platform} departures" if self.platform else "Departures"
         return text + (f" calling at {station_name(self.to)}" if self.to else "")
 
@@ -177,6 +191,32 @@ def _train(service: BoardService) -> dict[str, str]:
     }
 
 
+def _hhmm(iso: str) -> str:
+    """The time of an ISO datetime as a board shows it: "12:16"."""
+    return datetime.fromisoformat(iso).strftime("%H:%M")
+
+
+def _leg(leg: JourneyLeg) -> dict[str, str]:
+    """What each column of the board says for one train of a journey."""
+    expected = "Cancelled" if leg.cancelled else leg.depart_expected or ""
+    return {
+        "time": _hhmm(leg.depart_scheduled),
+        "place": leg.destination,
+        "platform": leg.platform or "",
+        "expected": expected.removesuffix("*"),
+    }
+
+
+def _journey(journey: Journey) -> dict[str, Any]:
+    """A journey with one change as the board shows it.
+
+    The train to catch here, with its connection: where it is, and the
+    connecting train's time, platform and expected.
+    """
+    first, then = journey.legs
+    return _leg(first) | {"change": _leg(then) | {"at": then.board_at.name}}
+
+
 def minute_left(minute: int) -> float:
     """Seconds until the clock turns from `minute` to the next, 0 once it has.
 
@@ -185,11 +225,20 @@ def minute_left(minute: int) -> float:
     return max(0.0, (minute + 1) * 60 - EARLY - time.time())
 
 
-def payload(board: Board, platforms: list[str], key: BoardKey, updated: datetime) -> dict[str, Any]:
+def payload(
+    board: Board,
+    platforms: list[str],
+    key: BoardKey,
+    updated: datetime,
+    journeys: list[Journey] | None = None,
+) -> dict[str, Any]:
     """A board as the page draws it, and as /api/board answers.
 
-    `updated` is when it was asked for.
+    `updated` is when it was asked for. With `journeys` (and no trains of its
+    own), the board is those journeys, each a train and its connection.
     """
+    trains: list[dict[str, Any]] = [_train(s) for s in board.services]
+    changing = [] if trains else journeys or []
     return {
         "station": {"name": board.station.name, "crs": board.station.crs},
         "to": {"name": station_name(key.to), "crs": key.to} if key.to else None,
@@ -197,8 +246,9 @@ def payload(board: Board, platforms: list[str], key: BoardKey, updated: datetime
         "platforms": platforms,
         "source": board.source,
         "updated": updated.strftime("%H:%M:%S"),
+        "kind": key.kind([j.legs[1].board_at.name for j in changing]),
         "messages": board.messages[:3],
-        "trains": [_train(s) for s in board.services],
+        "trains": trains or [_journey(j) for j in changing],
     }
 
 
@@ -220,8 +270,9 @@ class SharedBoards:
     for again by every page showing it.
     """
 
-    def __init__(self, fetch: Fetch, ttl: float = TTL) -> None:
+    def __init__(self, fetch: Fetch, changes: Changes | None = None, ttl: float = TTL) -> None:
         self.fetch = fetch
+        self.changes = changes
         self.ttl = ttl
         self._kept = TTLCache(MAX_BOARDS)
         self._pending: dict[
@@ -257,12 +308,26 @@ class SharedBoards:
         asked = datetime.fromtimestamp(max(now, minute * 60), UK_TZ)
         try:
             board, platforms = await self.fetch(key.crs, key.to, key.platform)
-            result = payload(board, platforms, key, asked)
+            journeys = await self._journeys(key) if key.to and not board.services else []
+            result = payload(board, platforms, key, asked, journeys)
         except ToolError as exc:
             result = _Failed(str(exc))
         # Kept to the end of its minute, when the pages ask for the next one.
         self._kept.set(key, (minute, result), min(self.ttl, (minute + 1) * 60 - now))
         return minute, result
+
+    async def _journeys(self, key: BoardKey) -> list[Journey]:
+        """The journeys with one change to the board's destination, if it has none direct.
+
+        They are a bonus: without them the board says it has no trains.
+        """
+        if self.changes is None or key.to is None:
+            return []
+        try:
+            return await self.changes(key.crs, key.to)
+        except ToolError as exc:
+            logger.info("No journeys with a change for %s: %s", key.path, exc)
+            return []
 
 
 # ----------------------------------------------------------------- the pages
@@ -298,6 +363,7 @@ def unavailable(key: BoardKey) -> dict[str, Any]:
         "platform": key.platform,
         "platforms": [],
         "source": "darwin",
+        "kind": key.kind(),
         "updated": "-",
         "messages": [],
         "trains": [],

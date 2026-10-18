@@ -354,7 +354,7 @@ The stylesheet and script are served by WhiteNoise under names that carry a hash
 
 ### Shareable boards
 
-`/board/LST` is a station's live departures as a page of its own, `/board/LST/9` one platform's, and `/board/LST/COL` the trains calling at Colchester: the homepage's split-flap board with live trains and a station clock, to keep open on a screen, share as a link or embed in another site. Nobody has to sign in. `/board` is a form to pick the station, and a destination or a platform; the station fields suggest names as you type.
+`/board/LST` is a station's live departures as a page of its own, `/board/LST/9` one platform's, and `/board/LST/COL` the trains calling at Colchester (or, to a station with no direct train in the next two hours such as `/board/LST/SUY`, each train with its connection at the station it changes at): the homepage's split-flap board with live trains and a station clock, to keep open on a screen, share as a link or embed in another site. Nobody has to sign in. `/board` is a form to pick the station, and a destination or a platform; the station fields suggest names as you type.
 
 | Address | What it is |
 |---|---|

@@ -801,6 +801,46 @@ async def public_board(crs: str, to: str | None, platform: str | None) -> tuple[
     return b, sorted({s.platform for s in b.services if s.platform}, key=_platform_sort)
 
 
+PUBLIC_WINDOW = 120  # minutes: a shared board's journeys leave in its window, as its trains do
+
+
+@_tool_errors
+async def public_changes(crs: str, to: str) -> list[Journey]:
+    """Journeys from `crs` to `to` with one change, leaving in a shared board's window.
+
+    A board to a station no train runs to directly shows these instead
+    (apps/public/board.py). Each is two trains with a change between them at
+    one station; a walk or Tube link between them doesn't count. Booked times,
+    with live ones where Darwin has them, as plan_journey gives them.
+    """
+    a = app()
+    o, d = _station(crs), _station(to)
+    now = datetime.now(UK_TZ).replace(second=0, microsecond=0)
+    mct = a.settings.min_interchange_minutes
+
+    def plan() -> list[Journey]:
+        tt = a.timetable()
+        _covered(tt, now.date())
+        # Two lines a journey: as many as fit the board's rows.
+        return planner.plan(tt, o.crs, d.crs, now, count=PUBLIC_ROWS // 2, max_changes=1, mct=mct)
+
+    last = now + timedelta(minutes=PUBLIC_WINDOW)
+    journeys = sorted(
+        (
+            j
+            for j in await a.off_loop(plan)
+            if j.changes == 1
+            and len(j.legs) == 2
+            and all(leg.service_id for leg in j.legs)
+            and datetime.fromisoformat(j.depart) <= last
+        ),
+        key=lambda j: j.depart,
+    )
+    if journeys and a.settings.has_darwin:
+        await _overlay_live(a, journeys, mct, [])
+    return journeys
+
+
 def _fill_booked_platforms(a: App, crs: str, services: list[BoardService]) -> None:
     """Give departures with no announced platform their timetabled one."""
     missing = [s for s in services if not s.platform and s.scheduled]

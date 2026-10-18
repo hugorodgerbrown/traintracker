@@ -70,6 +70,19 @@ function running(time, expected, width = 9) {
   return { state: "late", shows, late };
 }
 
+/** The lines of flaps one train takes: its own, and its connection's if it
+ * has a change. */
+function legs(train) {
+  return train.change ? [train, { ...train.change, connection: true }] : [train];
+}
+
+/** Where a connection is, as its Destination column says it: "Change Marks
+ * Tey", or "Chg Peterborough" where the longer word doesn't fit. */
+function changeAt(at, width) {
+  const long = `Change ${at}`;
+  return long.length <= width ? long : `Chg ${at}`;
+}
+
 /** Expected as a table says it: with how late the train is, as the flaps
  * show it ("15:44, 4 minutes late" for "15:44 +4"). */
 function said(time, expected) {
@@ -124,13 +137,20 @@ function board(figure) {
   );
   const headings = { time, place, platform, expected };
   // The table says Expected in words ("15:44, 4 minutes late"); the flaps
-  // want the time itself, which the cell carries in data-expected.
-  let trains = Array.from(table.tBodies[0].rows, (row) => {
+  // want the time itself, which the cell carries in data-expected. A row
+  // marked "change" is the connection of the train above it.
+  let trains = [];
+  for (const row of table.tBodies[0].rows) {
     const [time, place, platform, expected] = Array.from(row.cells, (cell) =>
       (cell.dataset.expected ?? cell.textContent).trim(),
     );
-    return { time, place, platform, expected };
-  });
+    const train = { time, place, platform, expected };
+    if (row.classList.contains("change") && trains.length) {
+      trains[trains.length - 1].change = { ...train, at: row.dataset.at };
+    } else {
+      trains.push(train);
+    }
+  }
   const turning = new Map(); // flap -> the letters it has yet to show, and the ticks until it starts
   let timer = 0;
   let cells = []; // the flaps, in reading order
@@ -188,10 +208,10 @@ function board(figure) {
         }),
       );
     }
-    for (let n = 0; n < trains.length; n++) {
+    for (const train of trains) {
       const service = document.createElement("div");
       service.className = "service";
-      for (const parts of layout) {
+      for (const parts of legs(train).flatMap(() => layout)) {
         service.append(
           line(parts, "line", (element, key, width, column) => {
             for (let k = 0; k < width; k++) {
@@ -212,7 +232,7 @@ function board(figure) {
   /** Turn every flap to the trains' letters, laying the board out first if needed. */
   function draw() {
     const layout = onTv() ? tvLayout() : panel.clientWidth < NARROW_BELOW ? NARROW : WIDE;
-    const key = `${layout.length}:${columns(layout[0])}:${trains.length}`;
+    const key = `${layout.length}:${columns(layout[0])}:${trains.map((t) => legs(t).length)}`;
     if (key !== built) build(layout);
     built = key;
     laidOut = layout;
@@ -220,26 +240,29 @@ function board(figure) {
     layClock();
     let i = 0;
     trains.forEach((train, row) => {
-      // A late train's Expected is white, a cancelled one's on red flaps.
-      const run = running(train.time, train.expected);
-      const text = {
-        ...train,
-        plat: train.platform && `Plat ${train.platform}`,
-        expected: run.shows,
-      };
-      for (const parts of layout) {
-        let column = 0;
-        for (const part of parts) {
-          if (!Array.isArray(part)) {
-            column += part;
-            continue;
-          }
-          const [key, width] = part;
-          for (const character of text[key].toUpperCase().slice(0, width).padEnd(width)) {
-            const cell = cells[i++];
-            cell.classList.toggle("late", key === "expected" && run.state === "late");
-            cell.classList.toggle("cancelled", key === "expected" && run.state === "cancelled");
-            turn(cell, character, row * 2 + (column++ >> 2));
+      for (const leg of legs(train)) {
+        // A late train's Expected is white, a cancelled one's on red flaps.
+        const run = running(leg.time, leg.expected);
+        const text = {
+          ...leg,
+          plat: leg.platform && `Plat ${leg.platform}`,
+          expected: run.shows,
+        };
+        for (const parts of layout) {
+          let column = 0;
+          for (const part of parts) {
+            if (!Array.isArray(part)) {
+              column += part;
+              continue;
+            }
+            const [key, width] = part;
+            const value = key === "place" && leg.connection ? changeAt(leg.at, width) : text[key];
+            for (const character of value.toUpperCase().slice(0, width).padEnd(width)) {
+              const cell = cells[i++];
+              cell.classList.toggle("late", key === "expected" && run.state === "late");
+              cell.classList.toggle("cancelled", key === "expected" && run.state === "cancelled");
+              turn(cell, character, row * 2 + (column++ >> 2));
+            }
           }
         }
       }
@@ -363,7 +386,7 @@ function board(figure) {
     // In units of the pitch (see site.css): a line of flaps is 1.6 high, with
     // 2px of margin; trains are 0.45 apart; the headings take 0.6 and 2px.
     const count = Math.max(1, trains.length);
-    const lines = count * layout.length;
+    const lines = Math.max(1, trains.flatMap(legs).length) * layout.length;
     const heads = layout.length === 1 ? 1 : 0;
     const units = lines * 1.6 + (count - 1) * 0.45 + heads * 0.6;
     const fixed = lines * 2 + heads * 2;
@@ -479,6 +502,7 @@ function follow(figure, seconds, show) {
   const notes = figure.querySelector(".notes");
   const credit = figure.querySelector(".credit");
   const updated = figure.querySelector(".updated");
+  const kind = figure.querySelector(".kind");
   const status = figure.querySelector(".status");
   const stale = figure.querySelector(".stale-note");
   const next = figure.querySelector(".next");
@@ -499,6 +523,12 @@ function follow(figure, seconds, show) {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "The board couldn't be fetched.");
       rows(table, data.trains);
+      // A board to a station with no direct trains shows journeys with a change,
+      // and says so; one that has them again says it doesn't.
+      if (kind && data.kind) {
+        kind.textContent = data.kind;
+        table.caption.textContent = `${data.kind} from ${data.station.name}`;
+      }
       empty.hidden = data.trains.length > 0;
       empty.textContent = empty.dataset.empty; // in place of why it couldn't be fetched
       notes.replaceChildren(
@@ -549,17 +579,24 @@ function follow(figure, seconds, show) {
   });
 }
 
-/** Put the trains in the table that screen readers read. */
+/** Put the trains in the table that screen readers read: a train with a
+ * change is two rows, the second its connection. */
 function rows(table, trains) {
   const labels = [null, "Destination", "Platform", "Expected"];
   table.tBodies[0].replaceChildren(
-    ...trains.map((train) => {
+    ...trains.flatMap(legs).map((leg) => {
       const row = document.createElement("tr");
+      if (leg.connection) {
+        row.className = "change";
+        row.dataset.at = leg.at;
+      }
+      const place = leg.connection ? `Change at ${leg.at} for ${leg.place}` : leg.place;
       ["time", "place", "platform", "expected"].forEach((key, n) => {
         const cell = row.insertCell();
         if (labels[n]) cell.dataset.label = labels[n];
-        if (key === "expected") cell.dataset.expected = train.expected;
-        cell.textContent = key === "expected" ? said(train.time, train.expected) : train[key];
+        if (key === "expected") cell.dataset.expected = leg.expected;
+        cell.textContent =
+          key === "expected" ? said(leg.time, leg.expected) : key === "place" ? place : leg[key];
       });
       return row;
     }),

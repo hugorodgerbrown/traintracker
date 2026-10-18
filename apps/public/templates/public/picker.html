@@ -11,7 +11,7 @@
   <input id="to" name="to" value="{{ typed.to }}" maxlength="{{ max_query }}"
     autocomplete="off" list="to-list" data-suggest="/api/stations" />
   <datalist id="to-list"></datalist>
-  <p class="hint">Only trains that call there, wherever they end up.</p>
+  <p class="hint">Only trains that call there, wherever they end up. Where none go there directly, the board shows journeys with one change.</p>
   <p class="or">or</p>
   <label for="platform">Platform <span class="optional">(optional)</span></label>
   <input id="platform" name="platform" value="{{ typed.platform }}" maxlength="4" autocomplete="off"

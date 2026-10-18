@@ -497,8 +497,8 @@ FILL_WINDOWS = (6 * 60, DAY)
 # Said on a timetable answer for today: a scheduled train further out than the
 # live window has no live status yet, so "scheduled" is not "running".
 LIVE_WINDOW_NOTE = (
-    "Live status, including delays and cancellations, shows only from two hours "
-    "before a train leaves; live_departures has it then."
+    "Live status, including delays and cancellations, is never known more than two "
+    "hours before a train leaves, so a scheduled train can still be cancelled."
 )
 FILLED_NOTE = (
     "Trains marked Scheduled are timetabled times: delays and cancellations show "

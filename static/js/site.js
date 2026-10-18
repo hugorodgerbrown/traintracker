@@ -379,12 +379,14 @@ function board(figure) {
     const cols = columns(layout[0]);
     // In units of the pitch (see site.css): a line of flaps is 1.6 high, with
     // 2px of margin; trains are 0.45 apart; the headings take 0.6 and 2px, and
-    // so does each day's name, with 0.45 above it.
+    // so does each day's name, with 0.45 above it. Between trains that 0.45
+    // replaces their gap; above the first train it is extra.
     const count = Math.max(1, trains.length);
     const lines = count * layout.length;
     const heads = layout.length === 1 ? 1 : 0;
     const days = trains.filter((_, n) => startsDay(trains, n)).length;
-    const units = lines * 1.6 + (count - 1) * 0.45 + heads * 0.6 + days * 0.6;
+    const lead = trains.length && startsDay(trains, 0) ? 0.45 : 0;
+    const units = lines * 1.6 + (count - 1) * 0.45 + heads * 0.6 + days * 0.6 + lead;
     const fixed = lines * 2 + heads * 2 + days * 2;
     // Each flap has 1px of margin on either side.
     const widest = across / cols - 2;

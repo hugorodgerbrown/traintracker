@@ -810,7 +810,7 @@ async def public_changes(crs: str, to: str) -> list[Journey]:
 
     A board to a station no train runs to directly shows these instead
     (apps/public/board.py). Each is two trains with a change between them at
-    one station; a walk or Tube link between them doesn't count. Booked times,
+    one station; a walk or Tube link between them doesn't count. Scheduled times,
     with live ones where Darwin has them, as plan_journey gives them.
     """
     a = app()

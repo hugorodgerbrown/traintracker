@@ -37,12 +37,12 @@ flowchart LR
 | Tool | Answers | Data |
 |---|---|---|
 | `find_station` | "Which Sudbury?" Station names ↔ CRS codes | Bundled station list |
-| `live_departures` | Next trains, expected times, platforms, delays, cancellations | Darwin, going on with scheduled timetable trains where fewer than `rows` run in its two hours; if it's not set up, booked times; if it's offline, booked times with a note saying so |
-| `departure_platform` | "Which platform is the 13:00 to Colchester?" One train's platform, flagged `live` or `booked` | Darwin (paged); booked platform from the timetable until the live one is announced |
+| `live_departures` | Next trains, expected times, platforms, delays, cancellations | Darwin, going on with scheduled timetable trains where fewer than `rows` run in its two hours; if it's not set up, scheduled times; if it's offline, scheduled times with a note saying so |
+| `departure_platform` | "Which platform is the 13:00 to Colchester?" One train's platform, flagged `live` or `scheduled` | Darwin (paged); scheduled platform from the timetable until the live one is announced |
 | `platform_departures` | "What are the next three trains from platform 7?" | Same as `departure_platform` |
-| `live_arrivals` | Trains arriving in the next ~2 hours | Darwin arrivals, going on with scheduled trains where short; if not set up, booked times; if offline, booked times with a note saying so |
+| `live_arrivals` | Trains arriving in the next ~2 hours | Darwin arrivals, going on with scheduled trains where short; if not set up, scheduled times; if offline, scheduled times with a note saying so |
 | `show_board` | "Show me the departures board for Liverpool Street." The same live departures or arrivals, drawn as a [departure board](#departure-board) | Same as `live_departures` and `live_arrivals` |
-| `timetable` | Booked departures/arrivals at a station on any date | Local timetable |
+| `timetable` | Scheduled departures/arrivals at a station on any date | Local timetable |
 | `service_details` | Every stop for one train | Whichever source issued the ID |
 | `plan_journey` | A to B with changes (up to `max_changes`, default 4), incl. cross-London links | Local timetable + Darwin live overlay |
 | `data_status` | What's configured, timetable freshness, what's missing; with `DJANGO_DEBUG=1` (a server you run yourself), also the timetable schema, the last refresh error and the Darwin allowance used | — |
@@ -65,7 +65,7 @@ Everything from here on is for running the server yourself. The public service a
 Set `TRAINTRACKER_DEMO=1` to test every tool before your accounts are approved. The server then uses generated example data and makes no network requests:
 
 - **Timetable:** a generated SCHEDULE feed for 25 real stations in East Anglia and London (Liverpool Street, Stratford, Chelmsford, Colchester, Ipswich, Norwich, Marks Tey, Sudbury, Cambridge, Kings Cross and others), running from today for 90 days. Sundays start later. It is stored in its own schema (`timetable_demo`), apart from the real timetable, and rebuilt each day. Demo mode still needs `DATABASE_URL`.
-- **Live boards:** Darwin departure, arrival and service-details responses are generated from that timetable in-process. About one train in five runs late, one in 25 is cancelled and one in 12 has a platform change; the same train on the same day always gets the same result. Large stations (Liverpool Street, Kings Cross, Cambridge, …) announce platforms 15 minutes before departure, so the booked-platform fallback gets exercised.
+- **Live boards:** Darwin departure, arrival and service-details responses are generated from that timetable in-process. About one train in five runs late, one in 25 is cancelled and one in 12 has a platform change; the same train on the same day always gets the same result. Large stations (Liverpool Street, Kings Cross, Cambridge, …) announce platforms 15 minutes before departure, so the scheduled-platform fallback gets exercised.
 
 Every board and plan carries a note that the data is generated, and `data_status` reports `demo_mode`. Ask for stations outside the demo network and you get an empty board.
 
@@ -82,7 +82,7 @@ Add that to the `traintracker` entry in the Claude desktop config (see [Add to t
 | 1 | **Rail Data Marketplace** — *Live Departure Board* product | **Yes** for live times | Free | Darwin: National Rail's real-time feed. Departure boards for the next 2 hours with expected times, platforms, delay/cancellation reasons, calling points, station alerts. The same data as station screens. | `live_departures`, live overlay in `plan_journey` |
 | 2 | **Network Rail Open Data (NTROD)** — *SCHEDULE* feed | **Yes** for timetables and planning | Free | The full GB passenger timetable from Network Rail's planning system, including short-term changes (engineering works, extra trains, cancellations) once published. Refreshed daily. | `timetable`, `plan_journey`, `service_details` for `tt:` IDs, offline fallback for the live tools |
 | 3 | Rail Data Marketplace — *Service Details* product | Optional | Free | Full live calling pattern for a train seen on a Darwin board. | `service_details` for `darwin:` IDs |
-| 4 | Rail Data Marketplace — *Live Arrival Board* product | Optional | Free | Darwin arrivals boards. Without it, arrivals show booked times. | `live_arrivals` |
+| 4 | Rail Data Marketplace — *Live Arrival Board* product | Optional | Free | Darwin arrivals boards. Without it, arrivals show scheduled times. | `live_arrivals` |
 
 ### 1. Rail Data Marketplace (Darwin)
 
@@ -130,14 +130,14 @@ flowchart TD
     L --> L1{Darwin key?}
     L1 -->|yes| Darwin
     Darwin -->|error or timeout:<br/>note says Darwin is offline| TT
-    L1 -->|no| TT[(Timetable<br/>booked times, flagged)]
+    L1 -->|no| TT[(Timetable<br/>scheduled times, flagged)]
 
     T --> TT
 
     P --> CSA[Connection Scan<br/>over the day's timetable]
     CSA --> OV{Today, departing<br/>within 2 hours?}
     OV -->|yes| Darwin2[Darwin expected times<br/>+ tight-connection flag]
-    Darwin2 -.->|offline| Note[Plan note: Darwin offline,<br/>times are booked]
+    Darwin2 -.->|offline| Note[Plan note: Darwin offline,<br/>times are scheduled]
 
     S --> ID{ID prefix}
     ID -->|darwin:| Darwin3[Darwin Service Details]
@@ -147,11 +147,11 @@ flowchart TD
 | Source | Freshness | Coverage | Cached for | Limits to know |
 |---|---|---|---|---|
 | Darwin | Real time | Now → +2 hours | 20 s | Darwin service IDs expire soon after the train runs |
-| Timetable (Postgres) | Daily (Network Rail publishes ~06:00) | Two days back → end of the published timetable (usually months) | Until the next rebuild | Booked times only; last-minute changes show up in Darwin, not here |
+| Timetable (Postgres) | Daily (Network Rail publishes ~06:00) | Two days back → end of the published timetable (usually months) | Until the next rebuild | Scheduled times only; last-minute changes show up in Darwin, not here |
 
 ### Trainline links
 
-A train from the timetable (`timetable`, `plan_journey`, `service_details` with a `tt:` ID, and the live tools when they fall back to booked times) carries `trainline_url`: that train's page on Trainline, with its stops and how it is running. The address is `<TRAINLINE_LIVE_URL>/departures/<station>/<token>`, where the token is the base64 of `/callingPattern/<train UID>/<run date>`. The station only titles the page: the board's station, the station a leg is boarded at, or the train's origin.
+A train from the timetable (`timetable`, `plan_journey`, `service_details` with a `tt:` ID, and the live tools when they fall back to scheduled times) carries `trainline_url`: that train's page on Trainline, with its stops and how it is running. The address is `<TRAINLINE_LIVE_URL>/departures/<station>/<token>`, where the token is the base64 of `/callingPattern/<train UID>/<run date>`. The station only titles the page: the board's station, the station a leg is boarded at, or the train's origin.
 
 - Trains from Darwin have no link: a Darwin service ID carries no train UID.
 - Trainline names stations by a slug of its own name for them. Most follow from the name in the station list; [`trainline_slugs.json`](apps/rail/data/trainline_slugs.json) holds the ones that differ, and `null` for stations Trainline has no live board for (mostly ones opened since 2022). A train that calls only at those has no link.
@@ -169,7 +169,7 @@ Darwin usage: 412,906 requests in the last 28 days, 8.26% of 5,000,000
 - **What is counted:** each request sent to Darwin, failed ones included. A board answered from the 20-second cache sends nothing and counts nothing. Demo mode counts nothing.
 - **The period:** a rolling 28 days. Railway periods are not simple to derive (the first and last of the year vary in length), and a rolling window is never less strict than the period it overlaps.
 - **Per product:** the count is kept for each Rail Data Marketplace product (`departures`, `arrivals`, `service`) and the percentage uses the total. If your allowance is per product, the percentage overstates your usage.
-- **Daily limit:** the server sends Darwin at most `DARWIN_DAILY_LIMIT` requests in one UK day (170,000 by default; the allowance works out at about 178,000 a day). Past that the live tools answer with booked times, and say why, until midnight. The count for the day is resumed after a restart. `0` turns the limit off.
+- **Daily limit:** the server sends Darwin at most `DARWIN_DAILY_LIMIT` requests in one UK day (170,000 by default; the allowance works out at about 178,000 a day). Past that the live tools answer with scheduled times, and say why, until midnight. The count for the day is resumed after a restart. `0` turns the limit off.
 - **Warnings:** the log gets a warning when usage passes 70% of the allowance and another at 90%. Each is given once, and again only if usage falls below the mark and returns, or the server restarts above it.
 - **Storage:** one small table, `darwin_requests`, in its own schema (`USAGE_SCHEMA`), so the count survives restarts and timetable refreshes. Counts gather in memory and are written when 50 are waiting or a minute has passed, and at shutdown; a server that is killed loses at most that many. A failed write is logged and retried, and never fails a tool call. Rows older than 60 days are deleted.
 
@@ -270,7 +270,7 @@ The train tools' settings, read by [`apps/rail/config.py`](apps/rail/config.py):
 | `DATABASE_URL` | — | Postgres database for the timetable (required), and for Django's own tables |
 | `TIMETABLE_SCHEMA` | `timetable` | Schema the timetable lives in (demo mode appends `_demo`) |
 | `USAGE_SCHEMA` | `traintracker_usage` | Schema for the count of requests sent to Darwin (see [Darwin allowance](#darwin-allowance)) |
-| `DARWIN_DAILY_LIMIT` | `170000` | Most requests sent to Darwin in one UK day; past it the live tools answer with booked times. `0` turns the limit off |
+| `DARWIN_DAILY_LIMIT` | `170000` | Most requests sent to Darwin in one UK day; past it the live tools answer with scheduled times. `0` turns the limit off |
 | `TIMETABLE_AUTO_REFRESH` | `1` | `0` stops the server downloading the timetable itself (use a cron job instead) |
 | `TIMETABLE_MAX_AGE_HOURS` | `26` | Re-download when older than this |
 | `TRAINTRACKER_DATA_DIR` | `$XDG_DATA_HOME/traintracker` if set, else `~/.traintracker` | Where the feed is downloaded to before import |
@@ -359,7 +359,7 @@ The stylesheet and script are served by WhiteNoise under names that carry a hash
 | Address | What it is |
 |---|---|
 | `/board/LST` | The next 10 departures from London Liverpool Street: live for the next two hours, then scheduled trains from the timetable where the board is short (see below) |
-| `/board/LST/9` | Departures from platform 9 only; a train whose live platform isn't announced yet is matched on its booked one |
+| `/board/LST/9` | Departures from platform 9 only; a train whose live platform isn't announced yet is matched on its scheduled one |
 | `/board/LST/COL` | Departures calling at Colchester, wherever they end: the Norwich trains too |
 | `/board/LST/COL?tv=1` | The board alone, filling a TV screen: see below |
 | `/board/LST/9?embed=1` | The same board alone, with no site header or footer, for an `<iframe>`. It is the only page another site may frame |
@@ -381,8 +381,8 @@ Version 0.1.0 is published. CI doesn't publish: a new version is published by ha
 
 ## Limitations
 
-- **Past running times** ("was the 08:00 late yesterday?") aren't available. Darwin only covers now → +2 hours, and the timetable is booked times.
-- **Darwin outages**: when Darwin is offline, the live tools show booked times and say that Darwin is offline, so delays, cancellations and live platforms are missing until it returns.
+- **Past running times** ("was the 08:00 late yesterday?") aren't available. Darwin only covers now → +2 hours, and the timetable is scheduled times.
+- **Darwin outages**: when Darwin is offline, the live tools show scheduled times and say that Darwin is offline, so delays, cancellations and live platforms are missing until it returns.
 - **Fares** aren't included.
 - **Tube/bus/tram** aren't in the timetable beyond the approximate London terminal links.
 - **Engineering works** appear in the timetable once Network Rail publishes them (usually well ahead), and in Darwin on the day.

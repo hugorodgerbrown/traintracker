@@ -257,14 +257,14 @@ async def test_show_board_has_the_trains_the_live_boards_have(
         shown = await call(client, "show_board", station="Liverpool Street", calling_at="Marks Tey")
         assert shown == live
         assert shown["source"] == "darwin"
-        # No arrivals feed in this set-up: both fall back to booked times.
+        # No arrivals feed in this set-up: both fall back to scheduled times.
         arrivals = await call(client, "show_board", station="Marks Tey", board="arrivals")
         assert arrivals == await call(client, "live_arrivals", station="Marks Tey")
         assert arrivals["board"] == "arrivals"
 
 
 async def test_timetable_board(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The timetable tool lists booked trains with their Trainline links."""
+    """The timetable tool lists scheduled trains with their Trainline links."""
     async with connect(tmp_path, monkeypatch) as client:
         out = await call(
             client,
@@ -283,6 +283,20 @@ async def test_timetable_board(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         assert out["services"][0]["trainline_url"] == trainline.train_url(
             TRAINLINE_LIVE_URL, uid, date(2026, 10, 2), ["MKT"]
         )
+
+
+async def test_todays_timetable_says_when_live_status_starts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Today's timetable and plans say live status starts two hours out; other days don't."""
+    monkeypatch.setattr(server, "datetime", _Frozen)
+    async with connect(tmp_path, monkeypatch) as client:
+        today = await call(client, "timetable", station="Marks Tey", date="2026-10-02")
+        later = await call(client, "timetable", station="Marks Tey", date="2026-10-05")
+        plan = await call(client, "plan_journey", origin="LST", destination="SUY")
+    assert today["messages"][-1] == server.LIVE_WINDOW_NOTE
+    assert server.LIVE_WINDOW_NOTE not in later["messages"]
+    assert plan["notes"][0].endswith(server.LIVE_WINDOW_NOTE)
 
 
 async def test_a_date_outside_the_timetable_is_refused(
@@ -488,7 +502,7 @@ def drop_timetable(db: TimetableDB) -> None:
 
 
 def _leg(dep: str, arr: str, dep_exp: str | None = None, arr_exp: str | None = None) -> JourneyLeg:
-    """A leg from A to B with these booked and expected times."""
+    """A leg from A to B with these scheduled and expected times."""
     return JourneyLeg(
         service_id="tt:X:2026-10-02",
         board_at=StationRef(name="A", crs="AAA"),
@@ -533,10 +547,10 @@ def test_when_parsing() -> None:
 
 
 @respx.mock
-async def test_darwin_outage_falls_back_to_booked_times(
+async def test_darwin_outage_falls_back_to_scheduled_times(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """With Darwin offline, live_departures gives booked times and says so."""
+    """With Darwin offline, live_departures gives scheduled times and says so."""
     async with connect(tmp_path, monkeypatch) as client:
         respx.get(f"{DARWIN_DEPARTURES_URL}/GetDepBoardWithDetails/MKT").mock(
             return_value=httpx.Response(200, text="<html>maintenance</html>")
@@ -565,14 +579,14 @@ async def test_darwin_outage_without_timetable_says_darwin_is_offline(
 async def test_darwin_outage_is_reported_by_departure_platform(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """With Darwin offline, departure_platform gives the booked platform."""
+    """With Darwin offline, departure_platform gives the scheduled platform."""
     monkeypatch.setattr(server, "datetime", _Frozen)
     async with connect(tmp_path, monkeypatch) as client:
         respx.get(f"{DARWIN_DEPARTURES_URL}/GetDepBoardWithDetails/LST").mock(
             side_effect=httpx.ConnectError("refused")
         )
         out = await call(client, "departure_platform", station="LST", time="13:00")
-    assert out["platform_source"] == "booked"
+    assert out["platform_source"] == "scheduled"
     assert out["note"].startswith("National Rail live data (Darwin) is offline")
 
 
@@ -580,14 +594,14 @@ async def test_darwin_outage_is_reported_by_departure_platform(
 async def test_darwin_outage_is_reported_by_plan_journey(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """With Darwin offline, a plan says once that its times are booked."""
+    """With Darwin offline, a plan says once that its times are scheduled."""
     monkeypatch.setattr(server, "datetime", _Frozen)
     async with connect(tmp_path, monkeypatch) as client:
         respx.get(url__startswith=DARWIN_DEPARTURES_URL).mock(return_value=httpx.Response(503))
         out = await call(client, "plan_journey", origin="LST", destination="Marks Tey")
     offline = [n for n in out["notes"] if "Darwin) is offline" in n]
     assert len(offline) == 1
-    assert offline[0].endswith("Times are booked.")
+    assert offline[0].endswith("Times are scheduled.")
 
 
 async def test_same_station_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -708,10 +722,10 @@ async def test_departure_platform_live(tmp_path: Path, monkeypatch: pytest.Monke
 
 
 @respx.mock
-async def test_departure_platform_falls_back_to_booked(
+async def test_departure_platform_falls_back_to_scheduled(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Without a live platform, the booked one is given and labelled."""
+    """Without a live platform, the scheduled one is given and labelled."""
     monkeypatch.setattr(server, "datetime", _Frozen)
     async with connect(tmp_path, monkeypatch) as client:
         respx.get(f"{DARWIN_DEPARTURES_URL}/GetDepBoardWithDetails/LST").mock(
@@ -723,8 +737,8 @@ async def test_departure_platform_falls_back_to_booked(
         missing = await error(client, "departure_platform", station="LST", time="13:30")
     # The timetable books the 13:00 to Colchester into platform 10.
     assert out["platform"] == "10"
-    assert out["platform_source"] == "booked"
-    assert out["note"].startswith("Booked for platform 10")
+    assert out["platform_source"] == "scheduled"
+    assert out["note"].startswith("Scheduled for platform 10")
     assert "No departure" in missing
 
 
@@ -820,7 +834,7 @@ async def test_a_train_already_on_the_board_is_not_added_again(
 async def test_a_platform_board_fills_with_that_platforms_trains(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Only scheduled trains booked for the platform are added."""
+    """Only scheduled trains scheduled for the platform are added."""
     async with connect(tmp_path, monkeypatch):
         b = _short_board()
         st = stations.by_crs("MKT")
@@ -849,7 +863,7 @@ async def test_a_full_board_and_a_missing_timetable_leave_the_board_alone(
 
 
 def test_a_late_train_is_dated_today() -> None:
-    """A booked time up to 12 hours before the board's start is today's, running late."""
+    """A scheduled time up to 12 hours before the board's start is today's, running late."""
     late = _live("21:10", "COL")
     undated = BoardService(
         service_id="darwin:x", source="darwin", origin=[], destination=[], scheduled=None

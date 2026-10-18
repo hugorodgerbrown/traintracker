@@ -291,18 +291,18 @@ def _minutes(hhmm: str) -> int | None:
     return int(match[1]) * 60 + int(match[2]) if match else None
 
 
-def said(booked_at: str, expected: str) -> str:
+def said(scheduled_at: str, expected: str) -> str:
     """Expected as a table says it, with how late the train is.
 
-    Where Expected is a later time than booked it says how late
+    Where Expected is a later time than scheduled it says how late
     ("15:44, 4 minutes late"), as the flaps show it ("15:44 +4", site.js
     running()). Past midnight counts forward; half a day or more the other way
     is early, and said as it is.
     """
-    booked, due = _minutes(booked_at), _minutes(expected)
-    if booked is None or due is None:
+    scheduled, due = _minutes(scheduled_at), _minutes(expected)
+    if scheduled is None or due is None:
         return expected
-    late = (due - booked) % 1440
+    late = (due - scheduled) % 1440
     if late == 0 or late >= 720:
         return expected
     return f"{expected}, {late} minute{'' if late == 1 else 's'} late"

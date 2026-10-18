@@ -106,7 +106,7 @@ async def test_the_budget_resumes_from_todays_count() -> None:
 
 
 @respx.mock
-async def test_past_the_daily_limit_live_tools_answer_with_booked_times(
+async def test_past_the_daily_limit_live_tools_answer_with_scheduled_times(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Past the daily limit, live tools answer from the timetable."""
@@ -116,11 +116,11 @@ async def test_past_the_daily_limit_live_tools_answer_with_booked_times(
             return_value=httpx.Response(200, json=load("darwin_departures_LST.json"))
         )
         live = await call(client, "live_departures", station="Liverpool Street")
-        booked = await call(client, "live_departures", station="Marks Tey")
+        scheduled = await call(client, "live_departures", station="Marks Tey")
     assert live["source"] == "darwin"
-    assert booked["source"] == "timetable"
-    assert booked["messages"][0].startswith("This server has used today's allowance")
-    assert booked["messages"][1] == "Showing booked times instead."
+    assert scheduled["source"] == "timetable"
+    assert scheduled["messages"][0].startswith("This server has used today's allowance")
+    assert scheduled["messages"][1] == "Showing scheduled times instead."
     assert route.call_count == 1
 
 

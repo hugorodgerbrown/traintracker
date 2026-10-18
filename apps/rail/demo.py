@@ -9,7 +9,7 @@ Set TRAINTRACKER_DEMO=1. The server then:
   delays, cancellations and platform changes that are fixed per train and day.
 
 Every tool therefore runs through its real code path (Darwin parsing and
-paging, booked-platform fallback, live overlay in plan_journey), with no
+paging, scheduled-platform fallback, live overlay in plan_journey), with no
 network access and no credentials.
 
     CBG --(GN)--> RYS --> SVG --> FPK --> KGX  ~~tube~~  LST

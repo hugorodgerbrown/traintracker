@@ -11,7 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, PrivateAttr
 
 Source = Literal["darwin", "timetable"]
-PlatformSource = Literal["live", "booked"]
+PlatformSource = Literal["live", "scheduled"]
 Status = Literal[
     "on_time", "late", "early", "cancelled", "delayed", "no_report", "scheduled", "unknown"
 ]
@@ -28,7 +28,7 @@ class StationRef(BaseModel):
 
 
 class CallingPoint(BaseModel):
-    """One stop of a service: its booked, expected and actual times and platform."""
+    """One stop of a service: its scheduled, expected and actual times and platform."""
 
     station: StationRef
     scheduled_arrival: str | None = None
@@ -50,17 +50,17 @@ class BoardService(BaseModel):
     mode: str = Field("train", description="train, bus (incl. replacement bus) or ferry.")
     origin: list[StationRef]
     destination: list[StationRef]
-    scheduled: str | None = Field(None, description="Booked time at this station (HH:MM).")
+    scheduled: str | None = Field(None, description="Scheduled time at this station (HH:MM).")
     date: str | None = Field(
         None,
-        description="The date of the booked time (YYYY-MM-DD), where it may be a later day "
+        description="The date of the scheduled time (YYYY-MM-DD), where it may be a later day "
         "than the board's: on timetable trains, and on a live board that goes on with them.",
     )
     expected: str | None = Field(None, description="Forecast/actual time or status text.")
     platform: str | None = None
     platform_source: PlatformSource | None = Field(
         None,
-        description="'live' if announced by the live feed, 'booked' if from the timetable "
+        description="'live' if announced by the live feed, 'scheduled' if from the timetable "
         "(can still change).",
     )
     status: Status = "unknown"
@@ -151,14 +151,14 @@ class JourneyPlan(BaseModel):
 
 
 class PlatformCheck(BaseModel):
-    """Which platform one train leaves from, and whether it is live or booked."""
+    """Which platform one train leaves from, and whether it is live or scheduled."""
 
     station: StationRef
     service: BoardService
     platform: str | None = None
     platform_source: PlatformSource | None = None
     minutes_to_departure: int | None = Field(
-        None, description="From now to the expected (else booked) departure."
+        None, description="From now to the expected (else scheduled) departure."
     )
     note: str
 

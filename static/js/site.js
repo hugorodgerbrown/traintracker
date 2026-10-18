@@ -46,7 +46,7 @@ function columns(parts) {
   return parts.reduce((n, part) => n + (Array.isArray(part) ? part[1] : part), 0);
 }
 
-/** How a train is running, from its booked time and what Expected says:
+/** How a train is running, from its scheduled time and what Expected says:
  * "cancelled", "late", or "" (on time, early, or no report). A late train
  * with an expected time shows how late too, as far as the column allows:
  * "15:41 +5". */
@@ -58,12 +58,12 @@ function running(time, expected, width = 9) {
     const match = /^(\d\d):(\d\d)$/.exec(hhmm);
     return match ? Number(match[1]) * 60 + Number(match[2]) : null;
   };
-  const booked = minutes(time);
+  const scheduled = minutes(time);
   const due = minutes(expected);
-  if (booked === null || due === null) return { state: "", shows: expected };
+  if (scheduled === null || due === null) return { state: "", shows: expected };
   // Past midnight 23:58 is due at 00:03, five minutes late. Half a day or more
   // the other way is early, and an early train is shown as it is.
-  const late = (due - booked + 1440) % 1440;
+  const late = (due - scheduled + 1440) % 1440;
   if (late === 0 || late >= 720) return { state: "", shows: expected };
   const shows = [`${expected} +${late}`, `${expected}+${late}`, expected].find(
     (text) => text.length <= width,

@@ -100,10 +100,10 @@
 </blockquote>
 <p>The assistant uses <em>Departure platform</em>. The answer contains:</p>
 <ul>
-  <li>the train: its booked departure time, destination and operator;</li>
+  <li>the train: its scheduled departure time, destination and operator;</li>
   <li>
     the platform, and whether it is <strong>live</strong> (announced) or
-    <strong>booked</strong> (from the timetable, and able to change);
+    <strong>scheduled</strong> (from the timetable, and able to change);
   </li>
   <li>the minutes until it leaves, and the expected time if it is late;</li>
   <li>
@@ -112,7 +112,7 @@
 </ul>
 <p>
   Large stations often announce a platform about 10 minutes before departure.
-  Until then you get the booked platform, marked as such.
+  Until then you get the scheduled platform, marked as such.
 </p>
 
 <h3>2. Live departures</h3>
@@ -127,7 +127,7 @@
   train in the next two hours:
 </p>
 <ul>
-  <li>booked and expected departure times;</li>
+  <li>scheduled and expected departure times;</li>
   <li>its status: on time, late and by how many minutes, or cancelled;</li>
   <li>the reason for a delay or cancellation, where one is given;</li>
   <li>the platform, the operator and the destination;</li>
@@ -155,7 +155,7 @@
     number of changes;
   </li>
   <li>
-    for each leg: the train, where to board and where to get off, and the booked
+    for each leg: the train, where to board and where to get off, and the scheduled
     platform where known;
   </li>
   <li>
@@ -198,14 +198,14 @@
   </dd>
   <dt>Departure platform <code>departure_platform</code></dt>
   <dd>
-    The platform for one train: the next departure, or the one booked at a time
+    The platform for one train: the next departure, or the one scheduled at a time
     you give.
   </dd>
   <dt>Departures from a platform <code>platform_departures</code></dt>
   <dd>The next trains to leave from one platform.</dd>
   <dt>Timetable <code>timetable</code></dt>
   <dd>
-    Booked departures or arrivals at a station on any date the timetable covers,
+    Scheduled departures or arrivals at a station on any date the timetable covers,
     usually months ahead.
   </dd>
   <dt>Service details <code>service_details</code></dt>

@@ -26,7 +26,7 @@ NR_SCHEDULE_URL = (
 TRAINLINE_LIVE_URL = "https://www.thetrainline.com/live"
 
 
-# Requests sent to Darwin in one day before the live tools fall back to booked
+# Requests sent to Darwin in one day before the live tools fall back to scheduled
 # times. The free allowance is 5 million per four weeks, about 178,000 a day.
 DARWIN_DAILY_LIMIT = 170_000
 

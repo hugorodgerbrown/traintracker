@@ -200,7 +200,7 @@ class DarwinClient:
 
         The detailed board returns at most PAGE_ROWS services per request, so
         larger boards are fetched page by page, each starting at the last
-        service's booked time. `until` stops paging early once it returns True.
+        service's scheduled time. `until` stops paging early once it returns True.
         """
         offset = max(-119, min(offset_minutes, 119))
         end = offset + max(1, min(window_minutes, 120))
@@ -215,7 +215,7 @@ class DarwinClient:
             if last is None:
                 break
             # Minutes from the board's reference time to the last train; late
-            # trains booked before "now" count as 0.
+            # trains scheduled before "now" count as 0.
             gap = (_minutes(last) - first.ref_minutes) % (24 * 60)
             nxt = max(offset + 1, 0 if gap > 12 * 60 else gap)
             if nxt >= min(end, 120):

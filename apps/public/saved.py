@@ -27,10 +27,9 @@ from apps.public.models import SavedBoard
 logger = logging.getLogger(__name__)
 
 NOT_A_BOARD = "No such board."
-
-
-class BadRequest(Exception):
-    """What was posted isn't what the endpoint takes. The message is safe to show."""
+NOT_JSON = "Send a JSON object."
+NOT_TRUE_OR_FALSE = "Say whether it is a favourite: true or false."
+TOO_MANY = f"Send at most {SavedBoard.MAX_FAVOURITES} favourites."
 
 
 def _board(path: str) -> dict[str, str]:
@@ -107,30 +106,28 @@ def move(user: AbstractBaseUser, last: tt.BoardKey | None, favourites: list[tt.B
             opened(user, last)
 
 
-def _key(path: Any) -> tt.BoardKey:
-    """The board a posted address names, or BadRequest."""
-    key = tt.from_path(path) if isinstance(path, str) else None
-    if key is None:
-        raise BadRequest(NOT_A_BOARD)
-    return key
+def _key(path: Any) -> tt.BoardKey | None:
+    """The board a posted address names, or None."""
+    return tt.from_path(path) if isinstance(path, str) else None
 
 
-def _posted(request: HttpRequest) -> dict[str, Any]:
-    """The JSON object posted, or BadRequest."""
+def _posted(request: HttpRequest) -> dict[str, Any] | None:
+    """The JSON object posted, or None if the body isn't one."""
     try:
         body = json.loads(request.body)
-    except ValueError as exc:
-        raise BadRequest("Send a JSON object.") from exc
-    if not isinstance(body, dict):
-        raise BadRequest("Send a JSON object.")
-    return body
+    except ValueError:
+        return None
+    return body if isinstance(body, dict) else None
 
 
-def _answer(request: HttpRequest, status: int = 200, error: str = "") -> JsonResponse:
-    """The account's boards now, or why the request was refused."""
-    if error:
-        return JsonResponse({"error": error}, status=status)
-    return JsonResponse(state(signed_in_user(request)), status=status)
+def _refused(error: str) -> JsonResponse:
+    """A 400 saying why. ``error`` is one of this module's own messages."""
+    return JsonResponse({"error": error}, status=400)
+
+
+def _answer(request: HttpRequest) -> JsonResponse:
+    """The account's boards now."""
+    return JsonResponse(state(signed_in_user(request)))
 
 
 @never_cache
@@ -153,10 +150,13 @@ def boards(request: HttpRequest) -> JsonResponse:
 @require_POST
 def boards_opened(request: HttpRequest) -> JsonResponse:
     """Remember the board posted (``{"path": "/board/LST"}``) as the last one opened."""
-    try:
-        opened(signed_in_user(request), _key(_posted(request).get("path")))
-    except BadRequest as exc:
-        return _answer(request, 400, str(exc))
+    body = _posted(request)
+    if body is None:
+        return _refused(NOT_JSON)
+    key = _key(body.get("path"))
+    if key is None:
+        return _refused(NOT_A_BOARD)
+    opened(signed_in_user(request), key)
     return _answer(request)
 
 
@@ -165,13 +165,16 @@ def boards_opened(request: HttpRequest) -> JsonResponse:
 @require_POST
 def boards_favourite(request: HttpRequest) -> JsonResponse:
     """Add or remove a favourite: ``{"path": "/board/LST", "favourite": true}``."""
-    try:
-        body = _posted(request)
-        if not isinstance(body.get("favourite"), bool):
-            raise BadRequest("Say whether it is a favourite: true or false.")
-        favour(signed_in_user(request), _key(body.get("path")), body["favourite"])
-    except BadRequest as exc:
-        return _answer(request, 400, str(exc))
+    body = _posted(request)
+    if body is None:
+        return _refused(NOT_JSON)
+    on = body.get("favourite")
+    if not isinstance(on, bool):
+        return _refused(NOT_TRUE_OR_FALSE)
+    key = _key(body.get("path"))
+    if key is None:
+        return _refused(NOT_A_BOARD)
+    favour(signed_in_user(request), key, on)
     return _answer(request)
 
 
@@ -184,14 +187,12 @@ def boards_move(request: HttpRequest) -> JsonResponse:
     Addresses that no longer name a board are skipped, not refused: the browser
     may have kept them from an older version of the site.
     """
-    try:
-        body = _posted(request)
-        paths = body.get("favourites", [])
-        if not isinstance(paths, list) or len(paths) > SavedBoard.MAX_FAVOURITES:
-            raise BadRequest(f"Send at most {SavedBoard.MAX_FAVOURITES} favourites.")
-    except BadRequest as exc:
-        return _answer(request, 400, str(exc))
-    favourites = [k for p in paths if isinstance(p, str) and (k := tt.from_path(p))]
-    last = body.get("last")
-    move(signed_in_user(request), tt.from_path(last) if isinstance(last, str) else None, favourites)
+    body = _posted(request)
+    if body is None:
+        return _refused(NOT_JSON)
+    paths = body.get("favourites", [])
+    if not isinstance(paths, list) or len(paths) > SavedBoard.MAX_FAVOURITES:
+        return _refused(TOO_MANY)
+    favourites = [k for p in paths if (k := _key(p))]
+    move(signed_in_user(request), _key(body.get("last")), favourites)
     return _answer(request)

@@ -175,7 +175,7 @@ def test_posts_need_the_token(user: Any) -> None:
         ("saved_boards_opened", {"path": "/board/lst"}, saved.NOT_A_BOARD),
         ("saved_boards_opened", {"path": "https://example.com/board/LST"}, saved.NOT_A_BOARD),
         ("saved_boards_opened", {}, saved.NOT_A_BOARD),
-        ("saved_boards_opened", ["/board/LST"], "Send a JSON object."),
+        ("saved_boards_opened", ["/board/LST"], saved.NOT_JSON),
         ("saved_boards_favourite", {"path": "/board/LST"}, "true or false"),
         ("saved_boards_favourite", {"path": "/board/XXX", "favourite": True}, saved.NOT_A_BOARD),
         ("saved_boards_move", {"favourites": "/board/LST"}, "at most 12"),

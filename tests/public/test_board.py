@@ -16,6 +16,7 @@ from apps.public import boards as views
 from apps.rail import runtime
 from apps.rail.config import UK_TZ
 from apps.rail.schemas import Board
+from tests.public import fakes
 from tests.public.fakes import BASE, FakeChanges, FakeFetch
 
 pytestmark = pytest.mark.django_db
@@ -205,6 +206,37 @@ def test_a_board_is_a_page_with_the_trains_in_it(client: Client, fetch: FakeFetc
     assert fetch.calls == [("LST", None, None)]
 
 
+def test_a_short_board_goes_on_with_scheduled_trains(client: Client, fetch: FakeFetch) -> None:
+    """Timetable trains say Scheduled, a later day comes under its name, and both are credited."""
+    fetch.scheduled = True
+    text = _text(client.get("/board/LST"))
+    assert (
+        '<tr data-scheduled="1"><td>17:50</td><td data-label="Destination">Colchester</td>'
+        '<td data-label="Platform">10</td>'
+        '<td data-label="Expected" data-expected="Scheduled">Scheduled</td></tr>'
+    ) in text
+    assert '<tr class="day"><th colspan="4" scope="rowgroup">Saturday 3 October</th></tr>' in text
+    assert '<tr data-scheduled="1" data-day="Saturday 3 October"><td>06:05</td>' in text
+    # One divider for the day, before its first train only.
+    assert text.count('<tr class="day">') == 1
+    assert (
+        "Powered by National Rail Enquiries</a> · "
+        "Scheduled times: Network Rail data feeds (OGL v3.0)"
+    ) in text
+    trains = client.get("/api/board/LST").json()["trains"]
+    assert [(t["expected"], t["scheduled"], t["day"]) for t in trains[3:]] == [
+        ("Scheduled", True, ""),
+        ("Scheduled", True, "Saturday 3 October"),
+    ]
+
+
+def test_a_live_board_credits_the_live_feed_alone(client: Client) -> None:
+    """With no scheduled trains on it, a board names one source."""
+    text = _text(client.get("/board/LST"))
+    assert "Scheduled times" not in text
+    assert '<tr class="day">' not in text
+
+
 def test_a_board_for_one_destination(
     client: Client, fetch: FakeFetch, changes: FakeChanges
 ) -> None:
@@ -260,11 +292,15 @@ def test_a_board_with_no_direct_train_shows_journeys_with_a_change(
         "place": "Ipswich",
         "platform": "13",
         "expected": "On time",
+        "scheduled": False,
+        "day": "",
         "change": {
             "time": "16:16",
             "place": "Sudbury (Suffolk)",
             "platform": "3",
             "expected": "On time",
+            "scheduled": False,
+            "day": "",
             "at": "Marks Tey",
         },
     }
@@ -392,6 +428,8 @@ def test_the_feed_is_the_board_as_data(client: Client) -> None:
             "place": "Norwich & Clacton-on-Sea",
             "platform": "9",
             "expected": "15:44",
+            "scheduled": False,
+            "day": "",
         }
     ]
     # The pages fetch again as the minute turns.
@@ -570,3 +608,16 @@ def test_boards_in_the_app(client: Client, tmp_path: Path, monkeypatch: pytest.M
     finally:
         runtime.stop()
         REAL_SHARED.cache_clear()
+
+
+def test_a_connection_with_no_live_time_says_scheduled() -> None:
+    """A train of a journey that Darwin has no time for yet is a scheduled one, as on any board."""
+    leg = fakes._leg("MKT", "SUY", "18:16", "18:36", "Sudbury (Suffolk)", "3")
+    assert boards._leg(leg) | {"time": ""} == {
+        "time": "",
+        "place": "Sudbury (Suffolk)",
+        "platform": "3",
+        "expected": "Scheduled",
+        "scheduled": True,
+        "day": "",
+    }

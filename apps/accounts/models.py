@@ -112,6 +112,10 @@ class User(BaseModel, AbstractUser):
 class SignInRequestQuerySet(models.QuerySet["SignInRequest"]):
     """Queries over sign-in requests."""
 
+    def unused(self) -> SignInRequestQuerySet:
+        """Return requests not yet used or retired, expired or not."""
+        return self.filter(used_at__isnull=True)
+
     def live(self) -> SignInRequestQuerySet:
         """Return requests that are unused and unexpired."""
         return self.filter(used_at__isnull=True, expires_at__gt=timezone.now())
@@ -156,6 +160,14 @@ class SignInRequest(BaseModel):
         """Model metadata."""
 
         ordering = ["-created_at"]
+        constraints = [
+            # Only the newest email for an address works (sign_in.issue).
+            models.UniqueConstraint(
+                fields=["email_key"],
+                condition=models.Q(used_at__isnull=True),
+                name="one_unused_sign_in_per_address",
+            )
+        ]
 
     def to_string(self) -> str:
         """Return who it was for and whether it was used."""

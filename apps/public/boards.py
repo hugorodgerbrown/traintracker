@@ -88,16 +88,25 @@ def _figure_context(
         "problem": problem,
         "refresh": tt.REFRESH,
         "now": datetime.now(UK_TZ),
-        "trains": [_said(t) for t in data["trains"]],
+        "trains": _with_dividers(data["trains"]),
+        "mixed": data["source"] == "darwin"
+        and any(leg["scheduled"] for t in data["trains"] for leg in (t, t.get("change", t))),
     }
 
 
-def _said(train: dict[str, Any]) -> dict[str, Any]:
-    """A train with its Expected as the table says it, and its connection's."""
-    said = train | {"said": tt.said(train["time"], train["expected"])}
-    if change := train.get("change"):
-        said["change"] = change | {"said": tt.said(change["time"], change["expected"])}
-    return said
+def _with_dividers(trains: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The trains as the table says them, each that starts a new day with its divider.
+
+    A train with a change has its connection's Expected said too.
+    """
+    out, day = [], ""
+    for t in trains:
+        said = t | {"said": tt.said(t["time"], t["expected"]), "divider": t["day"] != day}
+        if change := t.get("change"):
+            said["change"] = change | {"said": tt.said(change["time"], change["expected"])}
+        out.append(said)
+        day = t["day"]
+    return out
 
 
 def _board_page(

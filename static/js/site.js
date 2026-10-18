@@ -137,14 +137,17 @@ function board(figure) {
   );
   const headings = { time, place, platform, expected };
   // The table says Expected in words ("15:44, 4 minutes late"); the flaps
-  // want the time itself, which the cell carries in data-expected. A row
-  // marked "change" is the connection of the train above it.
+  // want the time itself, which the cell carries in data-expected. A row of
+  // its own names each new day; the trains under it carry it in data-day. A
+  // row marked "change" is the connection of the train above it.
   let trains = [];
   for (const row of table.tBodies[0].rows) {
+    if (row.classList.contains("day")) continue;
     const [time, place, platform, expected] = Array.from(row.cells, (cell) =>
       (cell.dataset.expected ?? cell.textContent).trim(),
     );
-    const train = { time, place, platform, expected };
+    const scheduled = row.dataset.scheduled === "1";
+    const train = { time, place, platform, expected, scheduled, day: row.dataset.day || "" };
     if (row.classList.contains("change") && trains.length) {
       trains[trains.length - 1].change = { ...train, at: row.dataset.at };
     } else {
@@ -208,7 +211,18 @@ function board(figure) {
         }),
       );
     }
-    for (const train of trains) {
+    for (let n = 0; n < trains.length; n++) {
+      const train = trains[n];
+      if (startsDay(trains, n)) {
+        // A train on a later day than the board's comes under its day's name.
+        const day = document.createElement("div");
+        day.className = "line day";
+        const label = document.createElement("span");
+        label.textContent = train.day;
+        label.style.gridColumn = "1 / -1";
+        day.append(label);
+        flaps.append(day);
+      }
       const service = document.createElement("div");
       service.className = "service";
       for (const parts of legs(train).flatMap(() => layout)) {
@@ -232,7 +246,9 @@ function board(figure) {
   /** Turn every flap to the trains' letters, laying the board out first if needed. */
   function draw() {
     const layout = onTv() ? tvLayout() : panel.clientWidth < NARROW_BELOW ? NARROW : WIDE;
-    const key = `${layout.length}:${columns(layout[0])}:${trains.map((t) => legs(t).length)}`;
+    const days = trains.map((train, n) => (startsDay(trains, n) ? train.day : "")).join("|");
+    const shape = trains.map((t) => legs(t).length).join("");
+    const key = `${layout.length}:${columns(layout[0])}:${shape}:${days}`;
     if (key !== built) build(layout);
     built = key;
     laidOut = layout;
@@ -241,7 +257,8 @@ function board(figure) {
     let i = 0;
     trains.forEach((train, row) => {
       for (const leg of legs(train)) {
-        // A late train's Expected is white, a cancelled one's on red flaps.
+        // A late train's Expected is white, a cancelled one's on red flaps, and
+        // a scheduled one's (from the timetable, not live) pale.
         const run = running(leg.time, leg.expected);
         const text = {
           ...leg,
@@ -261,6 +278,7 @@ function board(figure) {
               const cell = cells[i++];
               cell.classList.toggle("late", key === "expected" && run.state === "late");
               cell.classList.toggle("cancelled", key === "expected" && run.state === "cancelled");
+              cell.classList.toggle("scheduled", key === "expected" && Boolean(leg.scheduled));
               turn(cell, character, row * 2 + (column++ >> 2));
             }
           }
@@ -384,12 +402,16 @@ function board(figure) {
     const { across, down } = inner();
     const cols = columns(layout[0]);
     // In units of the pitch (see site.css): a line of flaps is 1.6 high, with
-    // 2px of margin; trains are 0.45 apart; the headings take 0.6 and 2px.
+    // 2px of margin; trains are 0.45 apart; the headings take 0.6 and 2px, and
+    // so does each day's name, with 0.45 above it. Between trains that 0.45
+    // replaces their gap; above the first train it is extra.
     const count = Math.max(1, trains.length);
     const lines = Math.max(1, trains.flatMap(legs).length) * layout.length;
     const heads = layout.length === 1 ? 1 : 0;
-    const units = lines * 1.6 + (count - 1) * 0.45 + heads * 0.6;
-    const fixed = lines * 2 + heads * 2;
+    const days = trains.filter((_, n) => startsDay(trains, n)).length;
+    const lead = trains.length && startsDay(trains, 0) ? 0.45 : 0;
+    const units = lines * 1.6 + (count - 1) * 0.45 + heads * 0.6 + days * 0.6 + lead;
+    const fixed = lines * 2 + heads * 2 + days * 2;
     // Each flap has 1px of margin on either side.
     const widest = across / cols - 2;
     if (!clockFlaps || !onTv()) return Math.min(widest, (down - fixed) / units);
@@ -538,7 +560,7 @@ function follow(figure, seconds, show) {
           return item;
         }),
       );
-      sourceCredit(credit, data.source);
+      sourceCredit(credit, data.source, data.trains);
       updated.textContent = `Updated ${data.updated}`;
       status.textContent = "";
       good = Date.now();
@@ -579,42 +601,67 @@ function follow(figure, seconds, show) {
   });
 }
 
-/** Put the trains in the table that screen readers read: a train with a
- * change is two rows, the second its connection. */
+/** Whether train `n` is the first on a later day than the one before it. */
+function startsDay(trains, n) {
+  return Boolean(trains[n].day) && trains[n].day !== (n ? trains[n - 1].day : "");
+}
+
+/** Put the trains in the table that screen readers read, each new day under
+ * its name. A train with a change is two rows, the second its connection. */
 function rows(table, trains) {
   const labels = [null, "Destination", "Platform", "Expected"];
   table.tBodies[0].replaceChildren(
-    ...trains.flatMap(legs).map((leg) => {
-      const row = document.createElement("tr");
-      if (leg.connection) {
-        row.className = "change";
-        row.dataset.at = leg.at;
+    ...trains.flatMap((train, n) => {
+      const out = [];
+      if (startsDay(trains, n)) {
+        const day = document.createElement("tr");
+        day.className = "day";
+        const name = document.createElement("th");
+        name.colSpan = 4;
+        name.scope = "rowgroup";
+        name.textContent = train.day;
+        day.append(name);
+        out.push(day);
       }
-      const place = leg.connection ? `Change at ${leg.at} for ${leg.place}` : leg.place;
-      ["time", "place", "platform", "expected"].forEach((key, n) => {
-        const cell = row.insertCell();
-        if (labels[n]) cell.dataset.label = labels[n];
-        if (key === "expected") cell.dataset.expected = leg.expected;
-        cell.textContent =
-          key === "expected" ? said(leg.time, leg.expected) : key === "place" ? place : leg[key];
-      });
-      return row;
+      for (const leg of legs(train)) {
+        const row = document.createElement("tr");
+        if (leg.connection) {
+          row.className = "change";
+          row.dataset.at = leg.at;
+        } else if (leg.day) {
+          row.dataset.day = leg.day;
+        }
+        if (leg.scheduled) row.dataset.scheduled = "1";
+        const place = leg.connection ? `Change at ${leg.at} for ${leg.place}` : leg.place;
+        ["time", "place", "platform", "expected"].forEach((key, n) => {
+          const cell = row.insertCell();
+          if (labels[n]) cell.dataset.label = labels[n];
+          if (key === "expected") cell.dataset.expected = leg.expected;
+          cell.textContent =
+            key === "expected" ? said(leg.time, leg.expected) : key === "place" ? place : leg[key];
+        });
+        out.push(row);
+      }
+      return out;
     }),
   );
 }
 
-function sourceCredit(credit, source) {
+const SCHEDULED_CREDIT = "Scheduled times: Network Rail data feeds (OGL v3.0)";
+
+/** Credit where the times come from: the live feed, the timetable, or both. */
+function sourceCredit(credit, source, trains) {
   if (source !== "darwin") {
-    credit.textContent = "Booked times: Network Rail data feeds (OGL v3.0)";
+    credit.textContent = SCHEDULED_CREDIT;
     return;
   }
-  if (credit.querySelector("a")) return;
   const link = document.createElement("a");
   link.href = "https://www.nationalrail.co.uk/";
   link.target = "_blank";
   link.rel = "noopener";
   link.textContent = "Powered by National Rail Enquiries";
-  credit.replaceChildren(link);
+  const mixed = trains.flatMap(legs).some((leg) => leg.scheduled);
+  credit.replaceChildren(link, ...(mixed ? [` · ${SCHEDULED_CREDIT}`] : []));
 }
 
 // ---------------------------------------------------------------- TV mode

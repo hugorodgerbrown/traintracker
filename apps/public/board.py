@@ -28,7 +28,7 @@ import re
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, cast
 from urllib.parse import quote
 
@@ -55,6 +55,8 @@ MAX_SUGGESTIONS = 8
 # What one client address may do: (at once, a minute). A page open on a screen
 # takes one a minute; this leaves room for an office of screens behind one address.
 BOARD_LIMIT = (30, 60.0)
+# What Expected says for a train from the timetable, not the live feed.
+SCHEDULED = "Scheduled"
 # What the feed says when a board can't be had; the pages say why.
 FEED_UNAVAILABLE = "Board temporarily unavailable."
 # A platform as the board's address has it: "9", "10A", "B".
@@ -177,17 +179,27 @@ def parse(station: str, then: str | None = None) -> BoardKey | None:
     return BoardKey(st.crs, platform=platform) if platform else None
 
 
-def _train(service: BoardService) -> dict[str, str]:
-    """What each column of the board says for one train.
+def _train(service: BoardService, board_date: str) -> dict[str, Any]:
+    """What each column of the board says for one train, and which day it runs.
 
-    The same as the chat's board app (ui/board.html) shows.
+    The same as the chat's board app (ui/board.html) shows. A train from the
+    timetable rather than the live feed says Scheduled in Expected, so it is
+    never read as a live time (TRA-33). `day` names the day it runs on where
+    that isn't the board's ("Monday 19 October"), and is empty otherwise.
     """
-    expected = "Cancelled" if service.status == "cancelled" else service.expected or ""
+    if service.source == "timetable":
+        expected = SCHEDULED
+    elif service.status == "cancelled":
+        expected = "Cancelled"
+    else:
+        expected = (service.expected or "").removesuffix("*")
     return {
         "time": service.scheduled or "",
         "place": " & ".join(p.name for p in service.destination),
         "platform": service.platform or "",
-        "expected": expected.removesuffix("*"),
+        "expected": expected,
+        "scheduled": service.source == "timetable",
+        "day": day_name(service.date) if service.date and service.date != board_date else "",
     }
 
 
@@ -196,14 +208,25 @@ def _hhmm(iso: str) -> str:
     return datetime.fromisoformat(iso).strftime("%H:%M")
 
 
-def _leg(leg: JourneyLeg) -> dict[str, str]:
-    """What each column of the board says for one train of a journey."""
-    expected = "Cancelled" if leg.cancelled else leg.depart_expected or ""
+def _leg(leg: JourneyLeg) -> dict[str, Any]:
+    """What each column of the board says for one train of a journey.
+
+    A train with no live time says Scheduled, as a timetable train on the
+    board does (TRA-33).
+    """
+    if leg.cancelled:
+        expected = "Cancelled"
+    elif leg.depart_expected:
+        expected = leg.depart_expected.removesuffix("*")
+    else:
+        expected = SCHEDULED
     return {
         "time": _hhmm(leg.depart_scheduled),
         "place": leg.destination,
         "platform": leg.platform or "",
-        "expected": expected.removesuffix("*"),
+        "expected": expected,
+        "scheduled": expected == SCHEDULED,
+        "day": "",
     }
 
 
@@ -215,6 +238,12 @@ def _journey(journey: Journey) -> dict[str, Any]:
     """
     first, then = journey.legs
     return _leg(first) | {"change": _leg(then) | {"at": then.board_at.name}}
+
+
+def day_name(iso: str) -> str:
+    """A date as a board's day divider says it: "Monday 19 October"."""
+    day = date.fromisoformat(iso)
+    return f"{day:%A} {day.day} {day:%B}"
 
 
 def minute_left(minute: int) -> float:
@@ -237,7 +266,7 @@ def payload(
     `updated` is when it was asked for. With `journeys` (and no trains of its
     own), the board is those journeys, each a train and its connection.
     """
-    trains: list[dict[str, Any]] = [_train(s) for s in board.services]
+    trains: list[dict[str, Any]] = [_train(s, board.date) for s in board.services]
     changing = [] if trains else journeys or []
     return {
         "station": {"name": board.station.name, "crs": board.station.crs},

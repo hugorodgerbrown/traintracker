@@ -437,7 +437,8 @@ blockquote p {
 
 .departures .station span,
 .departures th,
-.departures .heads {
+.departures .heads,
+.departures .day {
   color: var(--pale);
   font-size: 0.6875rem;
   font-weight: 400;
@@ -534,6 +535,27 @@ blockquote p {
 .departures .cell.cancelled {
   background: var(--cancelled);
   color: #ffffff;
+}
+
+/* A scheduled train (the timetable's, not yet live) says so in pale letters:
+   amber stays the live, on-time colour. The word says it too (TRA-33). */
+.departures .cell.scheduled {
+  color: var(--pale);
+}
+
+/* The name of a later day, above its first train. */
+.departures .day {
+  margin: calc(var(--pitch) * 0.45) 0 2px;
+}
+
+.departures .day + .service {
+  margin-top: 0;
+}
+
+.departures .day span {
+  overflow: hidden;
+  padding-left: 1px;
+  white-space: nowrap;
 }
 
 /* The seam where a flap folds. */
@@ -851,7 +873,8 @@ blockquote p {
   margin-inline: auto;
 }
 
-.tv .departures .heads {
+.tv .departures .heads,
+.tv .departures .day {
   font-size: calc(var(--pitch) * 0.45);
   line-height: 1.2;
 }

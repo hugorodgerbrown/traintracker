@@ -182,10 +182,15 @@
   <dt>Live departures <code>live_departures</code></dt>
   <dd>
     The departure board for the next two hours: expected times, platforms,
-    delays and cancellations.
+    delays and cancellations. Where fewer trains than asked for run in those
+    two hours, it goes on with scheduled trains from the timetable, up to a day
+    ahead.
   </dd>
   <dt>Live arrivals <code>live_arrivals</code></dt>
-  <dd>The arrivals board for the next two hours.</dd>
+  <dd>
+    The arrivals board for the next two hours, going on with scheduled trains
+    where it is short.
+  </dd>
   <dt>Show a departure board <code>show_board</code></dt>
   <dd>
     The same departures or arrivals, drawn on screen as a departure board. Used
@@ -220,7 +225,9 @@
 <ul>
   <li>
     <strong>Live data covers the next two hours.</strong> Beyond that, times are
-    booked times from the timetable.
+    scheduled times from the timetable. A board with few trains in the two
+    hours goes on with scheduled ones, marked Scheduled, so it is never empty
+    overnight.
   </li>
   <li>
     <strong>No past running times.</strong> Traintrackr can't say whether
@@ -244,8 +251,8 @@
     running, so check the live board on the day.
   </li>
   <li>
-    <strong>When live data is unavailable</strong>, the boards show booked times
-    and say so.
+    <strong>When live data is unavailable</strong>, the boards show scheduled
+    times and say so.
   </li>
   <li><strong>Fair use.</strong> {{ fair_use }}</li>
 </ul>

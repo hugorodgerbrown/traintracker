@@ -37,10 +37,10 @@ flowchart LR
 | Tool | Answers | Data |
 |---|---|---|
 | `find_station` | "Which Sudbury?" Station names ↔ CRS codes | Bundled station list |
-| `live_departures` | Next trains, expected times, platforms, delays, cancellations | Darwin; if it's not set up, booked times; if it's offline, booked times with a note saying so |
+| `live_departures` | Next trains, expected times, platforms, delays, cancellations | Darwin, going on with scheduled timetable trains where fewer than `rows` run in its two hours; if it's not set up, booked times; if it's offline, booked times with a note saying so |
 | `departure_platform` | "Which platform is the 13:00 to Colchester?" One train's platform, flagged `live` or `booked` | Darwin (paged); booked platform from the timetable until the live one is announced |
 | `platform_departures` | "What are the next three trains from platform 7?" | Same as `departure_platform` |
-| `live_arrivals` | Trains arriving in the next ~2 hours | Darwin arrivals; if not set up, booked times; if offline, booked times with a note saying so |
+| `live_arrivals` | Trains arriving in the next ~2 hours | Darwin arrivals, going on with scheduled trains where short; if not set up, booked times; if offline, booked times with a note saying so |
 | `show_board` | "Show me the departures board for Liverpool Street." The same live departures or arrivals, drawn as a [departure board](#departure-board) | Same as `live_departures` and `live_arrivals` |
 | `timetable` | Booked departures/arrivals at a station on any date | Local timetable |
 | `service_details` | Every stop for one train | Whichever source issued the ID |
@@ -358,12 +358,14 @@ The stylesheet and script are served by WhiteNoise under names that carry a hash
 
 | Address | What it is |
 |---|---|
-| `/board/LST` | Every departure from London Liverpool Street in the next two hours, up to 10 |
+| `/board/LST` | The next 10 departures from London Liverpool Street: live for the next two hours, then scheduled trains from the timetable where the board is short (see below) |
 | `/board/LST/9` | Departures from platform 9 only; a train whose live platform isn't announced yet is matched on its booked one |
 | `/board/LST/COL` | Departures calling at Colchester, wherever they end: the Norwich trains too |
 | `/board/LST/COL?tv=1` | The board alone, filling a TV screen: see below |
 | `/board/LST/9?embed=1` | The same board alone, with no site header or footer, for an `<iframe>`. It is the only page another site may frame |
 | `/api/board/LST/9` | The board as JSON, which the page fetches every minute while it is visible |
+
+Darwin answers for two hours, so a quiet line, or any station overnight, would leave a board nearly empty. A board with fewer than its 10 trains goes on with scheduled trains from the timetable, from where Darwin's two hours end and up to a day ahead, so a train is never on it twice. Each says **Scheduled** in Expected, in pale letters (amber stays live and on time), and turns to its live time once it is within two hours. A train on a later day comes under that day's name (MONDAY 19 OCTOBER), and the credit names both sources. The tools mark these trains `source: "timetable"`, with the `date` they run on.
 
 After the station, a station's three-letter code is a destination and anything else a platform. A board is for a destination or a platform, never both. Each board has one address: a lower-case code, a name (`/board/cambridge`, `/board/LST/colchester`) or a platform written `p9` or `platform-9` redirects to it, so every share of a board is the same link. A name that fits several stations goes to the picker, which asks which. The board page has the link and the `<iframe>` code, each with a copy button, and a link to each platform's board.
 

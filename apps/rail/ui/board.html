@@ -133,6 +133,31 @@
         color: var(--text);
       }
 
+      /* A scheduled train (the timetable's, not yet live) says so in pale
+         letters: amber stays the live, on-time colour. */
+      .cell.scheduled {
+        color: var(--muted);
+      }
+
+      /* The name of a later day, above its first train. */
+      .day {
+        margin: calc(var(--pitch) * 0.45) 0 2px;
+        color: var(--muted);
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .day span {
+        overflow: hidden;
+        padding-left: 1px;
+        white-space: nowrap;
+      }
+
+      .day + .service {
+        margin-top: 0;
+      }
+
       /* The seam where a flap folds. */
       .cell::after {
         content: "";
@@ -253,6 +278,7 @@
         [6, ["expected", 9], 1, ["plat", 8]],
       ];
       const HEADINGS = { time: "Time", platform: "Plat", expected: "Expected" };
+      const SCHEDULED_CREDIT = "Scheduled times: Network Rail data feeds (OGL v3.0)";
 
       const $ = (id) => document.getElementById(id);
       const still = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -341,9 +367,37 @@
         return (places || []).map((p) => p.name).join(" & ");
       }
 
-      /** What each field of the board says for one service. */
+      const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+      const MONTHS = ["January", "February", "March", "April", "May", "June", "July",
+        "August", "September", "October", "November", "December"];
+
+      /** A YYYY-MM-DD date as a day divider says it: "Monday 19 October". */
+      function dayName(iso) {
+        const [y, m, d] = iso.split("-").map(Number);
+        const day = new Date(Date.UTC(y, m - 1, d));
+        return `${DAYS[day.getUTCDay()]} ${d} ${MONTHS[m - 1]}`;
+      }
+
+      /** The day a service runs on, where it isn't the board's; "" where it is. */
+      function dayOf(service) {
+        return service.date && service.date !== shown.date ? dayName(service.date) : "";
+      }
+
+      /** Whether service `n` is the first on a later day than the one before it. */
+      function startsDay(services, n) {
+        const day = dayOf(services[n]);
+        return Boolean(day) && day !== (n ? dayOf(services[n - 1]) : "");
+      }
+
+      /** What each field of the board says for one service. A train from the
+       * timetable rather than the live feed says Scheduled in Expected. */
       function fields(service, arrivals) {
-        const expected = service.status === "cancelled" ? "Cancelled" : service.expected || "";
+        const expected =
+          service.source === "timetable"
+            ? "Scheduled"
+            : service.status === "cancelled"
+              ? "Cancelled"
+              : service.expected || "";
         const platform = service.platform || "";
         return {
           time: service.scheduled || "",
@@ -400,8 +454,9 @@
           ? "Arrivals" + (shown.filter ? ` from ${shown.filter.name}` : "")
           : "Departures" + (shown.filter ? ` to ${shown.filter.name}` : "");
 
-        const key = `${layout === WIDE ? "wide" : "narrow"}:${services.length}`;
-        if (key !== built) build(layout, services.length, place);
+        const days = services.map((s, n) => (startsDay(services, n) ? dayOf(s) : "")).join("|");
+        const key = `${layout === WIDE ? "wide" : "narrow"}:${services.length}:${days}`;
+        if (key !== built) build(layout, services, place);
         built = key;
 
         let i = 0;
@@ -423,6 +478,10 @@
                 const cell = cells[i++];
                 cell.classList.toggle("late", name === "expected" && run.state === "late");
                 cell.classList.toggle("cancelled", name === "expected" && run.state === "cancelled");
+                cell.classList.toggle(
+                  "scheduled",
+                  name === "expected" && service.source === "timetable",
+                );
                 turn(cell, character, row * 2 + (column++ >> 2));
               }
             }
@@ -440,8 +499,11 @@
         return $("board").parentElement.clientWidth < NARROW_BELOW ? NARROW : WIDE;
       }
 
-      /** Lay out blank flaps for `count` services. */
-      function build(layout, count, place) {
+      /** Lay out blank flaps for `services`, each new day under its name. */
+      function build(layout, services, place) {
+        // While waiting for the result, a number of blank services.
+        if (typeof services === "number") services = Array.from({ length: services }, () => ({}));
+        const count = services.length;
         const board = $("board");
         laidOut = layout;
         board.replaceChildren();
@@ -456,6 +518,15 @@
         }
         if (layout === WIDE) board.append(headings(layout[0], place));
         for (let n = 0; n < count; n++) {
+          if (startsDay(services, n)) {
+            const day = document.createElement("div");
+            day.className = "line day";
+            const label = document.createElement("span");
+            label.textContent = dayOf(services[n]);
+            label.style.gridColumn = "1 / -1";
+            day.append(label);
+            board.append(day);
+          }
           const service = document.createElement("div");
           service.className = "service";
           for (const parts of layout) {
@@ -566,14 +637,21 @@
           head.append(th);
         }
         const body = table.createTBody();
-        for (const service of services) {
+        services.forEach((service, n) => {
+          if (startsDay(services, n)) {
+            const name = document.createElement("th");
+            name.colSpan = 4;
+            name.scope = "rowgroup";
+            name.textContent = dayOf(service);
+            body.insertRow().append(name);
+          }
           const text = fields(service, arrivals);
           text.expected = said(text.time, text.expected);
           const row = body.insertRow();
           for (const name of ["time", "place", "platform", "expected"]) {
             row.insertCell().textContent = text[name];
           }
-        }
+        });
       }
 
       function drawNotes(count) {
@@ -593,7 +671,7 @@
       function drawSource() {
         const source = $("source");
         if (shown.source !== "darwin") {
-          source.textContent = "Booked times: Network Rail data feeds (OGL v3.0).";
+          source.textContent = `${SCHEDULED_CREDIT}.`;
           return;
         }
         const link = document.createElement("a");
@@ -606,7 +684,8 @@
             request("ui/open-link", { url: link.href }).catch(() => {});
           }
         });
-        source.replaceChildren(link);
+        const mixed = shown.services.some((s) => s.source === "timetable");
+        source.replaceChildren(link, ...(mixed ? [` · ${SCHEDULED_CREDIT}.`] : []));
       }
 
       function say(text) {

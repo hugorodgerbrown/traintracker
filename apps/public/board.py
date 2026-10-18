@@ -118,6 +118,17 @@ class BoardKey:
         text = station_name(self.crs) + (f" platform {self.platform}" if self.platform else "")
         return text + " departures" + (f" to {station_name(self.to)}" if self.to else "")
 
+    def name(self) -> str:
+        """The board's short name, as a list of saved boards shows it.
+
+        "London Liverpool Street to Colchester", "Cambridge, platform 1" or
+        "Marks Tey".
+        """
+        text = station_name(self.crs)
+        if self.platform:
+            return f"{text}, platform {self.platform}"
+        return text + (f" to {station_name(self.to)}" if self.to else "")
+
     def empty(self) -> str:
         """What the board says when it has no trains."""
         if self.to:
@@ -178,6 +189,20 @@ def parse(station: str, then: str | None = None) -> BoardKey | None:
         return BoardKey(st.crs, None if to.crs == st.crs else to.crs)
     platform = clean_platform(then)
     return BoardKey(st.crs, platform=platform) if platform else None
+
+
+def from_path(path: str) -> BoardKey | None:
+    """The board a page address names exactly (/board/LST/COL), or None.
+
+    Only a board's one address counts, so a saved board is always kept as
+    the address its page has.
+    """
+    prefix = PICKER_PATH + "/"
+    parts = path.removeprefix(prefix).split("/") if path.startswith(prefix) else []
+    if not 1 <= len(parts) <= 2:
+        return None
+    key = parse(*parts)
+    return key if key and key.path == path else None
 
 
 def _train(service: BoardService, board_date: str) -> dict[str, Any]:

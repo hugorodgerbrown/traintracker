@@ -522,12 +522,7 @@ function flipDigit(flap, digit) {
  * turns to :00, and hand each answer to `show`. The server fetches it then
  * too, so it says "Updated 23:23:00" as the clock does. */
 function follow(figure, seconds, show) {
-  const table = figure.querySelector("table");
-  const empty = figure.querySelector(".empty");
-  const notes = figure.querySelector(".notes");
-  const credit = figure.querySelector(".credit");
   const updated = figure.querySelector(".updated");
-  const kind = figure.querySelector(".kind");
   const status = figure.querySelector(".status");
   const stale = figure.querySelector(".stale-note");
   const next = figure.querySelector(".next");
@@ -547,24 +542,7 @@ function follow(figure, seconds, show) {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "The board couldn't be fetched.");
-      rows(table, data.trains);
-      // A board to a station with no direct trains shows journeys with a change,
-      // and says so; one that has them again says it doesn't.
-      if (kind && data.kind) {
-        kind.textContent = data.kind;
-        table.caption.textContent = `${data.kind} from ${data.station.name}`;
-      }
-      empty.hidden = data.trains.length > 0;
-      empty.textContent = empty.dataset.empty; // in place of why it couldn't be fetched
-      notes.replaceChildren(
-        ...data.messages.map((message) => {
-          const item = document.createElement("li");
-          item.textContent = message;
-          return item;
-        }),
-      );
-      sourceCredit(credit, data.source, data.trains);
-      updated.textContent = `Updated ${data.updated}`;
+      fill(figure, data);
       status.textContent = "";
       good = Date.now();
       goodAt = data.updated;
@@ -603,6 +581,69 @@ function follow(figure, seconds, show) {
     if (!document.hidden && Date.now() - last >= seconds * 1000) due = 0;
   });
 }
+
+/** Put a fetched board's trains, notices, credit and time in the figure's
+ * table and text. site.js's flaps are drawn from the table. */
+function fill(figure, data) {
+  const table = figure.querySelector("table");
+  const empty = figure.querySelector(".empty");
+  const kind = figure.querySelector(".kind");
+  rows(table, data.trains);
+  // A board to a station with no direct trains shows journeys with a change,
+  // and says so; one that has them again says it doesn't.
+  if (kind && data.kind) {
+    kind.textContent = data.kind;
+    table.caption.textContent = `${data.kind} from ${data.station.name}`;
+  }
+  empty.hidden = data.trains.length > 0;
+  empty.textContent = empty.dataset.empty; // in place of why it couldn't be fetched
+  figure.querySelector(".notes").replaceChildren(
+    ...data.messages.map((message) => {
+      const item = document.createElement("li");
+      item.textContent = message;
+      return item;
+    }),
+  );
+  sourceCredit(figure.querySelector(".credit"), data.source, data.trains);
+  figure.querySelector(".updated").textContent = `Updated ${data.updated}`;
+}
+
+// ------------------------------------------------------- your last board
+
+// The front page shows an example board. Someone who has opened a board
+// before sees that one in its place, live (saved_boards.js says which, from
+// this browser or their account). It is drawn from #your-board once its
+// first trains are fetched, so a board that can't be had leaves the example.
+async function showYourBoard(template, saved) {
+  const feed = saved.path.replace(/^\/board\//, "/api/board/");
+  let data;
+  try {
+    const response = await fetch(feed, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout?.(FETCH_TIMEOUT_MS),
+    });
+    if (!response.ok) return;
+    data = await response.json();
+  } catch {
+    return;
+  }
+  const figure = template.content.firstElementChild.cloneNode(true);
+  figure.dataset.feed = feed;
+  figure.querySelector(".station h2").textContent = data.station.name;
+  figure.querySelector("a.open").href = saved.path;
+  fill(figure, data);
+  const example = document.querySelector(".departures[data-example]");
+  if (!example) return;
+  example.replaceWith(figure);
+  board(figure);
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+  const template = document.getElementById("your-board");
+  if (!template || !self.SavedBoards) return;
+  const state = await self.SavedBoards.ready;
+  if (state && state.last) showYourBoard(template, state.last);
+});
 
 /** Whether train `n` is the first on a later day than the one before it. */
 function startsDay(trains, n) {

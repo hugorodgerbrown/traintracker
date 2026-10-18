@@ -35,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        env: [fmt, lint, types, checks, test, audit, sast]
+        env: [fmt, lint, types, checks, test, js, audit, sast]
     steps:
       # Actions are pinned to a commit: a tag can be moved to other code.
       # Dependabot raises the commit and the version in the comment together.
@@ -47,6 +47,10 @@ jobs:
         with:
           version: "0.12.19" # as in render.yaml
           enable-cache: true
+      - if: matrix.env == 'js' || matrix.env == 'audit'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
       - name: Run tox -e ${{ matrix.env }}
         run: uvx --with tox-uv==1.36.0 tox@4.64.5 -e ${{ matrix.env }}
 

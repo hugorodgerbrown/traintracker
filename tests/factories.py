@@ -15,6 +15,7 @@ from apps.accounts.models import (
     mask_email,
     username_for,
 )
+from apps.public.models import SavedBoard
 
 
 class UserFactory(factory.django.DjangoModelFactory):
@@ -81,3 +82,16 @@ class ReviewerAccountFactory(factory.django.DjangoModelFactory):
         model = ReviewerAccount
 
     email = factory.Sequence(lambda n: f"reviewer{n}@example.com")
+
+
+class SavedBoardFactory(factory.django.DjangoModelFactory):
+    """A board an account keeps: opened just now, not a favourite."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = SavedBoard
+
+    user = factory.SubFactory(UserFactory)
+    path = "/board/LST"
+    opened_at = factory.LazyFunction(timezone.now)

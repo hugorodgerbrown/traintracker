@@ -13,7 +13,8 @@
 </section>
 
 {# 3. The product, live: the board show_board draws, with demo trains. #}
-<figure class="departures">
+{# A visitor with a last board sees that one here instead, live (saved_boards.js and site.js fill #your-board in), with their favourites under it. The HTML is the same for everyone, so the page stays cacheable. #}
+<figure class="departures" data-example>
   <div class="panel">
     <p class="station">
       <strong>London Liverpool Street</strong> <span>Departures</span>
@@ -86,6 +87,39 @@
     own station.
   </figcaption>
 </figure>
+{# The last board opened, as public/_figure.html draws a live one, with its heading an h2 under the page's h1. #}
+<template id="your-board">
+  <figure class="departures live" data-refresh="60">
+    <div class="panel">
+      <div class="station">
+        <h2></h2>
+        <span class="kind"></span>
+        <time class="clock"></time>
+      </div>
+      <div class="trains">
+        <table>
+          <caption></caption>
+          <thead><tr><th>Time</th><th>Destination</th><th>Plat</th><th>Expected</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="empty" data-empty="No trains in the next two hours." hidden></p>
+      <p class="stale-note" hidden></p>
+      <ul class="notes"></ul>
+      <p class="source"><span class="credit"></span>
+        · <span class="updated"></span><span class="next"></span>
+        <span class="status" role="status"></span></p>
+    </div>
+    <figcaption>
+      The last board you opened, with live times.
+      <a class="open">Open its page</a> or <a href="/board">open another board</a>.
+    </figcaption>
+  </figure>
+</template>
+<section class="your-favourites" aria-labelledby="favourites-title" hidden>
+  <h2 id="favourites-title">Your favourites</h2>
+  <ul class="chips"></ul>
+</section>
 
 {# 5. From your AI chat: the chat without and with it, things to ask, and the address. #}
 <section class="ai" aria-labelledby="ai-title">

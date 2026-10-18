@@ -3,9 +3,10 @@
 Every check runs through tox, locally and in CI, one CI job per env:
 
 ```bash
-uv run tox                       # fmt, lint, types, checks, test, audit
+uv run tox                       # fmt, lint, types, checks, test, js, audit
 uv run tox -e sast               # semgrep (downloads rule packs)
 uv run pytest tests/core         # a targeted run while iterating
+npm test                         # the Vitest tests alone (after npm ci)
 ```
 
 The tests mirror the apps:
@@ -13,10 +14,11 @@ The tests mirror the apps:
 | Folder | Covers |
 | --- | --- |
 | `tests/rail/` | The rail code: importer, STP rules, planner, download, Darwin clients, demo mode, the tools, the commands, rate limit, Darwin usage |
-| `tests/public/` | The site's pages and the boards |
+| `tests/public/` | The site's pages, the boards and saved boards |
 | `tests/mcp/` | The `/mcp` endpoint and its tools |
 | `tests/accounts/` | Sign-in, passkeys and the account commands |
 | `tests/core/` | Titan's shared pieces: models, idempotency, decorators, rate limits, health checks |
+| `tests/js/` | The site's JavaScript in jsdom (Vitest): saved boards |
 
 The rail tests, and the MCP tests that call the tools, need a Postgres they
 can create schemas in, at `TEST_DATABASE_URL` (default
@@ -33,7 +35,7 @@ test in the wrong layer is a defect, whatever it asserts.
 | Layer | Where | For |
 | --- | --- | --- |
 | **pytest** | `tests/` | Anything the Django test client, or an MCP client against `/mcp`, can see: status codes, redirects, rendered HTML, JSON, tool results, querysets, commands, headers. **A 401 needs no browser.** |
-| **Vitest** | `tests/js/` | Anything a `static/js` file does that jsdom can observe. Not set up yet; arrives with the first test of the site's JavaScript. |
+| **Vitest** | `tests/js/` | Anything a `static/js` file does that jsdom can observe: `saved_boards.js` so far. Node is for the tests only (`package.json`); the site has no build step. |
 | **Playwright** | `tests/e2e/` | Only what needs a real browser running real JavaScript against a live server. Capped, as in the template; arrives with the first journey that needs one. |
 
 ## Rules

@@ -157,12 +157,22 @@ relay is still talking. A failed send is logged (`django.tasks`, ERROR).
 Tests run tasks inline, so mail is in the outbox before the response. Swap in
 a queue-backed backend and a worker when volume needs it.
 
+## Saved boards
+
+Signed in, an account keeps the last departure board its owner opened on the
+site and up to 12 favourites (`apps/public/models.py` `SavedBoard`, one row a
+board, its address only). `static/js/saved_boards.js` reads and writes them
+through `/api/boards` (`apps/public/saved.py`); signed out, the browser keeps
+them in `localStorage` and the server keeps nothing. Signing in moves what
+that browser kept into the account and clears it, so the browser is empty
+after signing out. Why: docs/decisions/saved-boards-live-in-the-browser-or-the-account.md.
+
 ## Closing and forgetting accounts
 
 Read-only unless `--commit`:
 
-- `forget_account EMAIL` deletes the account, its passkeys, its connected
-  apps' tokens and any sign-in request for the address (a request under
+- `forget_account EMAIL` deletes the account, its passkeys, its saved
+  boards, its connected apps' tokens and any sign-in request for the address (a request under
   the privacy policy). It finds them by the address's key.
 - `block_account EMAIL` closes the account, or makes a closed one for an
   address that has none, so it can't sign in and its connected apps stop

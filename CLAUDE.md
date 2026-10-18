@@ -38,6 +38,7 @@ uv sync
 uv run python manage.py runserver
 uv run python manage.py serve_stdio   # the tools on stdio (desktop app, MCP Inspector)
 uv run tox                            # every check CI runs (except sast)
+npm ci && npm test                    # the Vitest tests alone
 uv run pytest tests/core              # targeted run while iterating
 ```
 
@@ -149,8 +150,9 @@ branch's own work.
 
 ## Tests
 
-pytest for anything the test client or an MCP client can see; Vitest and
-Playwright arrive with the site's JavaScript. Coverage floor 90%. Full
+pytest for anything the test client or an MCP client can see; Vitest
+(`tests/js/`) for what a `static/js` file does; Playwright arrives with the
+first journey that needs a real browser. Coverage floor 90%. Full
 rules: [docs/testing.md](docs/testing.md).
 
 ## Before opening a PR

@@ -126,6 +126,7 @@ def _board_page(
         "platform_links": platform_links,
         "all_path": relative(tt.BoardKey(key.crs).path),
         "station_name": tt.station_name(key.crs),
+        "board_name": key.name(),
         "embed_code": (
             f'<iframe src="{url}?embed=1" title="{key.title()}" width="100%" '
             f'height="{tt.EMBED_HEIGHT}" style="border:0;max-width:760px" loading="lazy"></iframe>'

@@ -140,4 +140,7 @@ async def test_journeys_with_a_change_for_a_board(settings: Settings) -> None:
         # Within the board's two hours.
         assert datetime.fromisoformat(j.depart) <= NOON + timedelta(minutes=70)
     assert any(leg.depart_expected for j in journeys for leg in j.legs)  # live where Darwin has it
+    # The demo's 13:30 runs late enough to put its 14:35 connection at risk (TRA-36).
+    assert any(j.connection_at_risk for j in journeys)
+    assert not all(j.connection_at_risk for j in journeys)
     assert direct == []  # Colchester has direct trains, which beat any with a change

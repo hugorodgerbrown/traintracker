@@ -241,7 +241,8 @@ def _journey(journey: Journey) -> dict[str, Any]:
     first, then = journey.legs
     change = _leg(then) | {"at": then.board_at.name}
     if journey.connection_at_risk and change["expected"] != "Cancelled":
-        change |= {"expected": AT_RISK, "at_risk": True}
+        # White like a late train, even where the connection has no live time yet.
+        change |= {"expected": AT_RISK, "at_risk": True, "scheduled": False}
     return _leg(first) | {"change": change}
 
 

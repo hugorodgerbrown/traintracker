@@ -325,6 +325,17 @@ def test_a_connection_a_late_train_may_miss_says_at_risk(
     assert then["change"]["at_risk"] is True
 
 
+def test_a_connection_at_risk_with_no_live_time_isnt_scheduled() -> None:
+    """At risk is white like a late train, not pale like a scheduled one."""
+    journey = fakes._journey(
+        fakes._leg("LST", "MKT", "16:08", "17:04", "Ipswich", "14", depart_expected="17:20"),
+        fakes._leg("MKT", "SUY", "17:16", "17:36", "Sudbury (Suffolk)", "3"),
+        at_risk=True,
+    )
+    change = boards._journey(journey)["change"]
+    assert (change["expected"], change["scheduled"]) == ("At risk", False)
+
+
 def test_a_cancelled_connection_says_cancelled_not_at_risk() -> None:
     """A connection that isn't running is lost, not at risk."""
     journey = fakes._journey(

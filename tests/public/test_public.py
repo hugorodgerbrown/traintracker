@@ -106,11 +106,12 @@ def test_the_favicon_is_the_png(client: Client) -> None:
 
 
 def test_the_shared_boards_fetch_through_the_server(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Outside the tests, a board comes from the server's own public_board."""
+    """Outside the tests, a board comes from the server's own public_board and public_changes."""
     monkeypatch.undo()
     boards.shared.cache_clear()
     from apps.rail import server
 
     assert isinstance(boards.shared(), tt.SharedBoards)
     assert boards.shared().fetch is server.public_board
+    assert boards.shared().changes is server.public_changes
     boards.shared.cache_clear()

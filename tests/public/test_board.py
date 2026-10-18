@@ -16,7 +16,8 @@ from apps.public import boards as views
 from apps.rail import runtime
 from apps.rail.config import UK_TZ
 from apps.rail.schemas import Board
-from tests.public.fakes import BASE, FakeFetch
+from tests.public import fakes
+from tests.public.fakes import BASE, FakeChanges, FakeFetch
 
 pytestmark = pytest.mark.django_db
 
@@ -236,13 +237,15 @@ def test_a_live_board_credits_the_live_feed_alone(client: Client) -> None:
     assert '<tr class="day">' not in text
 
 
-def test_a_board_for_one_destination(client: Client, fetch: FakeFetch) -> None:
+def test_a_board_for_one_destination(
+    client: Client, fetch: FakeFetch, changes: FakeChanges
+) -> None:
     """Only the trains calling there, with a way back to every train."""
     r = client.get("/board/LST/NRW")
     assert r.status_code == 200
     text = _text(r)
     assert '<figure class="departures live" data-feed="/api/board/LST/NRW"' in text
-    assert "<span>Departures calling at Norwich</span>" in text
+    assert '<span class="kind">Departures calling at Norwich</span>' in text
     assert "<title>London Liverpool Street departures to Norwich · Traintrackr</title>" in text
     assert f'<code id="board-link">{BASE}/board/LST/NRW</code>' in text
     assert '<a href="/board/LST">Every train from London Liverpool Street</a>' in text
@@ -253,11 +256,79 @@ def test_a_board_for_one_destination(client: Client, fetch: FakeFetch) -> None:
     assert data["to"] == {"name": "Norwich", "crs": "NRW"}
     assert data["platform"] is None
     assert [t["place"] for t in data["trains"]] == ["Norwich & Clacton-on-Sea"]
+    assert data["kind"] == "Departures calling at Norwich"
+    # A board with direct trains doesn't look for journeys with a change.
+    assert changes.calls == []
     empty = _text(client.get("/board/LST/COL"))
+    says = "No trains to Colchester, direct or with one change, in the next two hours."
+    assert f'<p class="empty" data-empty="{says}">{says}</p>' in empty
+    assert changes.calls == [("LST", "COL")]
+
+
+def test_a_board_with_no_direct_train_shows_journeys_with_a_change(
+    client: Client, changes: FakeChanges
+) -> None:
+    """Each train to catch, with its connection on the line below it."""
+    text = _text(client.get("/board/LST/SUY"))
+    kind = "Departures to Sudbury (Suffolk), changing at Marks Tey"
+    assert f'<span class="kind">{kind}</span>' in text
+    assert f"<caption>{kind} from London Liverpool Street</caption>" in text
+    # The table screen readers read: the connection is a row of its own, marked
+    # for site.js to draw on the line below its train.
     assert (
-        '<p class="empty" data-empty="No departures calling at Colchester in the next two hours.">'
-        "No departures calling at Colchester in the next two hours.</p>"
-    ) in empty
+        '<tr><td>16:08</td><td data-label="Destination">Ipswich</td>'
+        '<td data-label="Platform">14</td>'
+        '<td data-label="Expected" data-expected="On time">On time</td></tr> '
+        '<tr class="change" data-at="Marks Tey"><td>17:16</td>'
+        '<td data-label="Destination">Change at Marks Tey for Sudbury (Suffolk)</td>'
+        '<td data-label="Platform">3</td>'
+        '<td data-label="Expected" data-expected="17:21">17:21, 5 minutes late</td></tr>'
+    ) in text
+    assert "hidden>No trains to Sudbury" in text  # the empty message, hidden
+    data = client.get("/api/board/LST/SUY").json()
+    assert data["kind"] == kind
+    assert data["trains"][0] == {
+        "time": "15:08",
+        "place": "Ipswich",
+        "platform": "13",
+        "expected": "On time",
+        "scheduled": False,
+        "day": "",
+        "change": {
+            "time": "16:16",
+            "place": "Sudbury (Suffolk)",
+            "platform": "3",
+            "expected": "On time",
+            "scheduled": False,
+            "day": "",
+            "at": "Marks Tey",
+        },
+    }
+    assert changes.calls == [("LST", "SUY")]  # once a minute, for every viewer
+
+
+def test_a_board_whose_journeys_with_a_change_fail_says_it_has_no_trains(
+    client: Client, changes: FakeChanges
+) -> None:
+    """The journeys are a bonus: without them the board is an empty one, not a broken one."""
+    changes.error = "The timetable isn't loaded yet."
+    r = client.get("/board/LST/SUY")
+    assert r.status_code == 200
+    assert "No trains to Sudbury (Suffolk), direct or with one change" in _text(r)
+    assert client.get("/api/board/LST/SUY").json()["trains"] == []
+
+
+@pytest.mark.parametrize(
+    ("changes", "kind"),
+    [
+        ([], "Departures calling at Sudbury (Suffolk)"),
+        (["Marks Tey", "Marks Tey"], "Departures to Sudbury (Suffolk), changing at Marks Tey"),
+        (["Marks Tey", "Colchester"], "Departures to Sudbury (Suffolk), changing"),
+    ],
+)
+def test_a_board_says_where_its_journeys_change(changes: list[str], kind: str) -> None:
+    """At the one station they all change at, or that they change, where it differs."""
+    assert boards.BoardKey("LST", "SUY").kind(changes) == kind
 
 
 def test_a_board_can_be_shared_and_embedded(client: Client) -> None:
@@ -537,3 +608,16 @@ def test_boards_in_the_app(client: Client, tmp_path: Path, monkeypatch: pytest.M
     finally:
         runtime.stop()
         REAL_SHARED.cache_clear()
+
+
+def test_a_connection_with_no_live_time_says_scheduled() -> None:
+    """A train of a journey that Darwin has no time for yet is a scheduled one, as on any board."""
+    leg = fakes._leg("MKT", "SUY", "18:16", "18:36", "Sudbury (Suffolk)", "3")
+    assert boards._leg(leg) | {"time": ""} == {
+        "time": "",
+        "place": "Sudbury (Suffolk)",
+        "platform": "3",
+        "expected": "Scheduled",
+        "scheduled": True,
+        "day": "",
+    }

@@ -178,13 +178,21 @@ Pointer = tuple[int, "_Ride | _Walk"]  # (round it was set in, how we got here)
 
 
 def pareto_journeys(
-    net: Network, origin: str, dest: str, t0: int, mct: int, max_rides: int
+    net: Network,
+    origin: str,
+    dest: str,
+    t0: int,
+    mct: int,
+    max_rides: int,
+    last: int | None = None,
 ) -> list[list[RawLeg]]:
     """Round-based Connection Scan.
 
     Round r allows r rides, boarding only from stations reached in round r-1.
     Returns one journey per round that improves the arrival time, so the result
-    runs from fewest changes (slowest) to most changes (fastest).
+    runs from fewest changes (slowest) to most changes (fastest). With `last`,
+    the first train leaves by then: a later one is never boarded, so it can't
+    beat a journey that leaves in time.
     """
     fp = footpaths()
     ready: dict[str, int] = {origin: t0}
@@ -213,6 +221,8 @@ def pareto_journeys(
             if c.trip not in boarded:
                 if not (c.can_board and prev.get(c.frm, INF) <= c.dep):
                     continue
+                if last is not None and c.dep > last and c.frm in readies[0]:
+                    continue  # a first train, leaving too late
                 boarded[c.trip] = ci
             if not c.can_alight:
                 continue
@@ -357,21 +367,24 @@ def plan(
     count: int = 3,
     max_changes: int = 4,
     mct: int = 5,
+    latest: datetime | None = None,
 ) -> list[Journey]:
-    """Up to `count` journeys departing at or after `when`.
+    """Up to `count` journeys departing at or after `when`, and by `latest` if given.
 
     Ordered by arrival. Includes the fewest-changes option even when it's
     slower, and never an option that another beats on departure, arrival and
-    changes at once.
+    changes at once. A journey leaving after `latest` is never found, so it
+    can't beat one that leaves in time.
     """
     local = when.astimezone(UK_TZ)
     day = local.date()
     net = network(tt, tt.meta.get("built_at"), day)
     t0 = t = local.hour * 60 + local.minute
+    last = None if latest is None else t0 + int((latest - local).total_seconds() // 60)
     max_rides = max_changes + 1
     found: dict[tuple[str, str, int], Journey] = {}
     for _ in range(count * 6):
-        options = _search(net, origin, dest, t, via, mct, max_rides)
+        options = _search(net, origin, dest, t, via, mct, max_rides, last)
         if not options:
             break
         for raw in options:
@@ -410,11 +423,18 @@ def _dominates(a: Journey, b: Journey) -> bool:
 
 
 def _search(
-    net: Network, origin: str, dest: str, t: int, via: str | None, mct: int, max_rides: int
+    net: Network,
+    origin: str,
+    dest: str,
+    t: int,
+    via: str | None,
+    mct: int,
+    max_rides: int,
+    last: int | None = None,
 ) -> list[list[RawLeg]]:
     if not via:
-        return pareto_journeys(net, origin, dest, t, mct, max_rides)
-    first = pareto_journeys(net, origin, via, t, mct, max_rides)
+        return pareto_journeys(net, origin, dest, t, mct, max_rides, last)
+    first = pareto_journeys(net, origin, via, t, mct, max_rides, last)
     if not first:
         return []
     head = first[-1]  # fastest to the via station

@@ -40,7 +40,7 @@ PICKER_DESCRIPTION = "A live departure board for any station in Great Britain, t
 @cache
 def shared() -> tt.SharedBoards:
     """The process's boards, each fetched once a minute for every viewer."""
-    return tt.SharedBoards(server.public_board)
+    return tt.SharedBoards(server.public_board, server.public_changes)
 
 
 @cache
@@ -83,21 +83,28 @@ def _figure_context(
         "board_path": relative(key.path),
         "mode": mode,
         "board": data,
-        "kind": key.kind(),
+        "kind": data["kind"],
         "empty": key.empty(),
         "problem": problem,
         "refresh": tt.REFRESH,
         "now": datetime.now(UK_TZ),
         "trains": _with_dividers(data["trains"]),
-        "mixed": data["source"] == "darwin" and any(t["scheduled"] for t in data["trains"]),
+        "mixed": data["source"] == "darwin"
+        and any(leg["scheduled"] for t in data["trains"] for leg in (t, t.get("change", t))),
     }
 
 
 def _with_dividers(trains: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The trains as the table says them, each that starts a new day with its divider."""
+    """The trains as the table says them, each that starts a new day with its divider.
+
+    A train with a change has its connection's Expected said too.
+    """
     out, day = [], ""
     for t in trains:
-        out.append(t | {"said": tt.said(t["time"], t["expected"]), "divider": t["day"] != day})
+        said = t | {"said": tt.said(t["time"], t["expected"]), "divider": t["day"] != day}
+        if change := t.get("change"):
+            said["change"] = change | {"said": tt.said(change["time"], change["expected"])}
+        out.append(said)
         day = t["day"]
     return out
 

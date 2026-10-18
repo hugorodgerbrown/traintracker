@@ -7,6 +7,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from freezegun import freeze_time
 from mcp import Client
 
 from apps.rail import demo, server
@@ -121,3 +122,22 @@ async def test_tools_in_demo_mode(settings: Settings) -> None:
         assert plan["journeys"]
         assert not any(leg["trainline_url"] for j in plan["journeys"] for leg in j["legs"])
         assert plan["journeys"][0]["legs"][-1]["alight_at"]["crs"] == "SUY"
+
+
+async def test_journeys_with_a_change_for_a_board(settings: Settings) -> None:
+    """A board to Sudbury from Liverpool Street: every train to Marks Tey and its connection."""
+    drop_timetable(settings.timetable_db)  # the server builds one for the frozen date
+    with freeze_time(NOON - timedelta(minutes=50), real_asyncio=True):
+        async with Client(server.mcp):
+            journeys = await server.public_changes("LST", "SUY")
+            direct = await server.public_changes("LST", "COL")
+    assert journeys
+    assert [j.depart for j in journeys] == sorted(j.depart for j in journeys)
+    for j in journeys:
+        first, then = j.legs
+        assert (first.board_at.crs, then.alight_at.crs) == ("LST", "SUY")
+        assert first.alight_at.crs == then.board_at.crs == "MKT"
+        # Within the board's two hours.
+        assert datetime.fromisoformat(j.depart) <= NOON + timedelta(minutes=70)
+    assert any(leg.depart_expected for j in journeys for leg in j.legs)  # live where Darwin has it
+    assert direct == []  # Colchester has direct trains, which beat any with a change

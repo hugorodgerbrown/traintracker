@@ -7,7 +7,7 @@ import asyncio
 from mcp.server.mcpserver.exceptions import ToolError
 
 from apps.rail import stations
-from apps.rail.schemas import Board, BoardService, StationRef
+from apps.rail.schemas import Board, BoardService, Journey, JourneyLeg, StationRef
 
 BASE = "https://tt.test"
 # What the pages' fields are in these tests: views.fields is patched to return them.
@@ -122,3 +122,95 @@ class FakeFetch:
             name = stations.by_crs(to).name  # type: ignore[union-attr]
             board.services = [s for s in board.services if s.destination[0].name == name]
         return board, ["9", "14"]
+
+
+def _leg(
+    frm: str, to: str, dep: str, arr: str, towards: str, platform: str, **kw: object
+) -> JourneyLeg:
+    """One train of a journey on 2 October 2026, from ``frm`` to ``to``."""
+    return JourneyLeg(
+        service_id=f"tt:{frm}{dep}:2026-10-02",
+        board_at=StationRef(name=stations.by_crs(frm).name, crs=frm),  # type: ignore[union-attr]
+        alight_at=StationRef(name=stations.by_crs(to).name, crs=to),  # type: ignore[union-attr]
+        destination=towards,
+        depart_scheduled=f"2026-10-02T{dep}+01:00",
+        arrive_scheduled=f"2026-10-02T{arr}+01:00",
+        platform=platform,
+        **kw,
+    )
+
+
+def _journey(first: JourneyLeg, then: JourneyLeg) -> Journey:
+    """Two trains with a change between them."""
+    return Journey(
+        legs=[first, then],
+        depart=first.depart_scheduled,
+        arrive=then.arrive_scheduled,
+        duration_minutes=88,
+        changes=1,
+    )
+
+
+class FakeChanges:
+    """Journeys with one change in place of the planner's, which records what it was asked for.
+
+    Liverpool Street to Sudbury changes at Marks Tey; nowhere else has any.
+
+    Attributes:
+        calls: Each request's (station, destination), in order.
+        error: Set, every request fails with it.
+    """
+
+    def __init__(self, error: str | None = None) -> None:
+        """Start with no calls, failing with ``error`` if it is given.
+
+        Args:
+            error: The message each request fails with, or None to succeed.
+        """
+        self.calls: list[tuple[str, str]] = []
+        self.error = error
+
+    async def __call__(self, crs: str, to: str) -> list[Journey]:
+        """Two journeys to Sudbury: one on time, one whose connection is late.
+
+        Args:
+            crs: The station's code.
+            to: The destination's code.
+
+        Returns:
+            The journeys, earliest first.
+
+        Raises:
+            ToolError: When ``error`` is set.
+        """
+        self.calls.append((crs, to))
+        if self.error:
+            raise ToolError(self.error)
+        if (crs, to) != ("LST", "SUY"):
+            return []
+        return [
+            _journey(
+                _leg("LST", "MKT", "15:08", "16:04", "Ipswich", "13", depart_expected="On time"),
+                _leg(
+                    "MKT",
+                    "SUY",
+                    "16:16",
+                    "16:36",
+                    "Sudbury (Suffolk)",
+                    "3",
+                    depart_expected="On time",
+                ),
+            ),
+            _journey(
+                _leg("LST", "MKT", "16:08", "17:04", "Ipswich", "14", depart_expected="On time"),
+                _leg(
+                    "MKT",
+                    "SUY",
+                    "17:16",
+                    "17:36",
+                    "Sudbury (Suffolk)",
+                    "3",
+                    depart_expected="17:21*",
+                ),
+            ),
+        ]

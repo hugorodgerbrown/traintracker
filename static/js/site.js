@@ -52,7 +52,8 @@ function columns(parts) {
  * "15:41 +5". */
 function running(time, expected, width = 9) {
   if (/^cancelled$/i.test(expected)) return { state: "cancelled", shows: expected };
-  if (/^delayed$/i.test(expected)) return { state: "late", shows: expected };
+  // A connection a late train may miss looks late too (TRA-36).
+  if (/^(delayed|at risk)$/i.test(expected)) return { state: "late", shows: expected };
   const minutes = (hhmm) => {
     const match = /^(\d\d):(\d\d)$/.exec(hhmm);
     return match ? Number(match[1]) * 60 + Number(match[2]) : null;
@@ -84,8 +85,10 @@ function changeAt(at, width) {
 }
 
 /** Expected as a table says it: with how late the train is, as the flaps
- * show it ("15:44, 4 minutes late" for "15:44 +4"). */
+ * show it ("15:44, 4 minutes late" for "15:44 +4"); a connection at risk
+ * says so. */
 function said(time, expected) {
+  if (/^at risk$/i.test(expected)) return "Connection at risk";
   const { late } = running(time, expected);
   return late ? `${expected}, ${late} minute${late === 1 ? "" : "s"} late` : expected;
 }

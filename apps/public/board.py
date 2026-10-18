@@ -57,6 +57,7 @@ MAX_SUGGESTIONS = 8
 BOARD_LIMIT = (30, 60.0)
 # What Expected says for a train from the timetable, not the live feed.
 SCHEDULED = "Scheduled"
+AT_RISK = "At risk"  # a connection a late or cancelled train may miss (TRA-36)
 # What the feed says when a board can't be had; the pages say why.
 FEED_UNAVAILABLE = "Board temporarily unavailable."
 # A platform as the board's address has it: "9", "10A", "B".
@@ -234,10 +235,14 @@ def _journey(journey: Journey) -> dict[str, Any]:
     """A journey with one change as the board shows it.
 
     The train to catch here, with its connection: where it is, and the
-    connecting train's time, platform and expected.
+    connecting train's time, platform and expected. Where live times leave
+    too little time to change, the connection's Expected says At risk.
     """
     first, then = journey.legs
-    return _leg(first) | {"change": _leg(then) | {"at": then.board_at.name}}
+    change = _leg(then) | {"at": then.board_at.name}
+    if journey.connection_at_risk and change["expected"] != "Cancelled":
+        change |= {"expected": AT_RISK, "at_risk": True}
+    return _leg(first) | {"change": change}
 
 
 def day_name(iso: str) -> str:
@@ -373,8 +378,10 @@ def said(booked_at: str, expected: str) -> str:
     Where Expected is a later time than booked it says how late
     ("15:44, 4 minutes late"), as the flaps show it ("15:44 +4", site.js
     running()). Past midnight counts forward; half a day or more the other way
-    is early, and said as it is.
+    is early, and said as it is. A connection at risk says so.
     """
+    if expected == AT_RISK:
+        return "Connection at risk"
     booked, due = _minutes(booked_at), _minutes(expected)
     if booked is None or due is None:
         return expected

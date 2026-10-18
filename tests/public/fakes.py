@@ -140,14 +140,15 @@ def _leg(
     )
 
 
-def _journey(first: JourneyLeg, then: JourneyLeg) -> Journey:
-    """Two trains with a change between them."""
+def _journey(first: JourneyLeg, then: JourneyLeg, at_risk: bool = False) -> Journey:
+    """Two trains with a change between them, the connection at risk if ``at_risk``."""
     return Journey(
         legs=[first, then],
         depart=first.depart_scheduled,
         arrive=then.arrive_scheduled,
         duration_minutes=88,
         changes=1,
+        connection_at_risk=at_risk,
     )
 
 
@@ -159,6 +160,7 @@ class FakeChanges:
     Attributes:
         calls: Each request's (station, destination), in order.
         error: Set, every request fails with it.
+        at_risk: Set, the second journey's connection is at risk.
     """
 
     def __init__(self, error: str | None = None) -> None:
@@ -169,6 +171,7 @@ class FakeChanges:
         """
         self.calls: list[tuple[str, str]] = []
         self.error = error
+        self.at_risk = False
 
     async def __call__(self, crs: str, to: str) -> list[Journey]:
         """Two journeys to Sudbury: one on time, one whose connection is late.
@@ -212,5 +215,6 @@ class FakeChanges:
                     "3",
                     depart_expected="17:21*",
                 ),
+                self.at_risk,
             ),
         ]

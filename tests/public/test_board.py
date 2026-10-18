@@ -307,6 +307,36 @@ def test_a_board_with_no_direct_train_shows_journeys_with_a_change(
     assert changes.calls == [("LST", "SUY")]  # once a minute, for every viewer
 
 
+def test_a_connection_a_late_train_may_miss_says_at_risk(
+    client: Client, changes: FakeChanges
+) -> None:
+    """Where live times leave too little time to change, the connection says At risk (TRA-36)."""
+    changes.at_risk = True
+    text = _text(client.get("/board/LST/SUY"))
+    assert (
+        '<td data-label="Platform">3</td>'
+        '<td data-label="Expected" data-expected="At risk">Connection at risk</td></tr>'
+    ) in text
+    first, then = client.get("/api/board/LST/SUY").json()["trains"]
+    assert "at_risk" not in first["change"]  # the connection it doesn't threaten
+    assert first["change"]["expected"] == "On time"
+    assert then["expected"] == "On time"  # the train to catch says how it runs, as ever
+    assert then["change"]["expected"] == "At risk"
+    assert then["change"]["at_risk"] is True
+
+
+def test_a_cancelled_connection_says_cancelled_not_at_risk() -> None:
+    """A connection that isn't running is lost, not at risk."""
+    journey = fakes._journey(
+        fakes._leg("LST", "MKT", "16:08", "17:04", "Ipswich", "14", depart_expected="On time"),
+        fakes._leg("MKT", "SUY", "17:16", "17:36", "Sudbury (Suffolk)", "3", cancelled=True),
+        at_risk=True,
+    )
+    change = boards._journey(journey)["change"]
+    assert change["expected"] == "Cancelled"
+    assert "at_risk" not in change
+
+
 def test_a_board_whose_journeys_with_a_change_fail_says_it_has_no_trains(
     client: Client, changes: FakeChanges
 ) -> None:

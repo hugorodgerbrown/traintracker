@@ -97,8 +97,10 @@ colour, type, spacing, board and copy rules. That covers:
 - `templates/accounts/emails/`: the sign-in email's subject and body (copy rules).
 
 The system was built from this repository's code, so the code is the source and
-the artifact documents it. When a change alters a token, a component or a rule
-the README states, say so in the PR and offer to update the artifact to match.
+the artifact documents it. When a change adds or alters a token, a component, a
+component's state or a rule the README states, update the artifact in the same
+piece of work (its README, the component's README and preview, and
+`components/bundle.css`), and say in the PR what changed there. Don't ask first.
 
 ## Linear
 

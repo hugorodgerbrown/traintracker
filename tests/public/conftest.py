@@ -11,7 +11,7 @@ from django.utils.csp import CSP
 from apps.core import analytics
 from apps.public import board as tt
 from apps.public import boards, views
-from tests.public.fakes import BASE, FIELDS, FakeFetch
+from tests.public.fakes import BASE, FIELDS, FakeChanges, FakeFetch
 from tests.rail.conftest import _isolate_env  # noqa: F401  (autouse: a schema of its own)
 
 
@@ -21,9 +21,21 @@ def fetch() -> FakeFetch:
     return FakeFetch()
 
 
+@pytest.fixture
+def changes() -> FakeChanges:
+    """The journeys with a change the boards use: Liverpool Street to Sudbury."""
+    return FakeChanges()
+
+
 @pytest.fixture(autouse=True)
-def django_site(settings: Any, monkeypatch: pytest.MonkeyPatch, fetch: FakeFetch) -> None:
-    """Django's pages with production's values, and boards from ``fetch`` on a fresh loop."""
+def django_site(
+    settings: Any, monkeypatch: pytest.MonkeyPatch, fetch: FakeFetch, changes: FakeChanges
+) -> None:
+    """Django's pages with production's values, and boards on a fresh loop.
+
+    The boards' trains come from ``fetch``, and their journeys with a change
+    from ``changes``.
+    """
     cache.clear()
     boards.limiter.cache_clear()  # a full bucket for every address
     settings.SITE_URL = BASE
@@ -32,7 +44,7 @@ def django_site(settings: Any, monkeypatch: pytest.MonkeyPatch, fetch: FakeFetch
     fivebar = [CSP.SELF, *analytics.csp_sources(settings.FIVEBAR_DOMAIN)]
     settings.SECURE_CSP = {**settings.SECURE_CSP, "script-src": fivebar, "connect-src": fivebar}
     monkeypatch.setattr(views, "fields", lambda: FIELDS)
-    shared = tt.SharedBoards(fetch)
+    shared = tt.SharedBoards(fetch, changes)
     monkeypatch.setattr(boards, "shared", lambda: shared)
 
     def run(fn: Callable[..., Any], *args: Any) -> Any:

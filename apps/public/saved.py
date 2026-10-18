@@ -12,6 +12,7 @@ import json
 import logging
 from typing import Any
 
+from django.contrib.auth import get_user_model
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.db import transaction
 from django.http import HttpRequest, JsonResponse
@@ -63,9 +64,19 @@ def _tidy(user: AbstractBaseUser) -> None:
     unneeded.delete()
 
 
+def _lock(user: AbstractBaseUser) -> None:
+    """Hold the account's row until the transaction ends.
+
+    Two devices saving at once then take turns, so ``_tidy`` never counts
+    favourites another is still changing and the limit holds.
+    """
+    list(get_user_model().objects.select_for_update().filter(pk=user.pk).values_list("pk"))
+
+
 def opened(user: AbstractBaseUser, key: tt.BoardKey) -> None:
     """Remember ``key`` as the last board ``user`` opened."""
     with transaction.atomic():
+        _lock(user)
         row, _ = SavedBoard.objects.get_or_create(user_id=user.pk, path=key.path)
         row.opened_at = timezone.now()
         row.save(update_fields=["opened_at", "updated_at"])
@@ -78,6 +89,7 @@ def favour(user: AbstractBaseUser, key: tt.BoardKey, on: bool) -> None:
     A new favourite past the limit pushes out the oldest.
     """
     with transaction.atomic():
+        _lock(user)
         row, _ = SavedBoard.objects.get_or_create(user_id=user.pk, path=key.path)
         if on != row.favourite:
             row.favourite = on
@@ -94,6 +106,7 @@ def move(user: AbstractBaseUser, last: tt.BoardKey | None, favourites: list[tt.B
     last board becomes the account's only if the account has none.
     """
     with transaction.atomic():
+        _lock(user)
         boards = SavedBoard.objects.for_user(user)
         room = SavedBoard.MAX_FAVOURITES - boards.favourites().count()
         for key in favourites:

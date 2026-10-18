@@ -115,15 +115,15 @@
   // ---------------------------------------------------- both, as one
 
   /** Your boards, and where they're kept: `{signedIn, last, favourites}`.
-   * Null when the account couldn't be asked (the server failed): then
-   * nothing is shown or kept, rather than keeping a signed-in person's
-   * boards in the browser. Offline reads as signed out. */
+   * Null when the account couldn't be asked (offline, or the server
+   * failed): then nothing is shown or kept, rather than keeping a
+   * signed-in person's boards in the browser. */
   async function load() {
     let response;
     try {
       response = await call('');
     } catch {
-      return { signedIn: false, ...read() };
+      return null;
     }
     if (!response.ok) return null;
     const data = await response.json();

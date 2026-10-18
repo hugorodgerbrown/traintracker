@@ -6,8 +6,9 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
 from django.test import Client
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -117,6 +118,20 @@ def test_moving_a_browsers_boards_adds_them_without_pushing_any_out(user: Any) -
         saved.favour(full, key, on=True)
     saved.move(full, None, [tt.BoardKey("CBG")])
     assert _paths(saved.state(full)["favourites"]) == [k.path for k in mine]
+
+
+def test_saving_locks_the_account_first(user: Any) -> None:
+    """Two devices saving at once take turns, so the favourites never pass the limit.
+
+    The lock is the transaction's first query; SQLite (the test database) has
+    no FOR UPDATE and serialises writes itself, so only Postgres shows it.
+    """
+    for save in (lambda: saved.opened(user, LST), lambda: saved.favour(user, LST, on=True)):
+        with CaptureQueriesContext(connection) as queries:
+            save()
+        sql = [q["sql"] for q in queries.captured_queries if "SAVEPOINT" not in q["sql"]]
+        assert sql[0].startswith('SELECT "accounts_user"."id"')
+        assert ("FOR UPDATE" in sql[0]) == connection.features.has_select_for_update
 
 
 # ------------------------------------------------------------- /api/boards

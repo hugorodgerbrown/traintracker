@@ -98,10 +98,10 @@ describe('load', () => {
     expect(await SavedBoards.load()).toEqual({ signedIn: false, last: LST, favourites: [COL] });
   });
 
-  it('offline, reads the browser', async () => {
+  it('offline, gives nothing: it may be a signed-in visit', async () => {
     SavedBoards.write({ last: LST, favourites: [] });
     server(new TypeError('Failed to fetch'));
-    expect(await SavedBoards.load()).toEqual({ signedIn: false, last: LST, favourites: [] });
+    expect(await SavedBoards.load()).toBeNull();
   });
 
   it('when the server fails, gives nothing', async () => {

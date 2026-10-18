@@ -18,3 +18,5 @@ db.sqlite3
 staticfiles/
 .coverage
 coverage.xml
+# Vitest (package.json)
+node_modules/

@@ -662,3 +662,23 @@ def test_a_connection_with_no_live_time_says_scheduled() -> None:
         "scheduled": True,
         "day": "",
     }
+
+
+@pytest.mark.parametrize(
+    ("path", "name"),
+    [
+        ("/board/LST", "London Liverpool Street"),
+        ("/board/LST/COL", "London Liverpool Street to Colchester"),
+        ("/board/CBG/1", "Cambridge, platform 1"),
+        ("/board/lst", None),  # not the board's own address
+        ("/board/LST/LST", None),
+        ("/board/LST/COL/1", None),
+        ("/board/XXX", None),
+        ("/board", None),
+        ("/api/board/LST", None),
+    ],
+)
+def test_a_saved_board_is_read_from_its_own_address(path: str, name: str | None) -> None:
+    """from_path takes only a board's one address; name() is how a list of boards says it."""
+    key = boards.from_path(path)
+    assert (key.name() if key else None) == name

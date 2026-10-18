@@ -213,7 +213,8 @@ def test_the_front_page_has_the_shared_anatomy(client: Client) -> None:
     text = _page(client, "/")
     order = [
         '<section class="hero">',
-        '<figure class="departures">',
+        '<figure class="departures" data-example>',
+        '<section class="your-favourites"',
         '<section class="ai"',
         '<section class="closing">',
     ]
@@ -274,7 +275,7 @@ def test_the_landing_page_shows_an_example_board(client: Client) -> None:
     """Under the lede, a board as a table that site.js draws as flaps."""
     text = _page(client, "/")
     assert text.index('class="lede"') < text.index('class="departures"') < text.index("<h2")
-    board = text.split('<figure class="departures">', 1)[1].split("</figure>", 1)[0]
+    board = text.split('<figure class="departures" data-example>', 1)[1].split("</figure>", 1)[0]
     # The trains are a table in the page: site.js draws the flaps from it, so
     # the page needs no inline script or style, and reads without JavaScript.
     assert "<script" not in board

@@ -598,7 +598,7 @@ blockquote p {
   gap: 0 0.75rem;
 }
 
-.departures.live .station h1 {
+.departures.live .station :is(h1, h2) {
   margin: 0;
   font-size: 1.125rem;
   font-weight: 600;
@@ -675,6 +675,26 @@ blockquote p {
 .chips a[aria-current="page"] {
   background: var(--accent);
   color: var(--on-accent);
+}
+
+/* Saved boards (saved_boards.js): a board page's favourite button, and the
+   front page's favourites under the last board opened. */
+
+.favourite {
+  margin: 1.5rem 0 0;
+}
+
+.favourite .status {
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
+}
+
+.favourite .status:empty {
+  display: none;
+}
+
+.your-favourites {
+  margin: 2.5rem 0 0;
 }
 
 .picker {

@@ -2,6 +2,12 @@
 {% block content %}{% include "public/_figure.html" %}
 <p class="hint">Live times, updated every minute.{% if key.to %} <a href="/{{ all_path }}">Every train from {{ station_name }}</a>.{% endif %}
   <a href="/board">Choose another station</a>.</p>
+{# Saved boards (saved_boards.js): this page is the last board opened, and can be a favourite. Hidden without JavaScript, which keeps them. #}
+<div class="favourite" data-board-path="{{ key.path }}" data-board-name="{{ board_name }}" hidden>
+  <button type="button">Add to favourites</button>
+  <p class="hint"></p>
+  <p class="status" role="status"></p>
+</div>
 {% if platform_links %}
 <h2 id="platforms">One platform</h2>
 <p>The board for one platform shows only the trains leaving from it.</p>

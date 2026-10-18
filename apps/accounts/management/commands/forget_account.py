@@ -1,8 +1,8 @@
 """Delete an account and everything kept about it, when its owner asks.
 
 ``forget_account EMAIL`` says what it would delete; ``--commit`` deletes
-the account, which takes its passkeys and its connected apps' tokens with
-it, and any sign-in request for the address. Traintrackr's privacy policy
+the account, which takes its passkeys, its saved boards and its connected
+apps' tokens with it, and any sign-in request for the address. Traintrackr's privacy policy
 promises this on request.
 """
 

@@ -412,7 +412,7 @@ async def download_and_build(settings: Settings) -> dict[str, Any]:
 
 @dataclass(frozen=True, slots=True)
 class Stop:
-    """One public stop of a trip: its station, times and booked platform."""
+    """One public stop of a trip: its station, times and scheduled platform."""
 
     seq: int
     crs: str

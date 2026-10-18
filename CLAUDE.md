@@ -96,6 +96,11 @@ colour, type, spacing, board and copy rules. That covers:
   connect pages, which use the site stylesheet and icon.
 - `templates/accounts/emails/`: the sign-in email's subject and body (copy rules).
 
+A timetable time is **scheduled**, never "booked": Traintrackr sells no
+tickets, so "booked" misleads. That holds everywhere a person or a model reads
+it (pages, boards, tool descriptions, notes, API values such as
+`platform_source`, the README) and in the code's own names.
+
 The system was built from this repository's code, so the code is the source and
 the artifact documents it. When a change adds or alters a token, a component, a
 component's state or a rule the README states, update the artifact in the same

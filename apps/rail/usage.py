@@ -16,7 +16,7 @@ batches, so counting costs a tool call nothing, and a failed write never
 fails one.
 
 Counting alone stops nothing, so there is also a ceiling on the requests sent in
-one day (DailyBudget). Past it the live tools answer with booked times.
+one day (DailyBudget). Past it the live tools answer with scheduled times.
 """
 
 from __future__ import annotations
@@ -104,7 +104,7 @@ class DailyBudget:
         self._spent += 1
         if self._spent == self.limit:
             log.warning(
-                "Darwin daily limit of %d requests reached; live tools answer with booked "
+                "Darwin daily limit of %d requests reached; live tools answer with scheduled "
                 "times until midnight.",
                 self.limit,
             )

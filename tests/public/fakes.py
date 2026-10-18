@@ -55,7 +55,7 @@ def _scheduled(time: str, on: str) -> BoardService:
     """A timetable train to Colchester at ``time`` on the date ``on``, as a short board has.
 
     Args:
-        time: Its booked time.
+        time: Its scheduled time.
         on: The date it runs, YYYY-MM-DD.
 
     Returns:
@@ -69,7 +69,7 @@ def _scheduled(time: str, on: str) -> BoardService:
         scheduled=time,
         date=on,
         platform="10",
-        platform_source="booked",
+        platform_source="scheduled",
         status="scheduled",
     )
 

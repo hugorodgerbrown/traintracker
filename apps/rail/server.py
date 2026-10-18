@@ -69,7 +69,7 @@ GB (National Rail) train times.
 - "Show me the board", "display the departures": show_board. Only when the person asks to
   see a board; it draws one on screen where the app can.
 - "Which platform is my train?": departure_platform. "What's leaving from platform 4?":
-  platform_departures. A 'booked' platform_source is the timetabled platform, not yet confirmed.
+  platform_departures. A 'scheduled' platform_source is the timetabled platform, not yet confirmed.
 - A future date/time, or "what trains are there": timetable.
 - Getting from A to B, including changes: plan_journey. It uses the timetable and adds
   live times for today's trains where available.
@@ -380,7 +380,7 @@ def _trip_board_service(
         destination=[_ref(trip.stops[-1].crs)],
         scheduled=fmt_minutes(minutes_on(day, trip, t)),
         platform=stop.platform,
-        platform_source="booked" if stop.platform else None,
+        platform_source="scheduled" if stop.platform else None,
         status="scheduled",
         calling_points=[
             CallingPoint(
@@ -443,7 +443,7 @@ def _timetable_services(
     points: bool,
     after: int = 0,
 ) -> list[BoardService]:
-    """Booked trains at `st` from `after` minutes past `when` to `window` minutes past it.
+    """Scheduled trains at `st` from `after` minutes past `when` to `window` minutes past it.
 
     In time order, each with the date it runs on, which is a later day than
     `when`'s for a train after midnight.
@@ -477,7 +477,7 @@ def _timetable_board(
     points: bool,
 ) -> Board:
     services = _timetable_services(tt, st, when, window, board, other, points)
-    notes = ["Scheduled (timetabled) times; engineering-work changes appear once published."]
+    notes = ["Scheduled times from the timetable; engineering-work changes appear once published."]
     return Board(
         station=StationRef(name=st.name, crs=st.crs),
         board=board,
@@ -494,6 +494,12 @@ LIVE_WINDOW = 120  # minutes of a live board that Darwin covers
 # it: first a few hours, which is all a short board usually needs, then a day,
 # which covers the longest overnight gap (TRA-33).
 FILL_WINDOWS = (6 * 60, DAY)
+# Said on a timetable answer for today: a scheduled train further out than the
+# live window has no live status yet, so "scheduled" is not "running".
+LIVE_WINDOW_NOTE = (
+    "Live status, including delays and cancellations, is never known more than two "
+    "hours before a train leaves, so a scheduled train can still be cancelled."
+)
 FILLED_NOTE = (
     "Trains marked Scheduled are timetabled times: delays and cancellations show "
     "once they are within two hours."
@@ -526,14 +532,14 @@ async def _fill_scheduled(
     found: list[BoardService] = []
     for window in FILL_WINDOWS:
 
-        def booked(window: int = window) -> list[BoardService]:
+        def scheduled(window: int = window) -> list[BoardService]:
             tt = a.timetable()
             return _timetable_services(
                 tt, st, start, window, b.board, other, points, after=LIVE_WINDOW
             )
 
         try:
-            found = await a.off_loop(booked)
+            found = await a.off_loop(scheduled)
         except (TrainTrackerError, ToolError) as exc:
             log.info("Board %s not filled: %s", st.crs, type(exc).__name__)
             return
@@ -557,9 +563,9 @@ def _end_crs(s: BoardService, board: Literal["departures", "arrivals"]) -> str:
 
 
 def _date_live(services: list[BoardService], start: datetime) -> None:
-    """Give each live train the date of its booked time, counted from `start`.
+    """Give each live train the date of its scheduled time, counted from `start`.
 
-    A booked time up to 12 hours before `start` is a late train from today; any
+    A scheduled time up to 12 hours before `start` is a late train from today; any
     other is the next time the clock reads it.
     """
     now = start.hour * 60 + start.minute
@@ -637,7 +643,7 @@ async def live_departures(
 ) -> Board:
     """Live departure board for a GB railway station, covering the next two hours:
     expected times, platforms, delays and cancellations. The data comes from Darwin
-    (National Rail Enquiries). If Darwin is offline, the board shows booked timetable
+    (National Rail Enquiries). If Darwin is offline, the board shows scheduled timetable
     times and says so. Where fewer than `rows` trains run in the two hours, the board
     goes on with scheduled trains from the timetable, up to a day ahead: their source
     is 'timetable' and their date says which day they run."""
@@ -664,7 +670,7 @@ async def _live_board(
     until: Callable[[list[BoardService]], bool] | None = None,
     fill: bool = False,
 ) -> Board:
-    """Darwin, else booked times with a note saying why live data is missing.
+    """Darwin, else scheduled times with a note saying why live data is missing.
 
     `until` lets Darwin stop paging once enough services have been seen. With
     `fill`, a live board with fewer than `rows` trains goes on with scheduled
@@ -689,21 +695,21 @@ async def _live_board(
             notes.append(_darwin_offline(exc))
     if b is None:
 
-        def booked() -> Board:
+        def scheduled() -> Board:
             return _timetable_board(a.timetable(), st, start, 120, board, other, rows, points)
 
         try:
-            b = await a.off_loop(booked)
+            b = await a.off_loop(scheduled)
         except TimetableMissing as exc:
             if notes:
                 raise UpstreamError(
-                    f"{notes[0]} Booked times aren't available either: {exc}"
+                    f"{notes[0]} Scheduled times aren't available either: {exc}"
                 ) from exc
             raise
         notes.append(
-            "Showing booked times instead."
+            "Showing scheduled times instead."
             if notes
-            else "No live source is configured for this board; showing booked times."
+            else "No live source is configured for this board; showing scheduled times."
         )
     if fill:
         await _fill_scheduled(a, b, st, other, rows, start, points)
@@ -744,7 +750,7 @@ async def live_arrivals(
 ) -> Board:
     """Live arrivals board for a GB railway station, covering the next two hours. The
     data comes from Darwin (National Rail Enquiries) where the server has its arrivals
-    feed; otherwise the board shows booked timetable times and says so. Where fewer than
+    feed; otherwise the board shows scheduled timetable times and says so. Where fewer than
     `rows` trains arrive in the two hours, the board goes on with scheduled trains from
     the timetable, up to a day ahead, as live_departures does."""
     return await _live_board(
@@ -794,13 +800,15 @@ async def departure_platform(
     ] = None,
     time: Annotated[
         str | None,
-        Field(max_length=5, description="Booked departure HH:MM (24h). Default: the next train."),
+        Field(
+            max_length=5, description="Scheduled departure HH:MM (24h). Default: the next train."
+        ),
     ] = None,
 ) -> PlatformCheck:
     """The platform one train leaves from at a GB railway station: the next departure,
-    or the one booked at a given time. Large stations often announce the live platform
-    about 10 minutes before departure; until then the booked (timetable) platform is
-    returned and flagged as 'booked'."""
+    or the one scheduled at a given time. Large stations often announce the live platform
+    about 10 minutes before departure; until then the scheduled (timetable) platform is
+    returned and flagged as 'scheduled'."""
     a = app()
     st = _station(station)
     other = _station(to) if to else None
@@ -809,7 +817,7 @@ async def departure_platform(
         target = _when(None, time)
         offset = max(-119, min(119, _minutes_until(target.strftime("%H:%M")) - 1))
     b = await _live_board(a, st, "departures", other, 10, offset, False)
-    _fill_booked_platforms(a, st.crs, b.services)
+    _fill_scheduled_platforms(a, st.crs, b.services)
     candidates = [s for s in b.services if not time or s.scheduled == time]
     if not candidates:
         where = f" to {other.name}" if other else ""
@@ -836,7 +844,7 @@ def _platform_note(svc: BoardService, b: Board) -> str:
         return f"Platform {svc.platform}."
     if svc.platform:
         return (
-            f"Booked for platform {svc.platform}; not yet confirmed by the live feed. "
+            f"Scheduled for platform {svc.platform}; not yet confirmed by the live feed. "
             "Check again nearer departure."
         )
     if b.platform_available is False:
@@ -852,17 +860,17 @@ async def platform_departures(
     count: Annotated[int, Field(ge=1, le=10)] = 3,
 ) -> Board:
     """The next trains leaving from one platform of a GB railway station in the next two
-    hours. A train whose live platform isn't announced yet is matched on its booked
-    platform (platform_source 'booked'), which can still change."""
+    hours. A train whose live platform isn't announced yet is matched on its scheduled
+    platform (platform_source 'scheduled'), which can still change."""
     b, seen = await _platform_board(app(), _station(station), platform, count)
     if not b.services:
         b.messages.append(
             f"No departures from platform {platform} in the next two hours."
             + (f" Platforms in use: {', '.join(seen)}." if seen else "")
         )
-    elif any(s.platform_source == "booked" for s in b.services):
+    elif any(s.platform_source == "scheduled" for s in b.services):
         b.messages.append(
-            "Trains marked platform_source 'booked' use the timetabled platform; "
+            "Trains marked platform_source 'scheduled' use the timetabled platform; "
             "the live platform may differ once announced."
         )
     return b
@@ -881,11 +889,11 @@ async def _platform_board(
         return bool(s.platform) and _norm_platform(s.platform or "") == want
 
     def enough(services: list[BoardService]) -> bool:
-        _fill_booked_platforms(a, st.crs, services)
+        _fill_scheduled_platforms(a, st.crs, services)
         return sum(map(matches, services)) >= count
 
     b = await _live_board(a, st, "departures", None, 150, 0, False, until=enough)
-    _fill_booked_platforms(a, st.crs, b.services)
+    _fill_scheduled_platforms(a, st.crs, b.services)
     seen = sorted({s.platform for s in b.services if s.platform}, key=_platform_sort)
     b.services = [s for s in b.services if matches(s)][:count]
     return b, seen
@@ -922,7 +930,7 @@ async def public_board(crs: str, to: str | None, platform: str | None) -> tuple[
         return b, seen
     other = _station(to) if to else None
     b = await _live_board(a, st, "departures", other, PUBLIC_ROWS, 0, False, fill=True)
-    _fill_booked_platforms(a, st.crs, b.services)
+    _fill_scheduled_platforms(a, st.crs, b.services)
     return b, sorted({s.platform for s in b.services if s.platform}, key=_platform_sort)
 
 
@@ -969,7 +977,7 @@ async def public_changes(crs: str, to: str) -> list[Journey]:
     return journeys
 
 
-def _fill_booked_platforms(a: App, crs: str, services: list[BoardService]) -> None:
+def _fill_scheduled_platforms(a: App, crs: str, services: list[BoardService]) -> None:
     """Give departures with no announced platform their timetabled one."""
     missing = [s for s in services if not s.platform and s.scheduled]
     if not missing:
@@ -977,7 +985,7 @@ def _fill_booked_platforms(a: App, crs: str, services: list[BoardService]) -> No
     try:
         tt = a.timetable()
     except TrainTrackerError:
-        return  # booked platforms are a bonus
+        return  # scheduled platforms are a bonus
     now = datetime.now(UK_TZ)
     start = now.hour * 60 + now.minute
     by_key: dict[tuple[str, str], str] = {}
@@ -997,7 +1005,7 @@ def _fill_booked_platforms(a: App, crs: str, services: list[BoardService]) -> No
         if plat is None and len(by_time.get(s.scheduled, ())) == 1:
             plat = next(iter(by_time[s.scheduled]))
         if plat:
-            s.platform, s.platform_source = plat, "booked"
+            s.platform, s.platform_source = plat, "scheduled"
 
 
 def _norm_platform(value: str) -> str:
@@ -1049,9 +1057,10 @@ async def timetable(
     rows: Annotated[int, Field(ge=1, le=100)] = 20,
     include_calling_points: bool = False,
 ) -> Board:
-    """Booked (timetabled) departures or arrivals at a GB railway station on any date the
+    """Scheduled (timetabled) departures or arrivals at a GB railway station on any date the
     Network Rail timetable covers, usually months ahead. For future dates; for trains in
-    the next two hours, live_departures has live times."""
+    the next two hours, live_departures has live times. Status 'scheduled' means no live
+    status yet, not that the train is running: a train can be cancelled on the day."""
     a = app()
     st = _station(station)
     other_q = to if board == "departures" else from_station
@@ -1060,14 +1069,16 @@ async def timetable(
     if not time and when.date() != datetime.now(UK_TZ).date():
         window_minutes = 1440  # "what runs on Saturday?" means the whole day
 
-    def booked() -> Board:
+    def scheduled() -> Board:
         tt = a.timetable()
         _covered(tt, when.date())
         return _timetable_board(
             tt, st, when, window_minutes, board, other, rows, include_calling_points
         )
 
-    b = await a.off_loop(booked)
+    b = await a.off_loop(scheduled)
+    if when.date() == datetime.now(UK_TZ).date():
+        b.messages.append(LIVE_WINDOW_NOTE)
     if a.settings.demo:
         b.messages.insert(0, demo.DEMO_NOTE)
     return b
@@ -1081,7 +1092,7 @@ async def service_details(
         Field(max_length=NAME, description="A service_id from another tool (darwin:… or tt:…)."),
     ],
 ) -> ServiceDetail:
-    """Every stop of one GB train, with booked times and, for a train taken from a live
+    """Every stop of one GB train, with scheduled times and, for a train taken from a live
     board, expected and actual times. Takes a service_id returned by another tool."""
     a = app()
     if service_id.startswith("darwin:"):
@@ -1147,7 +1158,8 @@ async def plan_journey(
     """Plan rail journeys between two GB stations, with changes up to max_changes.
     Returns the fastest options first plus the fewest-changes option. Transfers between
     London terminals are included as approximate walk/Tube links. For today's trains in
-    the next two hours, live Darwin times are added and at-risk connections flagged."""
+    the next two hours, live Darwin times are added and at-risk connections flagged. A leg
+    without expected times has no live status yet, not a promise that it runs."""
     a = app()
     o, d = _station(origin), _station(destination)
     if o.crs == d.crs:
@@ -1174,7 +1186,10 @@ async def plan_journey(
 
     journeys = await a.off_loop(plan)
     _link_legs(journeys)
-    notes = ["Times are booked (timetable) times unless a leg shows expected times."]
+    notes = [
+        "Times are scheduled (timetable) times unless a leg shows expected times. "
+        + LIVE_WINDOW_NOTE
+    ]
     if a.settings.demo:
         notes.insert(0, demo.DEMO_NOTE)
     if any(leg.mode == "tube (approx.)" for j in journeys for leg in j.legs):
@@ -1246,7 +1261,9 @@ async def _overlay_live(a: App, journeys: list[Journey], mct: int, notes: list[s
     if touched:
         notes.append("Live times from National Rail (Darwin) added where available.")
     if failure:
-        scope = "Legs without live times show booked times." if touched else "Times are booked."
+        scope = (
+            "Legs without live times show scheduled times." if touched else "Times are scheduled."
+        )
         notes.append(f"{_darwin_offline(failure)} {scope}")
 
 

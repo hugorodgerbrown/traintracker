@@ -217,6 +217,34 @@ def test_fewest_changes_option_is_offered(tt_direct: Timetable) -> None:
     assert any(j.changes == 0 for j in journeys)
 
 
+@pytest.fixture
+def tt_fast_direct(tmp_path: Path) -> Timetable:
+    """The test timetable with a fast through train after the 13:00 change."""
+    direct = feedgen.schedule(
+        "D00002",
+        [
+            feedgen.location("LIVST", None, 14 * 60 + 10),
+            feedgen.location("SUDBURY", 14 * 60 + 20, None),
+        ],
+    )
+    db = timetable_db("_fast")
+    build(feedgen.feed([direct]), db, today=date(2026, 9, 26))
+    Timetable.clear_caches()
+    return Timetable.open(db)
+
+
+def test_a_journey_leaving_after_latest_beats_none(tt_fast_direct: Timetable) -> None:
+    """A train after `latest` is left out before any journey is weighed against it.
+
+    The 14:10 arrives before the 13:00's change gets in; by 13:30 the 13:00 is
+    the one to catch.
+    """
+    later = planner.plan(tt_fast_direct, "LST", "SUY", _at(12, 5), count=2)
+    assert "2026-10-02T13:00" not in [j.depart[:16] for j in later]
+    [j] = planner.plan(tt_fast_direct, "LST", "SUY", _at(12, 5), count=2, latest=_at(13, 30))
+    assert (j.depart[11:16], j.arrive[11:16], j.changes) == ("13:00", "14:23", 1)
+
+
 def test_walk_only_journey_is_returned_once(tt: Timetable) -> None:
     """A journey that is only a walk is given once."""
     journeys = planner.plan(tt, "KGX", "STP", _at(12, 0), count=3)

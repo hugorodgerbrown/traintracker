@@ -818,13 +818,16 @@ async def public_changes(crs: str, to: str) -> list[Journey]:
     now = datetime.now(UK_TZ).replace(second=0, microsecond=0)
     mct = a.settings.min_interchange_minutes
 
+    last = now + timedelta(minutes=PUBLIC_WINDOW)
+
     def plan() -> list[Journey]:
         tt = a.timetable()
         _covered(tt, now.date())
         # Two lines a journey: as many as fit the board's rows.
-        return planner.plan(tt, o.crs, d.crs, now, count=PUBLIC_ROWS // 2, max_changes=1, mct=mct)
+        return planner.plan(
+            tt, o.crs, d.crs, now, count=PUBLIC_ROWS // 2, max_changes=1, mct=mct, latest=last
+        )
 
-    last = now + timedelta(minutes=PUBLIC_WINDOW)
     journeys = sorted(
         (
             j

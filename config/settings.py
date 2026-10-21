@@ -92,7 +92,7 @@ SECURE_CSP = {
     "form-action": [CSP.SELF],
     "frame-ancestors": [CSP.NONE],
 }
-CSRF_FAILURE_VIEW = "apps.core.views.csrf_failure"
+CSRF_FAILURE_VIEW = "apps.core.errors.csrf_failure"
 SECURE_REFERRER_POLICY = "same-origin"
 SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
 

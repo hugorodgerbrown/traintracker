@@ -1,0 +1,36 @@
+{% load static %}<!doctype html>
+{% comment %}
+400 and 500 (apps/core/errors.py), and the fallback when page.html fails.
+Rendered from a plain dict, without the request, so no context processor
+runs: no session, no request.user, no database. A 500 is often caused by
+one of those, and a 400 can be DisallowedHost, where anything that builds
+an absolute address raises again. Why:
+docs/decisions/the-500-page-renders-without-context.md.
+
+Context: page (an ErrorPage), pwa (the app's name) and nav (the footer's
+links), all from config. Read nothing else; there is nothing else. No
+analytics: the tag needs the request. If {% static %} raises (no
+manifest), the handler sends its literal fallback instead.
+{% endcomment %}
+<html lang="en-GB">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex">
+    <title>{{ page.heading }} · {{ pwa.name }}</title>
+    <link rel="icon" href="{% static 'icons/icon.svg' %}" type="image/svg+xml">
+    <link rel="icon" href="{% static 'icons/icon-32.png' %}" sizes="32x32" type="image/png">
+    <link rel="stylesheet" href="{% static 'css/site.css' %}">
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    {# public/_header.html without its right-hand link: whether anyone is signed in is a session lookup. #}
+    <header>
+      <a class="name" href="/" aria-label="{{ pwa.name }} home"><img src="{% static 'icons/icon.svg' %}" alt="" width="32" height="32">{{ pwa.name }}</a>
+    </header>
+    <main class="sign-in" id="main">
+      {% include "errors/_error_card.html" %}
+    </main>
+    {% include "public/_footer.html" %}
+  </body>
+</html>

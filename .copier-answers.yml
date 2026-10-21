@@ -1,12 +1,12 @@
 # Changes here will be overwritten by Copier; do not edit by hand.
-_commit: a7b7d5c
+_commit: 34f7902
 _src_path: gh:hugorodgerbrown/django-titan-template
 author_email: hugo@rodger-brown.com
 author_name: Hugo Rodger-Brown
 copyright_holder: Hugo Rodger-Brown
 description: Live GB train times, platforms and journeys, in Claude and ChatGPT
 include_mcp: true
-mcp_can_connect: apps.mcp.policy.staff_only
+mcp_can_connect: mcp_auth.policy.active_user
 project_name: Traintrackr
 project_slug: traintracker
 render_region: frankfurt

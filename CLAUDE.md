@@ -184,5 +184,5 @@ the account and sign-in pages, `docs.html`, `index.html`, the README and
 6. Sign-in secrets (codes, tokens) are stored only as hashes and never
    logged. The one exception is a reviewer account's fixed code, which
    staff read in the admin (docs/accounts.md).
-7. Who may connect an MCP client (`MCP_AUTH["CAN_CONNECT"]`) only widens in
-   a PR that says so.
+7. Who may connect an MCP client (`MCP_AUTH["CAN_CONNECT"]` in
+   `config/settings.py`) only changes in a PR that says so.

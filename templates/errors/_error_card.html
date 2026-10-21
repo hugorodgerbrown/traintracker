@@ -1,0 +1,5 @@
+{# The error card (DESIGN.md, "Error pages"): the status, what happened in one heading and one line, and the way home. Drawn by errors/page.html and errors/standalone.html in Traintrackr's own style (site.css); the copy is apps/core/errors.py: ERROR_PAGES. #}
+<p class="eyebrow">Error {{ page.status }}</p>
+<h1>{{ page.heading }}</h1>
+<p class="lede">{{ page.body }}</p>
+<a class="button" href="/">Go to the front page</a>

@@ -22,6 +22,12 @@ The HTML comes in two kinds, and the split is the point of this module
   is often caused by one of those, and a 400 can be ``DisallowedHost``.
   If even that fails (a missing static manifest), ``FALLBACK_HTML``.
 
+Both kinds carry fivebar's tag while it is on, with ``data-status`` set to
+the response's status (``http_status``, as ``apps.core.shortcuts.render``
+sets it on every page): Safari doesn't report a page's status itself, so
+without it fivebar counts a Safari 404 as a pageview
+(https://fiveb.ar/docs/error-pages).
+
 The copy lives here, in ``ERROR_PAGES``, so both kinds say the same thing.
 With ``DEBUG`` on Django shows its technical pages instead. Traintrackr has
 no design page, so there is no staff preview: run with ``DEBUG`` off to see
@@ -32,11 +38,12 @@ import dataclasses
 import logging
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
-from django.shortcuts import render
 from django.template.loader import render_to_string
 from django.utils.cache import patch_vary_headers
 from django.views.decorators.csrf import requires_csrf_token
 
+from apps.core.analytics import analytics
+from apps.core.shortcuts import render
 from apps.public.views import NAV, relative
 from apps.pwa import conf as pwa_conf
 
@@ -134,18 +141,22 @@ def wants_json(request: HttpRequest) -> bool:
     return request.accepts("application/json") and not request.accepts("text/html")
 
 
-def standalone(page: ErrorPage) -> str:
-    """The page with no request behind it: no context processors, no database.
+def standalone(page: ErrorPage, request: HttpRequest) -> str:
+    """The page rendered without the request: no context processors, no database.
 
     ``pwa`` is the app's name and ``nav`` the footer's links, both read from
-    config, not from the request.
+    config, not from the request. ``analytics`` is fivebar's tag, from
+    settings and the matched route alone: it reads neither the session nor
+    the host, so it can't fail the way a 500 or a ``DisallowedHost`` 400 did.
     """
     context = {
         "page": page,
         "pwa": {"name": pwa_conf.APP_NAME},
         "nav": [(relative(path), text, False) for path, text in NAV],
+        "http_status": page.status,
     }
     try:
+        context.update(analytics(request))
         return render_to_string(STANDALONE_TEMPLATE, context)
     except Exception:
         logger.exception("errors: the standalone page failed; sending the fallback")
@@ -165,7 +176,7 @@ def _negotiate(request: HttpRequest, page: ErrorPage) -> HttpResponse:
             return render(request, SITE_TEMPLATE, {"page": page}, status=page.status)
         except Exception:
             logger.exception("errors: the %s page failed; sending the standalone one", page.slug)
-    return HttpResponse(standalone(page), status=page.status)
+    return HttpResponse(standalone(page, request), status=page.status)
 
 
 def error_response(request: HttpRequest, kind: str) -> HttpResponse:

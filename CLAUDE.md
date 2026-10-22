@@ -68,6 +68,13 @@ queryset, a factory in `tests/factories.py`, and tests. Use `uuid`, never
 `id`, in URLs and anything a client sees. The timetable is not a model: it
 is a Postgres schema rebuilt each day (`apps/rail/timetable.py`).
 
+### Views
+
+Render pages with `apps.core.shortcuts.render`, not Django's: it puts the
+response's status in the context as `http_status`, which fivebar's tag
+(`public/_analytics.html`) sends as `data-status` so Safari's 4xx and 5xx
+pages count as errors.
+
 ### Management commands
 
 Run with no arguments to do the common thing, read-only unless `--commit`,

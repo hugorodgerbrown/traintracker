@@ -30,7 +30,7 @@ from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.http import HttpRequest, HttpResponse, JsonResponse
-from django.shortcuts import get_object_or_404, redirect, render
+from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
@@ -43,6 +43,7 @@ from apps.core import analytics
 from apps.core.decorators import login_required_json, signed_in_user
 from apps.core.ratelimit import client_ip, over_limit
 from apps.core.redirects import safe_next
+from apps.core.shortcuts import render
 
 logger = logging.getLogger(__name__)
 

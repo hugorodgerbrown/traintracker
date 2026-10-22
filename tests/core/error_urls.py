@@ -19,7 +19,7 @@ def suspicious(request: HttpRequest) -> HttpResponse:
     raise SuspiciousOperation("test")
 
 
-def broken(request: HttpRequest) -> HttpResponse:
+def broken(request: HttpRequest, **kwargs: str) -> HttpResponse:
     """Raise an unhandled exception: a 500."""
     raise RuntimeError("test")
 
@@ -28,6 +28,7 @@ urlpatterns = [
     path("raise/403/", forbidden),
     path("raise/400/", suspicious),
     path("raise/500/", broken),
+    path("raise/500/<str:token>/", broken),
     path("mcp/raise/500/", broken),
     *urlpatterns,
 ]

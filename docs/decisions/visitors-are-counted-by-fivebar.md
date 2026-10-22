@@ -45,9 +45,28 @@ package and no server code; its API can add a site.
   or a copied link doesn't count again. More events are each app's to add:
   a fragment in `EVENTS` (both `apps/core/analytics.py` and the script), or
   `data-tally` on anything clicked; see https://fiveb.ar/docs/events.
-- Error responses are counted as ordinary pages; Safari needs
-  `data-status` on the tag to tell them apart, which the template doesn't
-  set.
+- Error responses are counted as errors, not pages (see below).
+
+## Error pages (2026-10-22, RAS-90)
+
+fivebar counts a page load with a status of 400 or more as an error and
+keeps it out of pageviews, visitors, sources, speed and goals
+(https://fiveb.ar/docs/error-pages). Chrome, Edge and Firefox report the
+status themselves; Safari needs `data-status` on the tag, and when both
+give one the attribute wins.
+
+- Every page carries its status. `apps.core.shortcuts.render` replaces
+  Django's `render` and puts the response's status in the context as
+  `http_status`; `_analytics.html` writes it as `data-status`. One status,
+  set once, so the page and the response can't disagree.
+- A context variable rather than a default: a page drawn without one (an
+  `include` from somewhere that isn't a view) carries no `data-status`, and
+  the browser's own report stands. A default of 200 would override a
+  browser that knew better.
+- The 400 and 500 pages, which render without the request, now carry the
+  tag too: built from settings and the matched route alone, so a token in
+  the address is still counted under its route (`/signin/link/:token/`).
+  Before this, fivebar never saw a server error.
 
 ## MCP tool calls (2026-10-16, RAS-53)
 

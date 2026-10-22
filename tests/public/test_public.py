@@ -24,7 +24,7 @@ def test_pages_are_cached_briefly_and_never_framed(client: Client) -> None:
 
 def test_pages_count_visits_only_while_fivebar_is_on(client: Client, settings: Any) -> None:
     """The tag is there with FIVEBAR_DOMAIN (production sets traintrackr.live), else not."""
-    tag = '<script async data-domain="traintrackr.live" src="https://fiveb.ar/js/tally.js">'
+    tag = '<script async data-domain="traintrackr.live" data-status="200" src="https://fiveb.ar/js/tally.js">'
     assert tag in client.get("/").content.decode()
     settings.FIVEBAR_DOMAIN = ""
     assert "fiveb.ar" not in client.get("/").content.decode()

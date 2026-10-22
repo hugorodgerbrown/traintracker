@@ -12,6 +12,7 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from apps.core import errors
+from apps.core.analytics import SCRIPT
 
 pytestmark = [pytest.mark.django_db, pytest.mark.urls("tests.core.error_urls")]
 
@@ -114,6 +115,85 @@ def test_the_standalone_page_falls_back_to_plain_html(anyone: Client) -> None:
         response = anyone.get("/raise/500/")
     assert response.status_code == 500
     assert page(response) == errors.FALLBACK_HTML
+
+
+# --- fivebar's data-status ---------------------------------------------------
+
+FIVEBAR = "example.ultraniche.ai"
+
+
+@pytest.mark.parametrize(
+    ("path", "status"),
+    [
+        ("/no-such-page/", 404),
+        ("/raise/403/", 403),
+        ("/raise/400/", 400),
+        ("/raise/500/", 500),
+    ],
+)
+def test_every_error_page_tells_fivebar_its_status(
+    anyone: Client, settings: Any, path: str, status: int
+) -> None:
+    """Safari reports no status, so the tag carries it (https://fiveb.ar/docs/error-pages)."""
+    settings.FIVEBAR_DOMAIN = FIVEBAR
+    body = anyone.get(path).content.decode()
+    assert body.count(SCRIPT) == 1
+    assert f'data-domain="{FIVEBAR}"' in body
+    assert f'data-status="{status}"' in body
+
+
+def test_the_csrf_page_tells_fivebar_its_403(settings: Any) -> None:
+    """The CSRF failure is a 403 like any other."""
+    settings.FIVEBAR_DOMAIN = FIVEBAR
+    client = Client(enforce_csrf_checks=True)
+    body = client.post(reverse("accounts:sign_in"), {"email": "a@example.com"}).content.decode()
+    assert 'data-status="403"' in body
+
+
+def test_the_standalone_500_counts_a_token_under_its_route(anyone: Client, settings: Any) -> None:
+    """The tag on the 500 is built from the route, so a value in the address stays out."""
+    settings.FIVEBAR_DOMAIN = FIVEBAR
+    body = anyone.get("/raise/500/secret-token/").content.decode()
+    assert 'data-path="/raise/500/:token/"' in body
+    assert 'data-status="500"' in body
+    assert "secret-token" not in body
+
+
+def test_an_unmatched_404_keeps_a_mangled_token_out(anyone: Client, settings: Any) -> None:
+    """No route names the token in a mangled sign-in link, so only its first segment is sent."""
+    settings.FIVEBAR_DOMAIN = FIVEBAR
+    body = anyone.get("/signin/link/secret-token/extra").content.decode()
+    assert 'data-status="404"' in body
+    assert 'data-path="/signin/:unmatched/"' in body
+    assert "secret-token" not in body
+
+
+def test_an_unmatched_404_never_sends_an_unknown_first_segment(
+    anyone: Client, settings: Any
+) -> None:
+    """A token that lost its prefix leads the address, so it is counted as ``/:unmatched/``."""
+    settings.FIVEBAR_DOMAIN = FIVEBAR
+    body = anyone.get("/secret-token/").content.decode()
+    assert 'data-path="/:unmatched/"' in body
+    assert "secret-token" not in body
+
+
+def test_a_disallowed_host_on_a_token_route_keeps_the_token_out(
+    anyone: Client, settings: Any
+) -> None:
+    """A 400 raised before resolution still counts the page under its route."""
+    settings.FIVEBAR_DOMAIN = FIVEBAR
+    response = anyone.get("/raise/500/secret-token/", HTTP_HOST="evil.example")
+    body = response.content.decode()
+    assert response.status_code == 400
+    assert 'data-path="/raise/500/:token/"' in body
+    assert "secret-token" not in body
+
+
+def test_error_pages_carry_no_tag_while_fivebar_is_off(anyone: Client) -> None:
+    """Off, neither kind of error page loads the script."""
+    for path in ("/no-such-page/", "/raise/500/"):
+        assert SCRIPT not in anyone.get(path).content.decode()
 
 
 # --- JSON and htmx -----------------------------------------------------------

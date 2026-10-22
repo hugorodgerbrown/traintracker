@@ -11,11 +11,12 @@ from typing import Any
 
 from django.conf import settings
 from django.http import Http404, HttpRequest, HttpResponse
-from django.shortcuts import redirect, render
+from django.shortcuts import redirect
 from django.templatetags.static import static
 from django.views.decorators.cache import cache_control
 from django.views.decorators.http import require_safe
 
+from apps.core.shortcuts import render
 from apps.public import pages
 from apps.rail.settings import rail_settings
 

@@ -1,6 +1,8 @@
 {% extends "site_base.html" %}
 {# 403, a failed CSRF check and 404 (apps/core/errors.py), on the site's frame: the site is working, the reader followed a bad link, so they keep the header, their signed-in state and the footer. #}
 {% block title %}{{ page.heading }} · Traintrackr{% endblock %}
+{# fivebar's tag, which public_base.html leaves out for the sign-in pages: an error page is counted, with its status. #}
+{% block extra_js %}{% include "public/_analytics.html" %}{% endblock %}
 {% block content %}
   {% include "errors/_error_card.html" %}
 {% endblock %}

@@ -20,10 +20,11 @@ from urllib.parse import urlencode
 
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect, JsonResponse
-from django.shortcuts import redirect, render
+from django.shortcuts import redirect
 from django.views.decorators.http import require_safe
 
 from apps.core.ratelimit import client_ip
+from apps.core.shortcuts import render
 from apps.public import board as tt
 from apps.public.views import page_context, relative
 from apps.rail import runtime, server, stations

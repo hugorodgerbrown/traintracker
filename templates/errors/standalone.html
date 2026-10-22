@@ -8,9 +8,10 @@ an absolute address raises again. Why:
 docs/decisions/the-500-page-renders-without-context.md.
 
 Context: page (an ErrorPage), pwa (the app's name) and nav (the footer's
-links), all from config. Read nothing else; there is nothing else. No
-analytics: the tag needs the request. If {% static %} raises (no
-manifest), the handler sends its literal fallback instead.
+links), all from config, and analytics and http_status for fivebar's tag
+(from settings and the matched route; no session, no host). Read nothing
+else; there is nothing else. If {% static %} raises (no manifest), the
+handler sends its literal fallback instead.
 {% endcomment %}
 <html lang="en-GB">
   <head>
@@ -21,6 +22,7 @@ manifest), the handler sends its literal fallback instead.
     <link rel="icon" href="{% static 'icons/icon.svg' %}" type="image/svg+xml">
     <link rel="icon" href="{% static 'icons/icon-32.png' %}" sizes="32x32" type="image/png">
     <link rel="stylesheet" href="{% static 'css/site.css' %}">
+    {% include "public/_analytics.html" %}
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>

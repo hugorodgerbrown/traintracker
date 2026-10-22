@@ -159,6 +159,15 @@ def test_the_standalone_500_counts_a_token_under_its_route(anyone: Client, setti
     assert "secret-token" not in body
 
 
+def test_an_unmatched_404_keeps_a_mangled_token_out(anyone: Client, settings: Any) -> None:
+    """No route names the token in a mangled sign-in link, so only its first segment is sent."""
+    settings.FIVEBAR_DOMAIN = FIVEBAR
+    body = anyone.get("/signin/link/secret-token/extra").content.decode()
+    assert 'data-status="404"' in body
+    assert 'data-path="/signin/:unmatched/"' in body
+    assert "secret-token" not in body
+
+
 def test_error_pages_carry_no_tag_while_fivebar_is_off(anyone: Client) -> None:
     """Off, neither kind of error page loads the script."""
     for path in ("/no-such-page/", "/raise/500/"):

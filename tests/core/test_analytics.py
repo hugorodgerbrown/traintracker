@@ -66,6 +66,7 @@ def test_counted_path() -> None:
     request.resolver_match = resolve("/signin/")
     assert counted_path(request) == ""
     assert counted_path(factory.get("/nowhere/")) == ""
+    assert counted_path(factory.get("/signin/link/abc/extra")) == "/signin/:unmatched/"
 
 
 def test_context_has_no_path_while_off(settings: Any) -> None:

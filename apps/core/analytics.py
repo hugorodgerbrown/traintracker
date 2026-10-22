@@ -63,9 +63,16 @@ def counted_path(request: HttpRequest) -> str:
     ``/signin/link/abc123/`` is counted as ``/signin/link/:token/``. A page
     whose route takes no values is counted under its own path, so this is
     empty and the tag carries no ``data-path``.
+
+    An address no route matched (only ever a 404) keeps its first segment
+    alone, ``/signin/:unmatched/``: a mangled sign-in link still holds its
+    token, and no route is there to name it.
     """
     match = request.resolver_match
-    if match is None or not (match.kwargs or match.args):
+    if match is None:
+        first, _, rest = request.path.strip("/").partition("/")
+        return f"/{first}/:unmatched/" if rest else ""
+    if not (match.kwargs or match.args):
         return ""
     return "/" + _CONVERTER.sub(r":\1", match.route)
 

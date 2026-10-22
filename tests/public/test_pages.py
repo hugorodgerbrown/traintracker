@@ -23,7 +23,7 @@ from tests.public.fakes import BASE
 
 pytestmark = pytest.mark.django_db
 
-TALLY = '<script async data-domain="traintrackr.live" src="https://fiveb.ar/js/tally.js"></script>'
+TALLY = '<script async data-domain="traintrackr.live" data-status="200" src="https://fiveb.ar/js/tally.js"></script>'
 PROMPTS = (
     "Which platform is the next train from Cambridge to Kings Cross?",
     "What are the next trains from Liverpool Street to Colchester, and are they on time?",

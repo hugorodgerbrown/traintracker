@@ -7,4 +7,4 @@
     <link rel="icon" href="{% static 'icons/icon-32.png' %}" sizes="32x32" type="image/png" />
     <link rel="stylesheet" href="{% static 'css/site.css' %}" />
     <script src="{% static 'js/site.js' %}" defer></script>
-    {% if analytics.domain %}<script async data-domain="{{ analytics.domain }}" src="{{ analytics.script }}"></script>{% endif %}
+    {% include "public/_analytics.html" %}

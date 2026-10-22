@@ -7,6 +7,7 @@ import html
 import re
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 from django.test import Client
@@ -21,7 +22,7 @@ from tests.public.fakes import BASE, FakeChanges, FakeFetch
 
 pytestmark = pytest.mark.django_db
 
-TALLY = '<script async data-domain="traintrackr.live" src="https://fiveb.ar/js/tally.js"></script>'
+TALLY = '<script async data-domain="traintrackr.live" data-status="200" src="https://fiveb.ar/js/tally.js"></script>'
 # The views' own board store and loop, before the fixtures put fakes in their place.
 REAL_SHARED = views.shared
 REAL_RUN = runtime.run
@@ -145,6 +146,17 @@ def test_the_picker_says_what_is_wrong(client: Client) -> None:
     body = r.content.decode()
     assert "&#x27;&lt;b&gt;&#x27; isn&#x27;t a platform" in body
     assert "<b>" not in body.split("<main", 1)[1]
+
+
+def test_the_picker_tells_fivebar_its_status(client: Client, settings: Any) -> None:
+    """Safari reports no status, so the tag carries it (https://fiveb.ar/docs/error-pages)."""
+    settings.FIVEBAR_DOMAIN = "traintrackr.live"
+    r = client.get("/board", {"station": "zzqqxxjj"})
+    assert r.status_code == 404
+    assert 'data-status="404"' in r.content.decode()
+    r = client.get("/board", {"station": "LST", "platform": "<b>"})
+    assert r.status_code == 400
+    assert 'data-status="400"' in r.content.decode()
 
 
 def test_a_board_is_for_a_destination_or_a_platform_not_both(client: Client) -> None:

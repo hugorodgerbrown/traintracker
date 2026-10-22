@@ -21,9 +21,11 @@ See docs/decisions/visitors-are-counted-by-fivebar.md.
 from __future__ import annotations
 
 import re
+from functools import cache
 from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
+from django.urls import Resolver404, URLResolver, get_resolver, resolve
 
 if TYPE_CHECKING:
     # Only for annotations: config/settings.py imports this module.
@@ -64,17 +66,48 @@ def counted_path(request: HttpRequest) -> str:
     whose route takes no values is counted under its own path, so this is
     empty and the tag carries no ``data-path``.
 
-    An address no route matched (only ever a 404) keeps its first segment
-    alone, ``/signin/:unmatched/``: a mangled sign-in link still holds its
-    token, and no route is there to name it.
+    An error raised before the URL was resolved (a 500 in middleware, a
+    ``DisallowedHost`` 400) has no ``resolver_match``, so the route is
+    looked up here. An address no route matches (only ever a 404) is
+    counted as ``/signin/:unmatched/`` when its first segment begins one of
+    the app's routes, else as ``/:unmatched/``: a mangled sign-in link
+    still holds its token, and no route is there to name it.
     """
+    urlconf = getattr(request, "urlconf", None)
     match = request.resolver_match
     if match is None:
-        first, _, rest = request.path.strip("/").partition("/")
-        return f"/{first}/:unmatched/" if rest else ""
+        try:
+            match = resolve(request.path_info, urlconf)
+        except Resolver404:
+            first = request.path_info.strip("/").partition("/")[0]
+            known = first in route_prefixes(urlconf or settings.ROOT_URLCONF)
+            return f"/{first}/:unmatched/" if known else "/:unmatched/"
     if not (match.kwargs or match.args):
         return ""
     return "/" + _CONVERTER.sub(r":\1", match.route)
+
+
+@cache
+def route_prefixes(urlconf: str) -> frozenset[str]:
+    """The literal first segments the app's routes begin with: ``signin``, ``app``.
+
+    Only these are safe to send for an unmatched address; any other first
+    segment could be a value (a token whose prefix was lost).
+    """
+    prefixes: set[str] = set()
+
+    def walk(patterns: list[Any]) -> None:
+        for entry in patterns:
+            route = str(entry.pattern).lstrip("^")
+            if not route and isinstance(entry, URLResolver):
+                walk(entry.url_patterns)
+                continue
+            first = route.partition("/")[0]
+            if re.fullmatch(r"[\w.-]+", first):
+                prefixes.add(first)
+
+    walk(get_resolver(urlconf).url_patterns)
+    return frozenset(prefixes)
 
 
 def counts_mcp() -> bool:

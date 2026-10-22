@@ -67,6 +67,13 @@ give one the attribute wins.
   tag too: built from settings and the matched route alone, so a token in
   the address is still counted under its route (`/signin/link/:token/`).
   Before this, fivebar never saw a server error.
+- An error raised before the URL was resolved has no `resolver_match`, so
+  `counted_path` resolves the route itself. An address no route matches
+  (a 404) is counted as `/signin/:unmatched/` when a route begins with its
+  first segment, else as `/:unmatched/`: a mangled sign-in link still
+  holds its token, and one that lost its prefix leads with it. The cost is
+  that fivebar's Errors page shows `/signin/:unmatched/` rather than the
+  exact missing address (RAS-95).
 
 ## MCP tool calls (2026-10-16, RAS-53)
 

@@ -168,6 +168,28 @@ def test_an_unmatched_404_keeps_a_mangled_token_out(anyone: Client, settings: An
     assert "secret-token" not in body
 
 
+def test_an_unmatched_404_never_sends_an_unknown_first_segment(
+    anyone: Client, settings: Any
+) -> None:
+    """A token that lost its prefix leads the address, so it is counted as ``/:unmatched/``."""
+    settings.FIVEBAR_DOMAIN = FIVEBAR
+    body = anyone.get("/secret-token/").content.decode()
+    assert 'data-path="/:unmatched/"' in body
+    assert "secret-token" not in body
+
+
+def test_a_disallowed_host_on_a_token_route_keeps_the_token_out(
+    anyone: Client, settings: Any
+) -> None:
+    """A 400 raised before resolution still counts the page under its route."""
+    settings.FIVEBAR_DOMAIN = FIVEBAR
+    response = anyone.get("/raise/500/secret-token/", HTTP_HOST="evil.example")
+    body = response.content.decode()
+    assert response.status_code == 400
+    assert 'data-path="/raise/500/:token/"' in body
+    assert "secret-token" not in body
+
+
 def test_error_pages_carry_no_tag_while_fivebar_is_off(anyone: Client) -> None:
     """Off, neither kind of error page loads the script."""
     for path in ("/no-such-page/", "/raise/500/"):

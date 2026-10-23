@@ -50,6 +50,10 @@ SITE_URL: str = config(
     else "http://localhost:8000",
 ).rstrip("/")
 
+# Where security.txt (/.well-known/security.txt, RFC 9116) sends
+# vulnerability reports: a mailto: or https: URI.
+SECURITY_CONTACT: str = config("SECURITY_CONTACT", default="mailto:sec@ultraniche.ai")
+
 # Render terminates TLS and forwards plain HTTP with X-Forwarded-Proto set.
 # Its health check calls /livez over plain HTTP, so the health checks are exempt.
 if not DEBUG:

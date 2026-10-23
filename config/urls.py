@@ -4,7 +4,7 @@ from django.contrib import admin
 from django.urls import include, path
 
 from apps.accounts.views import admin_login
-from apps.core.views import healthz, livez
+from apps.core.views import healthz, livez, security_txt
 from apps.mcp.views import mcp, openai_apps_challenge
 from apps.pwa.conf import APP_NAME
 
@@ -19,6 +19,8 @@ urlpatterns = [
     # Health checks: /livez for Render (process up), /healthz adds the database.
     path("livez", livez, name="livez"),
     path("healthz", healthz, name="healthz"),
+    # RFC 9116: who to tell about a vulnerability.
+    path(".well-known/security.txt", security_txt, name="security-txt"),
     # Staff sign in like everyone else; the admin's password form is unused.
     path("admin/login/", admin_login),
     path("admin/", admin.site.urls),

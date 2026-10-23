@@ -14,8 +14,9 @@ config/            settings (one module, env-driven), urls, wsgi/asgi
 apps/core/         BaseModel, IdempotencyMiddleware + IdempotencyRecord,
                    PrivatePagesMiddleware (signed-in pages never cached),
                    decorators (require_htmx, login_required_json), rate
-                   limits, livez and healthz; errors.py is the error
-                   pages (400/403/404/500, CSRF), as JSON, text or HTML
+                   limits, livez, healthz and /.well-known/security.txt;
+                   errors.py is the error pages (400/403/404/500,
+                   CSRF), as JSON, text or HTML
 apps/accounts/     email link or code sign-in, passkeys, the account
                    commands (docs/accounts.md)
 apps/mcp/          /mcp (Titan's view, mcp-auth) listing the train tools;

@@ -433,7 +433,7 @@ The Inspector needs Node 22.19 or later. It starts a local server that can run c
 manage.py
 config/          Settings (one module, from the environment), URLs, WSGI/ASGI
 apps/
-  core/          Titan's shared pieces: BaseModel, idempotency, rate limits, /livez and /healthz
+  core/          Titan's shared pieces: BaseModel, idempotency, rate limits, /livez, /healthz and /.well-known/security.txt
   accounts/      Sign-in by email link or code, passkeys, the account commands
   mcp/           /mcp: Titan's MCP view (mcp-auth), the tool list, ui:// resources
   public/        The site: pages (views.py, pages.py), boards (boards.py, board.py), saved boards (saved.py), templates

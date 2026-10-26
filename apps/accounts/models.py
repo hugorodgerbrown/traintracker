@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import secrets
 from typing import Any, ClassVar
 
@@ -24,6 +25,8 @@ from django.db import models
 from django.utils import timezone
 
 from apps.core.models import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 def normalise_email(email: str) -> str:
@@ -82,7 +85,46 @@ class UserQuerySet(models.QuerySet["User"]):
 
 
 class AccountManager(UserManager.from_queryset(UserQuerySet)):  # type: ignore[misc]
-    """Django's user manager (``create_user``, ``create_superuser``) with ``UserQuerySet``."""
+    """Django's user manager (``create_user``, ``create_superuser``) with ``UserQuerySet``.
+
+    An account made with an address is stored as sign-in stores it, so
+    ``createsuperuser`` and sign-in reach the same account whichever comes
+    first: the address gives the username, and any username typed is
+    ignored.
+    """
+
+    def _create_user_object(
+        self, username: str, email: str | None, password: str | None, **extra_fields: Any
+    ) -> User:
+        """Return an unsaved account, keyed and masked by its address when it has one."""
+        if email:
+            username = username_for(email)
+            extra_fields.setdefault("masked_email", mask_email(email))
+            email = kept_email(email)
+        user: User = super()._create_user_object(username, email, password, **extra_fields)
+        return user
+
+    def create_superuser(
+        self,
+        username: str,
+        email: str | None = None,
+        password: str | None = None,
+        **extra_fields: Any,
+    ) -> User:
+        """Make a superuser, or promote the account the address already has.
+
+        Someone who signed in before running ``createsuperuser`` keeps the
+        one account, now staff, rather than getting a second that sign-in
+        never reaches.
+        """
+        user: User | None = self.for_email(email).first() if email else None
+        if user is None:
+            made: User = super().create_superuser(username, email, password, **extra_fields)
+            return made
+        user.is_staff = user.is_superuser = True
+        user.save(update_fields=["is_staff", "is_superuser"])
+        logger.info("accounts.promoted user=%s", user.pk)
+        return user
 
 
 class User(BaseModel, AbstractUser):

@@ -151,8 +151,8 @@ def _username(request: SignInRequest) -> str:
 def _adopt_account(request: SignInRequest) -> Any | None:
     """Return an account stored another way for the request's address, restored now.
 
-    Two kinds: one ``createsuperuser`` made, which stores the address it is
-    given; and one made before ``ACCOUNTS_KEEP_EMAIL`` changed, whose
+    Two kinds: one ``createsuperuser`` made before it keyed accounts, which
+    stores the address it was given; and one made before ``ACCOUNTS_KEEP_EMAIL`` changed, whose
     username is the other form (the key, or the address). Either is given
     the request's username, masked address and email (blank unless
     addresses are kept). Where addresses aren't kept, only accounts made

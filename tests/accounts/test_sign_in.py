@@ -176,9 +176,11 @@ def test_signing_in_again_finds_the_same_account() -> None:
     assert sign_in.user_for(request) == member
 
 
-def test_a_createsuperuser_account_is_found_by_email_then_keyed() -> None:
-    """A createsuperuser account keeps its address until the first sign-in keys it."""
-    admin = get_user_model().objects.create_superuser("admin", "Boss@example.com")
+def test_an_old_createsuperuser_account_is_found_by_email_then_keyed() -> None:
+    """An account stored with its address (createsuperuser, before RAS-106) is keyed on sign-in."""
+    admin = get_user_model().objects.create(
+        username="admin", email="Boss@example.com", is_staff=True, is_superuser=True
+    )
     UserFactory.create(address="other@example.com")
     request, _, _ = sign_in.issue("boss@example.com")
     assert sign_in.user_for(request) == admin
@@ -204,10 +206,10 @@ def test_keeping_addresses_stores_them(settings: Any) -> None:
     assert sign_in.user_for(sign_in.issue("kept@example.com")[0]) == user
 
 
-def test_keeping_addresses_adopts_a_createsuperuser_account(settings: Any) -> None:
-    """With ACCOUNTS_KEEP_EMAIL a createsuperuser account is found by its address too."""
+def test_keeping_addresses_adopts_an_old_createsuperuser_account(settings: Any) -> None:
+    """With ACCOUNTS_KEEP_EMAIL an account stored under another username is found by its address."""
     settings.ACCOUNTS_KEEP_EMAIL = True
-    admin = get_user_model().objects.create_superuser("admin", "Boss@example.com")
+    admin = get_user_model().objects.create(username="admin", email="Boss@example.com")
     assert sign_in.user_for(sign_in.issue("boss@example.com")[0]) == admin
     admin.refresh_from_db()
     assert admin.username == admin.email == "boss@example.com"

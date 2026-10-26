@@ -148,6 +148,44 @@ def test_createsuperuser_promotes_the_account_sign_in_made(settings: Any, keep: 
     assert member.is_superuser
 
 
+@pytest.mark.parametrize("keep", [False, True])
+def test_createsuperuser_promotes_an_old_createsuperuser_account(settings: Any, keep: bool) -> None:
+    """An account stored with its address (createsuperuser before RAS-106) is promoted."""
+    settings.ACCOUNTS_KEEP_EMAIL = keep
+    old = User.objects.create(username="admin", email="Boss@example.com")
+    call_command(
+        "createsuperuser",
+        username="admin2",
+        email="boss@example.com",
+        interactive=False,
+        verbosity=0,
+    )
+    assert list(User.objects.all()) == [old]
+    old.refresh_from_db()
+    assert old.is_superuser
+    assert sign_in.user_for(sign_in.issue("boss@example.com")[0]) == old
+
+
+def test_createsuperuser_promotes_an_account_from_before_keep_email_changed(
+    settings: Any,
+) -> None:
+    """An account keyed before ACCOUNTS_KEEP_EMAIL was turned on is promoted, not doubled."""
+    member = sign_in.user_for(sign_in.issue("boss@example.com")[0])
+    assert member is not None
+    settings.ACCOUNTS_KEEP_EMAIL = True
+    call_command(
+        "createsuperuser",
+        username="admin",
+        email="boss@example.com",
+        interactive=False,
+        verbosity=0,
+    )
+    assert list(User.objects.all()) == [member]
+    member.refresh_from_db()
+    assert member.is_superuser
+    assert member.username == member.email == "boss@example.com"
+
+
 def test_createsuperuser_before_sign_in_is_the_account_sign_in_finds() -> None:
     """A superuser made first is keyed at once, and signing in reaches it."""
     call_command(

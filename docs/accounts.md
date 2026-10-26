@@ -113,8 +113,9 @@ The admin's password form redirects to `/signin/`. Make the first
 superuser with your email, then sign in by email. `createsuperuser` stores
 the account as sign-in does (keyed, masked, the address blank unless
 addresses are kept), so it works before or after your first sign-in: if
-the address already has an account, it makes that one staff and
-superuser rather than a second. The username it asks for is ignored, so
+the address already has an account (even one stored in an older form,
+which sign-in would adopt), it makes that one staff and superuser rather
+than a second. The username it asks for is ignored, so
 give it any placeholder: not your address, which Django refuses as taken
 once you have signed in with `ACCOUNTS_KEEP_EMAIL` on.
 

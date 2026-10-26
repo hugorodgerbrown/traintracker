@@ -115,9 +115,15 @@ class AccountManager(UserManager.from_queryset(UserQuerySet)):  # type: ignore[m
 
         Someone who signed in before running ``createsuperuser`` keeps the
         one account, now staff, rather than getting a second that sign-in
-        never reaches.
+        never reaches. So does an account stored in an older form, which
+        sign-in would adopt (``sign_in.adopt_account``).
         """
-        user: User | None = self.for_email(email).first() if email else None
+        # sign_in imports this module, so it is imported here.
+        from apps.accounts.sign_in import adopt_account
+
+        user: User | None = None
+        if email:
+            user = self.for_email(email).first() or adopt_account(email)
         if user is None:
             made: User = super().create_superuser(username, email, password, **extra_fields)
             return made

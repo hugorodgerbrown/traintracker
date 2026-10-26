@@ -5,9 +5,12 @@ from typing import Any
 
 import pytest
 from django.core.exceptions import ImproperlyConfigured
+from django.core.management import call_command
+from django.db import IntegrityError
 from django.utils import timezone
 from mcp_auth.accounts import account_name as mcp_account_name
 
+from apps.accounts import sign_in
 from apps.accounts.checks import email_key_is_set
 from apps.accounts.models import (
     Passkey,
@@ -98,3 +101,102 @@ def test_the_consent_page_names_the_masked_address() -> None:
     """mcp-auth's consent page names an account by its masked address, never its key."""
     user = UserFactory.create(address="walker@example.com")
     assert account_name(user) == mcp_account_name(user) == "w•••@example.com"
+
+
+@pytest.mark.parametrize("keep", [False, True])
+def test_create_user_stores_the_account_as_sign_in_does(settings: Any, keep: bool) -> None:
+    """An account made with an address is keyed and masked; the username typed is ignored."""
+    settings.ACCOUNTS_KEEP_EMAIL = keep
+    user = User.objects.create_user("anything", " Walker@Example.com")
+    twin = UserFactory.build(address="walker@example.com")
+    assert (user.username, user.email, user.masked_email) == (
+        twin.username,
+        twin.email,
+        "w•••@example.com",
+    )
+    assert sign_in.user_for(sign_in.issue("walker@example.com")[0]) == user
+
+
+def test_create_user_without_an_address_keeps_the_username() -> None:
+    """Without an address there is nothing to key, so the username stands."""
+    assert User.objects.create_user("robot").username == "robot"
+
+
+def test_create_user_refuses_a_second_account_for_an_address() -> None:
+    """The keyed username is unique, so an address has one account."""
+    UserFactory.create(address="walker@example.com")
+    with pytest.raises(IntegrityError):
+        User.objects.create_user("walker", "walker@example.com")
+
+
+@pytest.mark.parametrize("keep", [False, True])
+def test_createsuperuser_promotes_the_account_sign_in_made(settings: Any, keep: bool) -> None:
+    """Running createsuperuser after signing in makes that account staff, not a second one."""
+    settings.ACCOUNTS_KEEP_EMAIL = keep
+    member = sign_in.user_for(sign_in.issue("boss@example.com")[0])
+    assert member is not None
+    call_command(
+        "createsuperuser",
+        username="admin",
+        email="Boss@example.com",
+        interactive=False,
+        verbosity=0,
+    )
+    assert list(User.objects.all()) == [member]
+    member.refresh_from_db()
+    assert member.is_staff
+    assert member.is_superuser
+
+
+@pytest.mark.parametrize("keep", [False, True])
+def test_createsuperuser_promotes_an_old_createsuperuser_account(settings: Any, keep: bool) -> None:
+    """An account stored with its address (createsuperuser before RAS-106) is promoted."""
+    settings.ACCOUNTS_KEEP_EMAIL = keep
+    old = User.objects.create(username="admin", email="Boss@example.com")
+    call_command(
+        "createsuperuser",
+        username="admin2",
+        email="boss@example.com",
+        interactive=False,
+        verbosity=0,
+    )
+    assert list(User.objects.all()) == [old]
+    old.refresh_from_db()
+    assert old.is_superuser
+    assert sign_in.user_for(sign_in.issue("boss@example.com")[0]) == old
+
+
+def test_createsuperuser_promotes_an_account_from_before_keep_email_changed(
+    settings: Any,
+) -> None:
+    """An account keyed before ACCOUNTS_KEEP_EMAIL was turned on is promoted, not doubled."""
+    member = sign_in.user_for(sign_in.issue("boss@example.com")[0])
+    assert member is not None
+    settings.ACCOUNTS_KEEP_EMAIL = True
+    call_command(
+        "createsuperuser",
+        username="admin",
+        email="boss@example.com",
+        interactive=False,
+        verbosity=0,
+    )
+    assert list(User.objects.all()) == [member]
+    member.refresh_from_db()
+    assert member.is_superuser
+    assert member.username == member.email == "boss@example.com"
+
+
+def test_createsuperuser_before_sign_in_is_the_account_sign_in_finds() -> None:
+    """A superuser made first is keyed at once, and signing in reaches it."""
+    call_command(
+        "createsuperuser",
+        username="admin",
+        email="boss@example.com",
+        interactive=False,
+        verbosity=0,
+    )
+    (admin,) = User.objects.all()
+    assert admin.is_superuser
+    assert admin.email == ""
+    assert sign_in.user_for(sign_in.issue("boss@example.com")[0]) == admin
+    assert User.objects.count() == 1

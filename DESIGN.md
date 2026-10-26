@@ -174,43 +174,67 @@ under `/app/`) carries on without it.
 
 ## 12. The front page
 
-Every Titan app's front page (`public/home.html`) has the same anatomy, so
-a visitor who has seen one knows where to look on the next. Gondola's is
-the model. From top to bottom:
+The front page (`public/home.html`) is the app's own: the template ships a
+plain placeholder, and each app writes the page its product needs. What
+follows is a suggestion, not a rule: a structure that has worked across the
+Titan apps, to borrow from, reorder or leave out. The template ships only
+the parts every public page shares (`hero`, `eyebrow`, `copy-field`,
+`prose`); an app that builds more adds them to its own `app.css` and design
+page, as any component (§2, §3).
 
-| # | Section | | What it holds |
-| --- | --- | --- | --- |
-| 1 | Header | required | The icon and name, linking home (§9), and one link on the right: **Sign in**, or **Open the app** when signed in. No avatar and no menu: the account page is inside the app, and the other pages are in the footer. |
-| 2 | Proposition | required | An eyebrow if it helps, then the H1, which is the promise, not the app's name (the header already says that). One sentence of lede, then **one** primary action named for the first job ("Start a group", not "Create an account"). Under it, a note that removes the doubt ("Free. Sign in with your email, no password."). |
-| 3 | The product, live | required | The app's own component, drawn by the real CSS with demo data, and a one-line caption saying how to read it. |
-| 4 | How it works | optional | Three tiles, each an icon, a verb and one line. |
-| 5 | From your AI chat | required with MCP | An eyebrow and H2, then a short sample chat (ask, answer, act) and "Try asking" with three or four prompts. Then the `/mcp` address with a copy button, a link to the steps on the help page, and what stays private, said plainly. |
-| 6 | Facts | optional | Three true numbers, each removing a doubt ("0 passwords"). |
-| 7 | Closing action | required | The promise in other words, and the same primary action again, for whoever scrolled to the end. |
-| 8 | Footer | required | §8. Any data credit a source asks for sits above the copyright. |
+It shows what an app can do as short stories, each a job someone wants
+done, drawn on the screen where it happens, rather than as a list of
+features. From top to bottom:
 
-The rules behind it:
+| # | Section | What it might hold |
+| --- | --- | --- |
+| 1 | Header | The icon and name, linking home (§9), and one link on the right: **Sign in**, or **Open the app** when signed in. |
+| 2 | Proposition | An eyebrow if it helps, then an H1 that is the promise rather than the app's name (the header already says that). One sentence of lede, then one primary action named for the first job ("Start a group", not "Create an account"), with a note under it that removes the doubt ("Free. Sign in with your email, no password."). |
+| 3 | The promise kept | The app's own component, drawn by the real CSS with demo data. With MCP, one chat turn about the same demo rows beside it. A one-line caption saying how to read it. |
+| 4 | Jobs | Two to four rows, each a designed scene in a frame, an H2 naming the outcome, one sentence, and where it happens. |
+| 5 | Connect | With MCP: what stays private, a few things to try asking, the `/mcp` address with a copy button, and a link to the steps on the help page. |
+| 6 | What we keep, or facts | What we keep, the mechanism drawn and true to `ACCOUNTS_KEEP_EMAIL`; or three true numbers, each removing a doubt ("0 passwords"). |
+| 7 | Closing action | The promise in other words, and the same primary action again. |
+| 8 | Footer | §8. Any data credit a source asks for sits above the copyright. |
+
+A page with a side-by-side hero can be wider than the app, as long as its
+text keeps the 40rem reading width.
+
+### If it shows the product
+
+- **Draw it, don't picture it.** A screenshot goes stale, blurs on a phone
+  and doesn't work in dark mode. The app's own component drawn by its real
+  CSS with demo data changes when the app changes. Demo data rather than
+  live data: a live feed can be empty (no trains at 3am) or wrong.
+- **Designed scenes** (a phone, an AI chat, a browser) can be idealised
+  but never untrue: a tool a chat names is a real MCP tool, and an outcome
+  is one the app can produce. A chat reads ask, tool steps, answer, and
+  what changed when a tool wrote something. Frames are generic: no other
+  company's logo, colours or window chrome.
+- **One cast of demo data**, specific and plausible ("12 minutes ago",
+  "Book Saturday's table for six"), shared by the product, the scenes and
+  the share card, never "Item 1" or "Example".
+- **Job copy is short**: an outcome in the customer's words, six words or
+  fewer, and one sentence of 25 words or fewer.
+
+### What every public page does
+
+These hold whatever shape the front page takes:
 
 - **One way in.** Signing in creates the account, so there is no separate
-  sign-up button. The primary action goes to sign in with `?next=` set to
-  the first job's page; "Sign in" lives in the header only.
+  sign-up button; the primary action goes to sign in with `?next=` set to
+  the first job's page.
 - **Signed in, the page changes its offer, not its shape.** The header link
-  and both primary actions become **Open the app**.
-- **Show the product, never a picture of it.** Demo data, not live data: a
-  live feed can be empty (no trains at 3am) or wrong, and a screenshot
-  goes stale, blurs on a phone and doesn't work in dark mode.
+  and the primary actions become **Open the app**.
 - **The connector steps live on the help page**, in the "Use it from
   Claude or ChatGPT" section (`#use-with-ai`) that every Titan app shares.
-  The front page links there and to nothing else for setup; the footer
-  links there as "Use with Claude".
+  Other pages link there for setup; the footer links there as "Use with
+  Claude".
 - **Every public page unfurls.** `public_base.html` sets the Open Graph and
   Twitter tags, but not `og:url`: the chat already has the link, and a
   sign-in link's address is its token. A page names its own `share_title` and `share_description`
-  blocks; the front page uses the promise and the lede. The share card,
-  `static/img/share-card.png`, is 1200×630 and shows the proposition and
-  the product side by side, so a link pasted in a chat looks like the
-  page it opens. `bin/make-icons` draws a placeholder; replace it before
-  launch.
+  blocks. The share card, `static/img/share-card.png`, is 1200×630;
+  `bin/make-icons` draws a placeholder; replace it before launch.
 
 ## 13. Error pages
 

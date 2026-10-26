@@ -151,8 +151,8 @@ def _username(request: SignInRequest) -> str:
 def _adopt_account(request: SignInRequest) -> Any | None:
     """Return an account stored another way for the request's address, restored now.
 
-    Two kinds: one ``createsuperuser`` made, which stores the address it is
-    given; and one made before ``ACCOUNTS_KEEP_EMAIL`` changed, whose
+    Two kinds: one ``createsuperuser`` made before it keyed accounts, which
+    stores the address it was given; and one made before ``ACCOUNTS_KEEP_EMAIL`` changed, whose
     username is the other form (the key, or the address). Either is given
     the request's username, masked address and email (blank unless
     addresses are kept). Where addresses aren't kept, only accounts made
@@ -180,6 +180,18 @@ def _adopt_account(request: SignInRequest) -> Any | None:
         user.save(update_fields=["username", "masked_email", "email"])
         logger.info("accounts.restored user=%s", user.pk)
     return user
+
+
+def adopt_account(email: str) -> Any | None:
+    """Return the account ``email`` had in an older form, restored now, if there is one.
+
+    ``createsuperuser`` asks before it makes an account, so it promotes the
+    account sign-in would adopt rather than making a second that strands it.
+    """
+    request = SignInRequest(
+        email_key=email_key(email), masked_email=mask_email(email), email=kept_email(email)
+    )
+    return _adopt_account(request)
 
 
 def user_for(request: SignInRequest) -> Any | None:

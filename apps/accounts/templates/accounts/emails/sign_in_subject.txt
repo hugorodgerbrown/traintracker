@@ -1,1 +1,1 @@
-Your {{ site_name }} sign-in code is {{ code }}
+{% autoescape off %}Your one-time {{ site_name }} verification code: {{ code }}{% endautoescape %}

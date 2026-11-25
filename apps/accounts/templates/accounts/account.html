@@ -45,4 +45,14 @@
     </div>
     <p class="meta" data-passkey-unsupported>This browser can't make passkeys.</p>
   </section>
+  <section class="card stack">
+    <h2>Delete your account</h2>
+    <p>This deletes your account and everything in it, straight away. There are no backups, so it can't be undone.</p>
+    <p><a class="button button--secondary" href="{% url 'accounts:account_delete' %}">Delete my account</a></p>
+  </section>
+  {# The app has no footer, so its links are here (DESIGN.md). #}
+  <section class="card stack">
+    <h2>About {{ pwa.name }}</h2>
+    {% site_links %}
+  </section>
 {% endblock %}

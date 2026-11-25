@@ -13,6 +13,8 @@ from django.test import Client
 from django.urls import reverse
 
 from apps.accounts.models import SignInRequest
+from apps.accounts.tasks import otp_token_header
+from apps.pwa.conf import APP_NAME
 from tests.factories import PasskeyFactory, UserFactory
 
 pytestmark = pytest.mark.django_db
@@ -77,23 +79,11 @@ def test_sign_in_emails_a_link_and_a_code(client: Client) -> None:
     link, code = emailed()
     assert code in message.subject
     assert link.startswith("/signin/link/")
+    assert message.subject == f"Your one-time {APP_NAME} verification code: {code}"
     page = client.get(CODE)
     assert "w•••@example.com" in page.content.decode()
     assert b"walker@example.com" not in page.content
     assert "walker@example.com" not in str(dict(client.session.items()))
-
-
-def test_sign_in_email_has_a_simple_html_version(client: Client) -> None:
-    """The HTML half carries the same code and link as the text half, escaped."""
-    request_email(client)
-    link, code = emailed()
-    message = mail.outbox[0]
-    assert isinstance(message, EmailMultiAlternatives)
-    content, kind = message.alternatives[0]
-    assert kind == "text/html"
-    html = str(content)
-    assert code in html
-    assert link in html
 
 
 def test_code_page_draws_the_code_as_six_boxes(client: Client) -> None:
@@ -102,6 +92,43 @@ def test_code_page_draws_the_code_as_six_boxes(client: Client) -> None:
     page = client.get(CODE).content.decode()
     assert re.search(r'<input id="code"[^>]*data-code-input data-code-length="6"', page)
     assert "js/code_input.js" in page
+
+
+def test_the_email_is_a_one_time_code_with_the_link_as_a_shortcut(client: Client) -> None:
+    """Text and HTML both lead with the code, then the link; mail apps see a code email."""
+    request_email(client)
+    message = mail.outbox[0]
+    assert isinstance(message, EmailMultiAlternatives)
+    link, code = emailed()
+    text = str(message.body)
+    assert text.startswith(f"Your one-time verification code:\n\n{code}\n")
+    assert text.index(code) < text.index(link)
+    assert "Expires in 15 minutes." in text
+    assert "Didn't ask for it? Ignore this email." in text
+    [(content, mimetype)] = message.alternatives
+    html = str(content)
+    assert mimetype == "text/html"
+    assert "Your one-time verification code" in html
+    assert html.index(code) < html.index(link) < html.index("Sign in with this code")
+    assert "Didn't ask for it? Ignore this email." in html
+    assert "comment" not in html
+    assert message.extra_headers["OTP-Token"] == otp_token_header(code)
+
+
+@pytest.mark.parametrize(
+    ("site_url", "origin"),
+    [
+        ("https://Example.com", "https://example.com"),
+        ("https://example.com:443", "https://example.com"),
+        ("http://localhost:8000", "http://localhost:8000"),
+    ],
+)
+def test_otp_token_names_the_code_and_the_sites_origin(
+    settings: Any, site_url: str, origin: str
+) -> None:
+    """The draft wants a lower-case origin with any default port left out."""
+    settings.SITE_URL = site_url
+    assert otp_token_header("012345") == f'"012345"; origin="{origin}"'
 
 
 def test_a_bad_email_is_refused(client: Client) -> None:

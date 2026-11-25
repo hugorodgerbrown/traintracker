@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Delete your account · Traintrackr{% endblock %}
+{% block content %}
+  <h1>Delete your account?</h1>
+  <p>Deleting <strong>{{ user.masked_email|default:user }}</strong> removes, straight away:</p>
+  <ul>
+    <li>your saved boards</li>
+    <li>your passkeys</li>
+    <li>access for the assistants you've connected, such as Claude or ChatGPT</li>
+  </ul>
+  <p>There are no backups, so it can't be undone. You can sign in again with the same address, but you'll start with nothing.</p>
+  <form method="post" action="{% url 'accounts:account_delete' %}" data-sign-out>
+    {% csrf_token %}
+    <button type="submit">Delete my account</button>
+  </form>
+  <p><a href="{% url 'accounts:account' %}">Keep my account</a></p>
+{% endblock %}

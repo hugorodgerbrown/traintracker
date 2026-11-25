@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from django.core import mail
 from django.core.cache import cache
-from django.core.mail import send_mail
+from django.core.mail import EmailMultiAlternatives
 from django.tasks import task
 from django.tasks.base import TaskResultStatus
 from django.test import Client
@@ -136,13 +136,15 @@ def test_the_sign_in_email_is_sent_off_the_request(
     cache.clear()
     send = threading.Event()
 
-    def slow_send_mail(*args: Any, **kwargs: Any) -> int:
+    real_send = EmailMultiAlternatives.send
+
+    def slow_send(message: EmailMultiAlternatives, *args: Any, **kwargs: Any) -> int:
         """Hold the send, as a slow mail relay would, then send it."""
         send.wait(timeout=5)
         seen["thread"] = threading.current_thread()
-        return send_mail(*args, **kwargs)
+        return real_send(message, *args, **kwargs)
 
-    monkeypatch.setattr("apps.accounts.tasks.send_mail", slow_send_mail)
+    monkeypatch.setattr(EmailMultiAlternatives, "send", slow_send)
     response = client.post(reverse("accounts:sign_in"), {"email": "walker@example.com"})
     assert response.status_code == 302
     assert not mail.outbox

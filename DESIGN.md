@@ -262,3 +262,20 @@ what happened and how to get back:
 
 Traintrackr has no design page, so there is no staff preview; with
 `DEBUG` on, Django shows its own pages instead.
+
+## 14. The sign-in email
+
+The sign-in email is a **one-time verification code**, with the link as a
+shortcut that uses it, so mail apps recognise it: Gmail shows a **Copy code**
+card or pill for an email like this (docs/decisions/the-sign-in-email-is-a-code-email.md).
+
+- **Five things, nothing more:** "Your one-time verification code", the
+  code on its own line, "Expires in 15 minutes.", the link ("Sign in with
+  this code" in HTML), and "Didn't ask for it? Ignore this email."
+- **The code before the link,** and no other number near it.
+- **The subject says it too:** "Your one-time {app} verification code: {code}".
+- **Plain text and HTML say the same,** `sign_in.txt` and `sign_in.html`.
+  The HTML uses inline styles (section 4) and the app's own colours: the
+  button is `--brand` with white text.
+- **An `OTP-Token` header** names the code and the site's origin
+  (draft-goto-otp-token). It is a draft, not a standard, and costs nothing.

@@ -13,6 +13,10 @@ In the app:
   /app/account/passkeys/options/         POST: registration challenge (JSON)
   /app/account/passkeys/                 POST: verify and save (JSON)
   /app/account/passkeys/<uuid>/delete/   POST
+  /app/account/delete/                   GET: are you sure; POST: delete it
+
+Public again once it's gone:
+  /account/deleted/           "your account has been deleted"
 
 The link page asks for a click rather than signing in on GET, because mail
 scanners open links to check them, and would use the link up.
@@ -36,6 +40,7 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from apps.accounts import passkeys, sign_in
+from apps.accounts.deletion import delete_account
 from apps.accounts.forms import CodeForm, EmailForm
 from apps.accounts.models import Passkey, SignInRequest
 from apps.accounts.tasks import send_sign_in_email
@@ -273,3 +278,25 @@ def passkey_delete(request: HttpRequest, uuid: str) -> HttpResponse:
     passkey = get_object_or_404(Passkey, uuid=uuid, user=signed_in_user(request))
     passkey.delete()
     return redirect("accounts:account")
+
+
+@require_http_methods(["GET", "POST"])
+@login_required
+def account_delete(request: HttpRequest) -> HttpResponse:
+    """Ask once, then delete the account and everything in it, and sign out.
+
+    The GET is the confirmation step: what goes, and that it can't come
+    back. The POST deletes at once. Its form is marked ``data-sign-out``, so
+    pwa.js drops the device's cached pages first, as signing out does.
+    """
+    if request.method == "GET":
+        return render(request, "accounts/account_delete.html")
+    delete_account(signed_in_user(request))
+    logout(request)
+    return redirect("accounts:account_deleted")
+
+
+@require_GET
+def account_deleted(request: HttpRequest) -> HttpResponse:
+    """Say the account has gone. Public: nobody is signed in any more."""
+    return render(request, "accounts/account_deleted.html")

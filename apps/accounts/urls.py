@@ -21,4 +21,6 @@ urlpatterns = [
     ),
     path("app/account/passkeys/", views.passkey_register, name="passkey_register"),
     path("app/account/passkeys/<uuid:uuid>/delete/", views.passkey_delete, name="passkey_delete"),
+    path("app/account/delete/", views.account_delete, name="account_delete"),
+    path("account/deleted/", views.account_deleted, name="account_deleted"),
 ]

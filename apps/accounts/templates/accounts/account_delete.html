@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Delete your account · {{ pwa.name }}{% endblock %}
+{% block content %}
+  <section class="card stack">
+    <h1>Delete your account?</h1>
+    <p>Deleting <strong>{{ user }}</strong> removes, straight away:</p>
+    <ul>
+      <li>everything you've saved in {{ pwa.name }}</li>
+      <li>your passkeys</li>
+      {% if mcp_url %}<li>access for apps you've connected, such as Claude</li>{% endif %}
+    </ul>
+    <p>There are no backups, so it can't be undone. You can sign up again with the same address, but you'll start with nothing.</p>
+    {# data-sign-out: pwa.js drops this device's saved pages first, as signing out does. #}
+    <form method="post" action="{% url 'accounts:account_delete' %}" data-sign-out>
+      {% csrf_token %}
+      <button class="button button--danger" type="submit">Delete my account</button>
+    </form>
+    <p><a href="{% url 'accounts:account' %}">Keep my account</a></p>
+  </section>
+{% endblock %}

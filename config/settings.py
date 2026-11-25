@@ -202,6 +202,12 @@ ACCOUNTS_EMAIL_KEY: str = config(
 )
 ACCOUNTS_KEEP_EMAIL = False
 
+# Deleting an account (apps/accounts/deletion.py) removes every row with a
+# CASCADE foreign key to the user. List a callable here, as a dotted path
+# taking the user, for anything else the account owns; it runs in the same
+# transaction, before the user goes.
+ACCOUNTS_DELETE_HOOKS: list[str] = []
+
 # Passkeys (WebAuthn). The relying party is this site's host name; a
 # passkey only works on the host it was made for.
 WEBAUTHN_RP_ID: str = config("WEBAUTHN_RP_ID", default=urlsplit(SITE_URL).hostname or "localhost")

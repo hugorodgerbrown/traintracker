@@ -17,8 +17,9 @@ apps/core/         BaseModel, IdempotencyMiddleware + IdempotencyRecord,
                    limits, livez, healthz and /.well-known/security.txt;
                    errors.py is the error pages (400/403/404/500,
                    CSRF), as JSON, text or HTML
-apps/accounts/     email link or code sign-in, passkeys, the account
-                   commands (docs/accounts.md)
+apps/accounts/     email code or link sign-in, passkeys, deleting an
+                   account (deletion.py), the account commands
+                   (docs/accounts.md)
 apps/mcp/          /mcp (Titan's view, mcp-auth) listing the train tools;
                    events.py counts each tool call in fivebar as a server
                    event while FIVEBAR_DOMAIN and FIVEBAR_TOKEN are set

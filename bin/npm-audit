@@ -51,15 +51,39 @@ def failures(report: dict) -> list[str]:
     ]
 
 
+def read_report(text: str) -> dict | None:
+    """Return the audit report in ``text``, or None if npm gave none.
+
+    npm answers an operational failure (no lockfile, the registry down) with
+    JSON that holds an ``error`` and no ``vulnerabilities``; treating that as
+    a clean report would pass the audit without checking anything.
+    """
+    try:
+        report = json.loads(text)
+    except ValueError:
+        return None
+    if not isinstance(report, dict) or "error" in report:
+        return None
+    if not isinstance(report.get("vulnerabilities"), dict):
+        return None
+    return report
+
+
 def main(argv: list[str]) -> int:
     """Audit, print what fails, and exit non-zero if anything does."""
     if argv[1:] == ["-"]:
         text = sys.stdin.read()
     else:
+        # npm exits 1 when it finds advisories, so the status alone can't
+        # tell a report from a failure: the report's shape does (below).
         text = subprocess.run(
             ["npm", "audit", "--json"], capture_output=True, text=True, check=False
         ).stdout
-    report = json.loads(text or "{}")
+    report = read_report(text)
+    if report is None:
+        sys.stdout.write("npm audit gave no report, so nothing was checked:\n")
+        sys.stdout.write(f"{text.strip() or '(no output)'}\n")
+        return 1
     for ghsa in sorted(set(advisories(report)) & set(EXCEPTIONS)):
         sys.stdout.write(f"excepted: {ghsa} ({EXCEPTIONS[ghsa]})\n")
     problems = failures(report)

@@ -60,3 +60,31 @@ def test_moderate_advisories_pass(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_a_clean_report_passes(monkeypatch: pytest.MonkeyPatch) -> None:
     """No vulnerabilities, nothing fails."""
     assert run(monkeypatch, {"vulnerabilities": {}}) == 0
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "",
+        "not json",
+        "[]",
+        json.dumps({"error": {"code": "ENOLOCK", "summary": "This command requires a lockfile"}}),
+        json.dumps({"message": "503 Service Unavailable"}),
+    ],
+    ids=["empty", "not-json", "not-an-object", "enolock", "no-vulnerabilities"],
+)
+def test_no_report_fails(monkeypatch: pytest.MonkeyPatch, text: str) -> None:
+    """When npm can't audit (no lockfile, registry down), the audit fails, not passes."""
+    monkeypatch.setattr("sys.stdin", io.StringIO(text))
+    assert load().main(["npm-audit", "-"]) == 1
+
+
+def test_npm_is_run_when_no_report_is_piped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With no "-", the script runs npm audit itself and reads its output."""
+    module = load()
+
+    class Done:
+        stdout = json.dumps({"vulnerabilities": {}})
+
+    monkeypatch.setattr(module.subprocess, "run", lambda *a, **k: Done())
+    assert module.main(["npm-audit"]) == 0

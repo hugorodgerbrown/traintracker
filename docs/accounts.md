@@ -35,6 +35,7 @@ with Face ID, a fingerprint or a device PIN from then on.
 | `apps/accounts/sign_in.py` | Issue a request; redeem its link or code once; find or create the account |
 | `apps/accounts/passkeys.py` | WebAuthn options and verification (py_webauthn) |
 | `apps/accounts/views.py` | The sign-in, code, link, sign-out, account and passkey endpoints |
+| `apps/accounts/deletion.py` | `delete_account()`: the account and everything it owns, in one transaction |
 | `apps/accounts/tasks.py` | `send_sign_in_email`, enqueued by the view (`django.tasks`) |
 | `apps/accounts/models.py` | `User`, `SignInRequest`, `Passkey`, `ReviewerAccount`; `email_key()` and `mask_email()` |
 | `apps/accounts/checks.py` | Fails the system checks (so `migrate`, so a deploy) without `ACCOUNTS_EMAIL_KEY` |
@@ -190,3 +191,31 @@ Read-only unless `--commit`:
 
 `POST /signout/` signs out and returns to `/signin/`. Traintrackr has no
 installed app, so there is no cache or outbox to clear.
+
+## Deleting an account
+
+The account page ends with **Delete my account**. It opens
+`/app/account/delete/`, which says what goes and that there are no backups,
+and asks once more; the POST deletes straight away, signs out and lands on
+the public `/account/deleted/`. Traintrackr's own pages are
+`templates/accounts/account_delete.html` and `account_deleted.html`. Staff
+still have `forget_account` for an erasure request by email.
+
+`apps/accounts/deletion.py: delete_account(user)` does the work in one
+transaction:
+
+- every row with a `CASCADE` foreign key to the user goes with it: passkeys,
+  the app's own records and, with MCP, the OAuth access and refresh tokens
+  and grants, so a connected app such as Claude loses access at once;
+- the account's sign-in requests, matched by the address's key;
+- the outbox's stored replies (`IdempotencyRecord`), which can hold what the
+  account wrote, matched by its pk;
+- anything an app's hooks in `ACCOUNTS_DELETE_HOOKS` remove. A hook is a
+  dotted path to a callable that takes the user and runs before it goes.
+  Use one only for data the cascade can't reach (rows keyed by a hash of
+  the account, say). Give a new model a `CASCADE` foreign key to the user
+  instead where you can.
+
+If a hook raises, nothing is deleted. Titan apps keep no backups, so
+deletion is final, and the privacy notice says so. Why:
+[decisions/people-delete-their-own-account-for-good.md](decisions/people-delete-their-own-account-for-good.md).

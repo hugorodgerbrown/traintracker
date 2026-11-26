@@ -39,4 +39,10 @@
     </div>
     <p class="hint" data-passkey-unsupported>This browser can't make passkeys.</p>
   </section>
+
+  <section>
+    <h2>Delete your account</h2>
+    <p>This deletes your account and everything in it, straight away. There are no backups, so it can't be undone.</p>
+    <p><a href="{% url 'accounts:account_delete' %}">Delete my account</a></p>
+  </section>
 {% endblock %}

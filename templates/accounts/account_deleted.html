@@ -1,0 +1,7 @@
+{% extends "public_base.html" %}
+{% block title %}Account deleted · Traintrackr{% endblock %}
+{% block content %}
+  <h1>Your account has been deleted</h1>
+  <p>Everything in it has gone, and you're signed out. Your assistant can no longer use Traintrackr until you connect it again.</p>
+  <p><a href="{% url 'public:home' %}">Back to Traintrackr</a></p>
+{% endblock %}

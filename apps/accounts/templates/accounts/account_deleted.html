@@ -1,0 +1,9 @@
+{% extends "public_base.html" %}
+{% block title %}Account deleted · {{ pwa.name }}{% endblock %}
+{% block content %}
+  <section class="card stack">
+    <h1>Your account has been deleted</h1>
+    <p>Everything in it has gone, and you're signed out. Thanks for trying {{ pwa.name }}.</p>
+    <p><a href="{% url 'public:home' %}">Back to {{ pwa.name }}</a></p>
+  </section>
+{% endblock %}

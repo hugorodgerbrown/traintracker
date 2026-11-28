@@ -10,7 +10,7 @@ dependencies = [
     # The Titan project: Django and what the template runs it with.
     "dj-database-url>=3.1.2,<4",
     "django>=6.1.1,<6.2",
-    "gunicorn>=26.2.0,<27",
+    "gunicorn>=26.2.0,<28",
     "python-decouple>=3.8,<4",
     "whitenoise>=6.12.0,<7",
     # Titan's accounts (passkeys) and the MCP endpoint's OAuth.
@@ -40,7 +40,7 @@ test = [
 lint = [
     # Exact pin, bumped in step with .pre-commit-config.yaml so the hook and
     # CI never disagree.
-    "ruff==0.17.0",
+    "ruff==0.17.6",
 ]
 types = [
     "django-stubs>=6.0.2,<7",
@@ -64,7 +64,7 @@ default-groups = ["dev"]
 
 [tool.uv.sources]
 # The shared Titan MCP auth app, pinned to a release tag.
-mcp-auth = { git = "https://github.com/hugorodgerbrown/mcp-auth", tag = "v0.1.5" }
+mcp-auth = { git = "https://github.com/hugorodgerbrown/mcp-auth", tag = "v0.1.8" }
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings"

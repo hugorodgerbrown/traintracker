@@ -1,0 +1,129 @@
+# The Android TV app (android-tv/): unit tests, lint and a release APK on
+# every change to it. Running it by hand on main with a version (Actions →
+# Android TV → Run workflow → 0.1.0) publishes the APK as a GitHub
+# release, tagged tv-v0.1.0, for sideloading onto a TV; pushing a tag like
+# tv-v0.1.0 does the same.
+#
+# The APK is signed with the key in the TRAINTRACKR_* secrets, so each build
+# installs over the last. Without them it is signed with a throwaway debug
+# key: fine to try once, but the next build won't install over it.
+name: Android TV
+
+on:
+  push:
+    branches: [main]
+    tags: ["tv-v*"]
+    paths: ["android-tv/**", ".github/workflows/android-tv.yml"]
+  pull_request:
+    paths: ["android-tv/**", ".github/workflows/android-tv.yml"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release this version, like 0.1.0 (leave empty to only build)"
+        required: false
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android-tv
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    env:
+      TRAINTRACKR_VERSION_CODE: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v7
+      # The version the app reports and the APK is named after: the tag
+      # without its tv-v, the version typed into Run workflow, or 0.1.<run>.
+      - name: Choose the version
+        id: version
+        working-directory: .
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/tv-v* ]]; then
+            version="${GITHUB_REF_NAME#tv-v}"
+          elif [[ -n "$INPUT_VERSION" ]]; then
+            if [[ "$GITHUB_REF" != refs/heads/main ]]; then
+              echo "::error::Release from main only."
+              exit 1
+            fi
+            version="$INPUT_VERSION"
+          else
+            version="0.1.$GITHUB_RUN_NUMBER"
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::A version is three numbers, like 0.1.0, not '$version'."
+            exit 1
+          fi
+          echo "TRAINTRACKR_VERSION_NAME=$version" >> "$GITHUB_ENV"
+          if [[ "$GITHUB_REF" == refs/tags/tv-v* || -n "$INPUT_VERSION" ]]; then
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Unpack the signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.TRAINTRACKR_KEYSTORE_BASE64 }}
+        if: env.KEYSTORE_BASE64 != ''
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          echo "TRAINTRACKR_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+      - name: Test, lint and build
+        env:
+          TRAINTRACKR_KEYSTORE_PASSWORD: ${{ secrets.TRAINTRACKR_KEYSTORE_PASSWORD }}
+          TRAINTRACKR_KEY_ALIAS: ${{ secrets.TRAINTRACKR_KEY_ALIAS }}
+          TRAINTRACKR_KEY_PASSWORD: ${{ secrets.TRAINTRACKR_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleRelease
+      - name: Name the APK
+        run: cp app/build/outputs/apk/release/app-release.apk "traintrackr-tv-$TRAINTRACKR_VERSION_NAME.apk"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: traintrackr-tv
+          path: android-tv/traintrackr-tv-*.apk
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: reports
+          path: android-tv/app/build/reports/
+
+  release:
+    if: needs.build.outputs.version != ''
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: traintrackr-tv
+      # Creates the tv-v<version> tag on the commit just built. A tag that
+      # already exists (a pushed tag started the run) must be on that commit,
+      # or the release would pair this APK with another commit's code.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          # gh api fails (and prints its error, not a SHA) when there is no such tag.
+          if tagged=$(gh api "repos/$GITHUB_REPOSITORY/commits/tv-v$VERSION" --jq .sha 2>/dev/null) \
+            && [[ "$tagged" != "$GITHUB_SHA" ]]; then
+            echo "::error::tv-v$VERSION already tags another commit ($tagged); pick a new version."
+            exit 1
+          fi
+          gh release create "tv-v$VERSION" traintrackr-tv-*.apk \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Traintrackr for Android TV $VERSION" \
+            --notes "Sideload this APK onto your Android TV or Google TV (docs/android-tv.md), then choose its board at traintrackr.live/tv.."

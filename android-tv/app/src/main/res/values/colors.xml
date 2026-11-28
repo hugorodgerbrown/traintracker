@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The board's palette (static/css/site.css, .departures), so the app looks like the board it shows. -->
+<resources>
+    <color name="green">#0B5D3B</color>
+    <color name="well">#0A2A1C</color>
+    <color name="flap">#113A29</color>
+    <color name="flap_seam">#0A2A1C</color>
+    <color name="amber">#FFB020</color>
+    <color name="pale">#CFE3D6</color>
+    <color name="board_ink">#FFFFFF</color>
+    <color name="scrim">#B3000000</color>
+</resources>

@@ -15,6 +15,7 @@ from apps.accounts.models import (
     mask_email,
     username_for,
 )
+from apps.pairing.models import TVPairing
 from apps.public.models import SavedBoard
 
 
@@ -95,3 +96,16 @@ class SavedBoardFactory(factory.django.DjangoModelFactory):
     user = factory.SubFactory(UserFactory)
     path = "/board/LST"
     opened_at = factory.LazyFunction(timezone.now)
+
+
+class TVPairingFactory(factory.django.DjangoModelFactory):
+    """A pairing waiting for its code; use ``apps.pairing.services.start`` for the secrets."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = TVPairing
+
+    token_hash = factory.Sequence(lambda n: f"{n:064x}")
+    code_hash = factory.Sequence(lambda n: f"{n:064x}")
+    expires_at = factory.LazyFunction(lambda: timezone.now() + timedelta(minutes=10))

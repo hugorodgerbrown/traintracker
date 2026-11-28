@@ -1,0 +1,33 @@
+{% extends "public/layout.html" %}
+{% block content %}{% if shown %}<h1>It's on the TV</h1>
+<p class="lede">The TV shows {{ shown }} in a few seconds. You can close this page.</p>
+<p><a href="/tv">Put a board on another TV</a></p>
+{% else %}<h1>Put a board on a TV</h1>
+<p class="lede">Open Traintrackr on your Google TV or Android TV. Type the code it shows,
+  choose a board, and the TV shows it from then on.</p>
+<form class="picker tv-pair" method="post" action="/tv">{% csrf_token %}
+  <label for="code">Code on the TV</label>
+  <input id="code" class="tv-code" name="code" value="{{ form.code.value|default:'' }}" required maxlength="20"
+    autocomplete="off" autocapitalize="characters" spellcheck="false" aria-describedby="code-help{% if form.code.errors %} code-error{% endif %}" />
+  <p class="hint" id="code-help">Six letters and numbers, like K7Q-4MD. Each code lasts {{ minutes }} minutes and works once.</p>
+  {% for error in form.code.errors %}<p class="error" id="code-error">{{ error }}</p>{% endfor %}
+  {# Saved boards (saved_boards.js) join these; hidden while there are none. #}
+  <fieldset class="tv-boards" data-tv-boards{% if not options %} hidden{% endif %}>
+    <legend>Which board?</legend>
+{% for option in options %}    <label class="tv-board"><input type="radio" name="board" value="{{ option.path }}"{% if option.checked %} checked{% endif %} />
+      <span>{{ option.name }} <span class="hint">{{ option.note }}</span></span></label>
+{% endfor %}  </fieldset>
+  <label for="station">Or another station</label>
+  <input id="station" name="station" value="{{ form.station.value|default:'' }}" maxlength="{{ max_query }}"
+    autocomplete="off" list="station-list" data-suggest="/api/stations" aria-describedby="station-help" />
+  <datalist id="station-list"></datalist>
+  <p class="hint" id="station-help">Every train from the station. For one platform or destination,
+    open its board and choose Put it on the TV app.</p>
+  {% for error in form.station.errors %}<p class="error">{{ error }}</p>{% endfor %}
+  {% if problem %}<p class="error">{{ problem }}</p>{% endif %}
+  <button type="submit">Show it on the TV</button>
+</form>
+<h2 id="get-the-app">Get the TV app</h2>
+<p>The app runs on Google TV and Android TV, including Chromecast with Google TV. It isn't on
+  Google Play yet: install it from the <a href="https://github.com/hugorodgerbrown/traintracker/releases">latest release</a>.</p>
+{% endif %}{% endblock %}

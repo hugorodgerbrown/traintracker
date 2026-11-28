@@ -15,6 +15,11 @@ updates:
     schedule: { interval: weekly }
     groups:
       npm: { patterns: ["*"] }
+  - package-ecosystem: gradle
+    directory: /android-tv
+    schedule: { interval: weekly }
+    groups:
+      android-tv: { patterns: ["*"] }
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }

@@ -128,6 +128,8 @@ def _board_page(
         "all_path": relative(tt.BoardKey(key.crs).path),
         "station_name": tt.station_name(key.crs),
         "board_name": key.name(),
+        # The phone's page for the TV app, with this board chosen (apps/pairing).
+        "tv_app_path": "tv?" + urlencode({"board": key.path}),
         "embed_code": (
             f'<iframe src="{url}?embed=1" title="{key.title()}" width="100%" '
             f'height="{tt.EMBED_HEIGHT}" style="border:0;max-width:760px" loading="lazy"></iframe>'

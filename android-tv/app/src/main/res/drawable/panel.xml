@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The menu's panel: the board's well, over the dimmed board. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/well" />
+    <corners android:radius="12dp" />
+</shape>

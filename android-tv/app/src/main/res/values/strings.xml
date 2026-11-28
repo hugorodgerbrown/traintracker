@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Traintrackr</string>
+
+    <string name="pair_title">Choose a board for this TV</string>
+    <string name="pair_step_go">On your phone, go to</string>
+    <string name="pair_step_type">and type this code</string>
+    <string name="pair_step_scan">Or scan this with your phone\'s camera.</string>
+    <string name="pair_code_placeholder">······</string>
+    <string name="pair_qr_description">QR code that opens the page for this code</string>
+    <string name="pair_getting_code">Getting a code…</string>
+    <string name="pair_waiting">Waiting for the code. A new one appears every ten minutes.</string>
+    <string name="pair_offline">Can\'t reach Traintrackr. Trying again…</string>
+    <string name="pair_busy">Too many codes asked for. Trying again in a minute…</string>
+
+    <string name="reconnecting">Reconnecting to Traintrackr…</string>
+
+    <string name="menu_title">Traintrackr</string>
+    <string name="menu_showing">Showing %1$s</string>
+    <string name="menu_keep_watching">Keep watching</string>
+    <string name="menu_choose_board">Choose a different board</string>
+    <string name="menu_start_on_boot_off">Start when the TV turns on: Off</string>
+    <string name="menu_start_on_boot_on">Start when the TV turns on: On</string>
+    <string name="menu_start_on_boot_hint">This TV hides the setting that lets apps start by themselves. Allow it once from a computer: adb shell appops set %1$s SYSTEM_ALERT_WINDOW allow</string>
+    <string name="menu_exit">Exit</string>
+</resources>

@@ -113,6 +113,7 @@ INSTALLED_APPS = [
     "apps.public",
     "apps.rail",
     "apps.mcp",
+    "apps.pairing",
     # After the project's apps so their templates (templates/mcp_auth/) win.
     "mcp_auth",
     "oauth2_provider",

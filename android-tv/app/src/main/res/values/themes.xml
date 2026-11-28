@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Traintrackr" parent="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@color/green</item>
+        <item name="android:colorBackground">@color/green</item>
+        <item name="android:textColor">@color/board_ink</item>
+    </style>
+
+    <!-- One letter of the pairing code: a flap, as on the board. -->
+    <style name="CodeFlap">
+        <item name="android:layout_width">64dp</item>
+        <item name="android:layout_height">84dp</item>
+        <item name="android:layout_marginEnd">6dp</item>
+        <item name="android:background">@drawable/flap</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:gravity">center</item>
+        <item name="android:textColor">@color/amber</item>
+        <item name="android:textSize">52sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:importantForAccessibility">no</item>
+    </style>
+
+    <style name="MenuButton">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">8dp</item>
+        <item name="android:background">@drawable/menu_button</item>
+        <item name="android:textColor">@drawable/menu_button_text</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:gravity">start|center_vertical</item>
+        <item name="android:paddingStart">20dp</item>
+        <item name="android:paddingEnd">20dp</item>
+        <item name="android:minHeight">52dp</item>
+        <item name="android:focusable">true</item>
+    </style>
+</resources>

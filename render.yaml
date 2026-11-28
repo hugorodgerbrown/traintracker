@@ -74,7 +74,8 @@ services:
         sync: false
 
   # Deletes what the privacy policy says is deleted: expired idempotency
-  # records (24 hours), sign-in requests (15 minutes), expired OAuth tokens,
+  # records (24 hours), sign-in requests (15 minutes), TV pairings (once
+  # expired, ten minutes after the code was shown or typed), expired OAuth tokens,
   # and accounts unused for 180 days.
   - type: cron
     name: traintracker-purge
@@ -86,6 +87,7 @@ services:
     startCommand: >-
       uv run --no-sync python manage.py purge_idempotency_records --commit &&
       uv run --no-sync python manage.py purge_sign_in_requests --commit &&
+      uv run --no-sync python manage.py purge_tv_pairings --commit &&
       uv run --no-sync python manage.py cleartokens &&
       uv run --no-sync python manage.py purge_idle_accounts --commit
     autoDeployTrigger: checksPass

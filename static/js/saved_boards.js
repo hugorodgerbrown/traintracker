@@ -11,6 +11,7 @@
  * A board page (board.html) is remembered as the last board opened, and gets
  * its Add to favourites button. The front page shows the favourites as
  * chips; site.js draws the last board, live, from `SavedBoards.ready`.
+ * The TV app's phone page (/tv) offers them as boards to put on the TV.
  * Without this file, nothing is kept and the pages are as they were.
  */
 (function () {
@@ -218,14 +219,49 @@
     section.hidden = false;
   }
 
+  /** The TV app's phone page (/tv): your last board and favourites as
+   * boards to choose, after any the page already offers. The first is
+   * chosen when none is. */
+  async function showTvBoards(fieldset, ready) {
+    const state = await ready;
+    if (!state) return;
+    const offered = new Set([...fieldset.querySelectorAll('input')].map((i) => i.value));
+    const boards = [];
+    if (state.last) boards.push({ ...state.last, note: 'Your last board' });
+    for (const board of state.favourites) boards.push({ ...board, note: 'Favourite' });
+    for (const board of boards) {
+      if (offered.has(board.path)) continue;
+      offered.add(board.path);
+      const label = document.createElement('label');
+      label.className = 'tv-board';
+      const input = document.createElement('input');
+      input.type = 'radio';
+      input.name = 'board';
+      input.value = board.path;
+      const text = document.createElement('span');
+      const note = document.createElement('span');
+      note.className = 'hint';
+      note.textContent = board.note;
+      text.append(`${board.name} `, note);
+      label.append(input, text);
+      fieldset.append(label);
+    }
+    const inputs = fieldset.querySelectorAll('input');
+    if (!inputs.length) return;
+    if (![...inputs].some((i) => i.checked)) inputs[0].checked = true;
+    fieldset.hidden = false;
+  }
+
   /** Start on the pages that use saved boards; elsewhere ask nothing. */
   function start(root) {
     const box = root.querySelector('.favourite[data-board-path]');
     const section = root.querySelector('.your-favourites');
-    if (!box && !section) return Promise.resolve(null);
+    const tvBoards = root.querySelector('[data-tv-boards]');
+    if (!box && !section && !tvBoards) return Promise.resolve(null);
     const ready = load();
     if (box) enhanceBoard(box, ready);
     if (section) showFavourites(section, ready);
+    if (tvBoards) showTvBoards(tvBoards, ready);
     return ready;
   }
 
@@ -240,6 +276,7 @@
     load,
     opened,
     favourite,
+    showTvBoards,
     start,
     ready: start(document),
   };

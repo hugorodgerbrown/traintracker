@@ -235,3 +235,49 @@ describe('the front page', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 });
+
+describe("the TV app's phone page", () => {
+  function tvPage(given = '') {
+    document.body.innerHTML = `
+      <fieldset data-tv-boards${given ? '' : ' hidden'}><legend>Which board?</legend>${given}</fieldset>`;
+    return document.querySelector('[data-tv-boards]');
+  }
+
+  function choices(fieldset) {
+    return [...fieldset.querySelectorAll('input')].map((i) => [i.value, i.checked, i.parentElement.textContent]);
+  }
+
+  it('offers the last board and favourites, choosing the first', async () => {
+    const fieldset = tvPage();
+    SavedBoards.write({ last: LST, favourites: [LST, COL] });
+    server(signedOut);
+    await SavedBoards.start(document);
+    await settle();
+    expect(fieldset.hidden).toBe(false);
+    expect(choices(fieldset)).toEqual([
+      ['/board/LST', true, 'London Liverpool Street Your last board'],
+      ['/board/LST/COL', false, 'London Liverpool Street to Colchester Favourite'],
+    ]);
+  });
+
+  it('keeps the board the page chose, after it and without repeating it', async () => {
+    const fieldset = tvPage(
+      '<label><input type="radio" name="board" value="/board/LST/COL" checked /><span>This board</span></label>',
+    );
+    server(signedIn(LST, [COL]));
+    await SavedBoards.start(document);
+    await settle();
+    expect(choices(fieldset).map(([path, checked]) => [path, checked])).toEqual([
+      ['/board/LST/COL', true],
+      ['/board/LST', false],
+    ]);
+  });
+
+  it('stays hidden with nothing to offer', async () => {
+    const fieldset = tvPage();
+    server(signedOut);
+    await SavedBoards.start(document);
+    await settle();
+    expect(fieldset.hidden).toBe(true);
+  });
+});

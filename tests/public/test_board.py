@@ -456,6 +456,8 @@ def test_the_board_page_offers_the_tv_view(client: Client) -> None:
     assert '<h2 id="tv">Show it on a TV</h2>' in text
     assert '<button type="button" data-tv hidden>Show on TV</button>' in text
     assert f'<code id="tv-link">{BASE}/board/LST?tv=1</code>' in text
+    # The TV app's phone page, with this board chosen (apps/pairing).
+    assert '<a href="/tv?board=%2Fboard%2FLST">Put it on the TV app</a>' in text
 
 
 def test_a_platform_with_no_trains_says_so(client: Client) -> None:

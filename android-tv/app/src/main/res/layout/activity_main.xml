@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/green">
+
+    <!-- The board's TV view (/board/...?tv=1), full screen. -->
+    <WebView
+        android:id="@+id/board"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:focusable="true"
+        android:visibility="gone" />
+
+    <!-- First run: a code to type on a phone, as flaps, and a QR code that opens the page for it. -->
+    <FrameLayout
+        android:id="@+id/pair"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="56dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|end"
+            android:letterSpacing="0.08"
+            android:text="@string/menu_title"
+            android:textAllCaps="true"
+            android:textColor="@color/pale"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/pair_title"
+                    android:textSize="40sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="28dp"
+                    android:text="@string/pair_step_go"
+                    android:textColor="@color/pale"
+                    android:textSize="20sp" />
+
+                <TextView
+                    android:id="@+id/pair_address"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textSize="28sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:text="@string/pair_step_type"
+                    android:textColor="@color/pale"
+                    android:textSize="20sp" />
+
+                <!-- Read as one code by TalkBack; drawn as six flaps in two threes. -->
+                <LinearLayout
+                    android:id="@+id/pair_code"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:focusable="false"
+                    android:importantForAccessibility="yes"
+                    android:orientation="horizontal">
+
+                    <TextView android:id="@+id/pair_flap_0" style="@style/CodeFlap" />
+                    <TextView android:id="@+id/pair_flap_1" style="@style/CodeFlap" />
+                    <TextView android:id="@+id/pair_flap_2" style="@style/CodeFlap"
+                        android:layout_marginEnd="24dp" />
+                    <TextView android:id="@+id/pair_flap_3" style="@style/CodeFlap" />
+                    <TextView android:id="@+id/pair_flap_4" style="@style/CodeFlap" />
+                    <TextView android:id="@+id/pair_flap_5" style="@style/CodeFlap"
+                        android:layout_marginEnd="0dp" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:text="@string/pair_step_scan"
+                    android:textColor="@color/pale"
+                    android:textSize="18sp" />
+            </LinearLayout>
+
+            <ImageView
+                android:id="@+id/pair_qr"
+                android:layout_width="240dp"
+                android:layout_height="240dp"
+                android:layout_marginStart="64dp"
+                android:contentDescription="@string/pair_qr_description" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/pair_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|start"
+            android:textColor="@color/pale"
+            android:textSize="16sp" />
+    </FrameLayout>
+
+    <!-- Over the board while its page can't be loaded; it retries by itself. -->
+    <FrameLayout
+        android:id="@+id/reconnecting"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/scrim"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="@string/reconnecting"
+            android:textSize="26sp" />
+    </FrameLayout>
+
+    <!-- Back or Menu on the remote: the board dims behind it. -->
+    <FrameLayout
+        android:id="@+id/menu"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/scrim"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="480dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:background="@drawable/panel"
+            android:orientation="vertical"
+            android:padding="28dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/menu_title"
+                android:textSize="24sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/menu_showing"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:textColor="@color/pale"
+                android:textSize="16sp" />
+
+            <Button
+                android:id="@+id/menu_keep_watching"
+                style="@style/MenuButton"
+                android:text="@string/menu_keep_watching" />
+
+            <Button
+                android:id="@+id/menu_choose_board"
+                style="@style/MenuButton"
+                android:text="@string/menu_choose_board" />
+
+            <Button
+                android:id="@+id/menu_start_on_boot"
+                style="@style/MenuButton"
+                android:text="@string/menu_start_on_boot_off" />
+
+            <TextView
+                android:id="@+id/menu_hint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textColor="@color/pale"
+                android:textIsSelectable="false"
+                android:textSize="14sp"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/menu_exit"
+                style="@style/MenuButton"
+                android:text="@string/menu_exit" />
+        </LinearLayout>
+    </FrameLayout>
+</FrameLayout>

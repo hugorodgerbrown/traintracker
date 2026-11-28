@@ -3,7 +3,7 @@
   Traintrackr answers questions about public train times. It keeps as little
   about you as it can.
 </p>
-<p>Last updated: 18 October 2026.</p>
+<p>Last updated: 28 November 2026.</p>
 
 <h2 id="who">Who is responsible</h2>
 <p>
@@ -87,6 +87,19 @@
       </tr>
       <tr>
         <td data-label="Data">
+          A TV pairing, when the Traintrackr TV app asks for a board: its code
+          and the TV's token, stored as hashes, and the address of the board
+          chosen for it, such as /board/LST/COL. It names no person or account
+        </td>
+        <td data-label="Why">To put the board you choose on that TV</td>
+        <td data-label="Kept for">
+          10 minutes to type the code, and 10 more for the TV to collect its
+          board, then deleted within a day. The TV app keeps the board's
+          address itself
+        </td>
+      </tr>
+      <tr>
+        <td data-label="Data">
           Access tokens, stored as hashes, with your account
         </td>
         <td data-label="Why">To keep your assistant connected</td>
@@ -134,8 +147,8 @@
           or against your IP address or email address before you have signed in
         </td>
         <td data-label="Why">
-          The fair-use limit, and limits on how often sign-in codes can be asked
-          for and tried
+          The fair-use limit, and limits on how often sign-in and TV codes can
+          be asked for and tried
         </td>
         <td data-label="Kept for">Minutes; cleared on restart</td>
       </tr>
